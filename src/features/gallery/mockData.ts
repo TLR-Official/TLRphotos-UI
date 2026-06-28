@@ -1,0 +1,103 @@
+// Mock 数据 - 首页瀑布流静态数据
+import type { PhotoListItem } from './types';
+
+// 使用占位图片服务生成模拟缩略图
+// 实际项目中替换为真实的 WebP 缩略图路径
+export const mockPhotos: PhotoListItem[] = [
+  {
+    id: 'photo_001',
+    title: '城市天际线',
+    thumbnail_path: 'https://picsum.photos/seed/aero1/1200/800',
+    tags: ['城市', '航拍', '日落'],
+    width: 1200,
+    height: 800,
+  },
+  {
+    id: 'photo_002',
+    title: '海岸线全景',
+    thumbnail_path: 'https://picsum.photos/seed/aero2/1200/900',
+    tags: ['海洋', '自然', '全景'],
+    width: 1200,
+    height: 900,
+  },
+  {
+    id: 'photo_003',
+    title: '山地梯田',
+    thumbnail_path: 'https://picsum.photos/seed/aero3/1200/750',
+    tags: ['山脉', '农业', '自然'],
+    width: 1200,
+    height: 750,
+  },
+  {
+    id: 'photo_004',
+    title: '都市夜景',
+    thumbnail_path: 'https://picsum.photos/seed/aero4/1200/700',
+    tags: ['城市', '夜景', '灯光'],
+    width: 1200,
+    height: 700,
+  },
+  {
+    id: 'photo_005',
+    title: '河流蜿蜒',
+    thumbnail_path: 'https://picsum.photos/seed/aero5/1200/850',
+    tags: ['河流', '自然', '地貌'],
+    width: 1200,
+    height: 850,
+  },
+  {
+    id: 'photo_006',
+    title: '森林覆盖',
+    thumbnail_path: 'https://picsum.photos/seed/aero6/400/320',
+    tags: ['森林', '绿色', '生态'],
+    width: 400,
+    height: 320,
+  },
+  {
+    id: 'photo_007',
+    title: '港口码头',
+    thumbnail_path: 'https://picsum.photos/seed/aero7/400/380',
+    tags: ['港口', '船只', '工业'],
+    width: 400,
+    height: 380,
+  },
+  {
+    id: 'photo_008',
+    title: '农田纹理',
+    thumbnail_path: 'https://picsum.photos/seed/aero8/400/420',
+    tags: ['农业', '纹理', '几何'],
+    width: 400,
+    height: 420,
+  },
+  {
+    id: 'photo_009',
+    title: '桥梁连接',
+    thumbnail_path: 'https://picsum.photos/seed/aero9/400/300',
+    tags: ['桥梁', '基础设施', '城市'],
+    width: 400,
+    height: 300,
+  },
+  {
+    id: 'photo_010',
+    title: '沙漠纹理',
+    thumbnail_path: 'https://picsum.photos/seed/aero10/400/360',
+    tags: ['沙漠', '自然', '纹理'],
+    width: 400,
+    height: 360,
+  },
+  {
+    id: 'photo_011',
+    title: '雪山之巅',
+    thumbnail_path: 'https://picsum.photos/seed/aero11/400/480',
+    tags: ['雪山', '高山', '自然'],
+    width: 400,
+    height: 480,
+  },
+  {
+    id: 'photo_012',
+    title: '城市建筑群',
+    thumbnail_path: 'https://picsum.photos/seed/aero12/400/340',
+    tags: ['建筑', '城市', '现代'],
+    width: 400,
+    height: 340,
+  },
+];
