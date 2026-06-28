@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
           ref: dev
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: 合并 Dev 到 Main
