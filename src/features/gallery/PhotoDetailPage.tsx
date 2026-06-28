@@ -1,6 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoDetail } from './mockData';
 import type { PhotoDetail } from './types';
+import { Header } from '../../shared/Header';
+import { Footer } from '../../shared/Footer';
 
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,27 +37,8 @@ export function PhotoDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200 py-2">
-        <nav className="mx-auto max-w-7xl px-4 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-          >
-            <img src="/favicon.svg" alt="TLRphotos Logo" className="h-24 w-24 object-contain" />
-            <span className="text-lg font-medium text-gray-800">航空摄影工作室</span>
-          </button>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/')}
-              className="text-gray-600 hover:text-gray-800 transition-colors"
-            >
-              作品集
-            </button>
-            <span className="text-gray-600">关于我们</span>
-          </div>
-        </nav>
-      </header>
+    <div className="min-h-screen bg-gray-100">
+      <Header />
 
       <main className="py-8 px-4">
         <div className="max-w-6xl mx-auto">
@@ -70,22 +53,24 @@ export function PhotoDetailPage() {
           </button>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 bg-white rounded-xl shadow-lg overflow-hidden">
-              <img
-                src={photo.original_url}
-                alt={photo.title}
-                className="w-full h-auto max-h-[80vh] object-contain"
-              />
+            <div className="lg:col-span-2 flex justify-center">
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden max-w-full">
+                <img
+                  src={photo.original_url}
+                  alt={photo.title}
+                  className="w-full h-auto max-w-full"
+                />
+              </div>
             </div>
 
             <div className="space-y-6">
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h1 className="text-2xl font-bold text-gray-800 mb-2">{photo.title}</h1>
-                <p className="text-gray-500 text-sm">{formatDate(photo.created_at)}</p>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">{photo.title}</h1>
+                <p className="text-gray-600 text-sm">{formatDate(photo.created_at)}</p>
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">照片信息</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">照片信息</h2>
                 <div className="space-y-4">
                   <DetailRow label="拍摄工具" value={photo.vehicle} />
                   <DetailRow label="相机型号" value={photo.camera_model} />
@@ -95,7 +80,7 @@ export function PhotoDetailPage() {
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">拍摄参数</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">拍摄参数</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <DetailRow label="焦距" value={photo.focal_length} />
                   <DetailRow label="ISO" value={photo.iso.toString()} />
@@ -105,31 +90,31 @@ export function PhotoDetailPage() {
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">数据统计</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">数据统计</h2>
                 <div className="flex gap-6">
                   <div className="text-center">
-                    <div className="text-xl font-bold text-gray-800">{photo.likes}</div>
-                    <div className="text-sm text-gray-500">喜欢</div>
+                    <div className="text-xl font-bold text-gray-900">{photo.likes}</div>
+                    <div className="text-sm text-gray-600">喜欢</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-xl font-bold text-gray-800">{photo.views.toLocaleString()}</div>
-                    <div className="text-sm text-gray-500">浏览</div>
+                    <div className="text-xl font-bold text-gray-900">{photo.views.toLocaleString()}</div>
+                    <div className="text-sm text-gray-600">浏览</div>
                   </div>
                 </div>
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">描述</h2>
-                <p className="text-gray-600 leading-relaxed">{photo.description}</p>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">描述</h2>
+                <p className="text-gray-700 leading-relaxed">{photo.description}</p>
               </div>
 
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">标签</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">标签</h2>
                 <div className="flex flex-wrap gap-2">
                   {photo.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-sm font-medium"
+                      className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium"
                     >
                       #{tag}
                     </span>
@@ -141,9 +126,7 @@ export function PhotoDetailPage() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 bg-white py-6 text-center text-sm text-gray-500 mt-12">
-        <p>© 2026 TLRphotos 航空摄影工作室 | 本地开发 · 极简架构</p>
-      </footer>
+      <Footer />
     </div>
   );
 }
@@ -152,7 +135,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-gray-500 text-sm">{label}</span>
-      <span className="text-gray-800 font-medium text-sm">{value}</span>
+      <span className="text-gray-900 font-medium text-sm">{value}</span>
     </div>
   );
 }
