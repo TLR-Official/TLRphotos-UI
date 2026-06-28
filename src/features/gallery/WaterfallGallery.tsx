@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { PhotoListItem } from './types';
 import { mockPhotos } from './mockData';
 
@@ -60,14 +60,39 @@ function PhotoCard({ photo }: PhotoCardProps) {
 
 // 瀑布流布局组件
 export function WaterfallGallery() {
-  // 将照片分配到多列（响应式：大屏幕 4 列）
   const columnCount = 4;
-  const columns: PhotoListItem[][] = Array.from({ length: columnCount }, () => []);
-  
-  // 按顺序分配照片到各列
-  mockPhotos.forEach((photo, index) => {
-    columns[index % columnCount].push(photo);
-  });
+  const gap = 16;
+  const maxWidth = 1600;
+  const padding = 32;
+
+  const estimatedColumnWidth = useMemo(() => {
+    if (typeof window === 'undefined') return 380;
+    const availableWidth = Math.min(window.innerWidth, maxWidth) - padding - gap * (columnCount - 1);
+    return availableWidth / columnCount;
+  }, [columnCount]);
+
+  const columns = useMemo(() => {
+    const newColumns: PhotoListItem[][] = Array.from({ length: columnCount }, () => []);
+    const columnHeights = Array.from({ length: columnCount }, () => 0);
+
+    const getPhotoDisplayHeight = (photo: PhotoListItem): number => {
+      if (!photo.width || !photo.height) {
+        return estimatedColumnWidth * 0.75;
+      }
+      const aspectRatio = photo.height / photo.width;
+      return estimatedColumnWidth * aspectRatio;
+    };
+
+    mockPhotos.forEach((photo) => {
+      const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights));
+      const photoHeight = getPhotoDisplayHeight(photo);
+      
+      newColumns[shortestColumnIndex].push(photo);
+      columnHeights[shortestColumnIndex] += photoHeight + gap;
+    });
+
+    return newColumns;
+  }, [columnCount, estimatedColumnWidth]);
 
   return (
     <div className="w-full px-4 py-8">
