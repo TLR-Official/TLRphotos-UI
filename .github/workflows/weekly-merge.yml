@@ -1,0 +1,29 @@
+name: 每周一自动合并 Dev 到 Main
+
+on:
+  schedule:
+    # 每周一凌晨 3 点（北京时间）执行
+    # UTC 时间周一凌晨 = 北京时间周一上午
+    - cron: '0 19 * * 0'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 合并 Dev 到 Main
+        uses: dev/actions/merge-branch@v1
+        with:
+          source_branch: dev
+          target_branch: main
+          commit_message: "merge: 每周例行合并 dev 到 main ($(date +'%Y-%m-%d'))"
