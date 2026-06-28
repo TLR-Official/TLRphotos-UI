@@ -161,6 +161,12 @@ TLRphotos/
 
 ---
 
+## Changelog
+
+| 2026-06-28 16:30 | [refactor] 瀑布流智能分配算法优化 | src/features/gallery/WaterfallGallery.tsx |
+
+---
+
 ## 9. 下一步计划
 
 1. **PocketBase 后端搭建**：在服务器部署 PocketBase，创建 `photos` 数据表

@@ -60,10 +60,30 @@ function PhotoCard({ photo }: PhotoCardProps) {
 
 // 瀑布流布局组件
 export function WaterfallGallery() {
-  const columnCount = 4;
   const gap = 16;
   const maxWidth = 1600;
   const padding = 32;
+
+  const getColumnCount = (width: number): number => {
+    if (width < 640) return 1;
+    if (width < 1024) return 2;
+    if (width < 1280) return 3;
+    return 4;
+  };
+
+  const [columnCount, setColumnCount] = useState(() => {
+    if (typeof window === 'undefined') return 4;
+    return getColumnCount(window.innerWidth);
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setColumnCount(getColumnCount(window.innerWidth));
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const estimatedColumnWidth = useMemo(() => {
     if (typeof window === 'undefined') return 380;
