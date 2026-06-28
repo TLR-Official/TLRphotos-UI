@@ -1,32 +1,51 @@
-# React + TypeScript + Vite
+# TLRphotos - 航空摄影工作室
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+航空摄影作品展示与管理的极简网站。
 
-Currently, two official plugins are available:
+## 技术栈
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **前端**：React + TypeScript + Vite + TailwindCSS
+- **后端**：PocketBase（规划中）
+- **存储**：混合模式 - 本地缩略图 + Cloudflare R2 原图
 
-## React Compiler
+## 项目结构
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+TLRphotos/
+├── .ai/                    # 项目上下文文档
+│   └── context.md
+├── src/
+│   ├── features/           # 业务功能模块
+│   │   └── gallery/        # 画廊相关组件
+│   ├── shared/             # 共享组件与工具
+│   ├── App.tsx             # 应用入口
+│   └── main.tsx            # React 挂载点
+├── public/                 # 静态资源
+│   └── favicon.svg         # 网站图标
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+
+# 构建生产版本
+npm run build
+```
+
+## 规范
+
+- 所有 UI 开发在本地完成
+- 服务器仅运行 PocketBase 和存储数据
+- 列表页 API 必须按需查询指定字段
+
+## License
+
+MIT
