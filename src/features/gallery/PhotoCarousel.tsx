@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
 import { mockPhotos } from './mockData';
 
 interface CarouselSlideProps {
   photo: PhotoListItem;
   isActive: boolean;
+  onClick: () => void;
 }
 
-// 单张轮播卡片
-function CarouselSlide({ photo, isActive }: CarouselSlideProps) {
+function CarouselSlide({ photo, isActive, onClick }: CarouselSlideProps) {
   return (
     <div
-      className={`absolute inset-0 transition-all duration-500 ease-in-out ${
+      onClick={onClick}
+      className={`absolute inset-0 transition-all duration-500 ease-in-out cursor-pointer ${
         isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
       }`}
     >
@@ -21,7 +23,6 @@ function CarouselSlide({ photo, isActive }: CarouselSlideProps) {
           alt={photo.title}
           className="h-full w-full object-cover"
         />
-        {/* 底部信息 */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-6">
           <h2 className="text-2xl font-bold text-white mb-2">{photo.title}</h2>
           <div className="flex gap-2">
@@ -40,29 +41,26 @@ function CarouselSlide({ photo, isActive }: CarouselSlideProps) {
   );
 }
 
-// 轮播组件
 export function PhotoCarousel() {
+  const navigate = useNavigate();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
-  // 显示 5 张精选照片
   const carouselPhotos = mockPhotos.slice(0, 5);
 
-  // 自动翻动
   useEffect(() => {
     if (!isAutoPlaying) return;
 
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % carouselPhotos.length);
-    }, 4000); // 每 4 秒切换
+    }, 4000);
 
     return () => clearInterval(timer);
   }, [isAutoPlaying, carouselPhotos.length]);
 
-  // 手动切换
   const goToPrev = useCallback(() => {
     setCurrentIndex((prev) => (prev - 1 + carouselPhotos.length) % carouselPhotos.length);
-    setIsAutoPlaying(false); // 手动操作后暂停自动播放
+    setIsAutoPlaying(false);
   }, [carouselPhotos.length]);
 
   const goToNext = useCallback(() => {
@@ -75,22 +73,27 @@ export function PhotoCarousel() {
     setIsAutoPlaying(false);
   }, []);
 
+  const handleSlideClick = useCallback((photo: PhotoListItem) => {
+    navigate(`/photos/${photo.id}`);
+  }, [navigate]);
+
   return (
     <div className="relative w-full px-4 py-8">
-      {/* 轮播容器 */}
       <div className="relative mx-auto max-w-[1200px] h-[400px] md:h-[500px]">
-        {/* 所有卡片堆叠 */}
         {carouselPhotos.map((photo, index) => (
           <CarouselSlide
             key={photo.id}
             photo={photo}
             isActive={index === currentIndex}
+            onClick={() => handleSlideClick(photo)}
           />
         ))}
 
-        {/* 左箭头 */}
         <button
-          onClick={goToPrev}
+          onClick={(e) => {
+            e.stopPropagation();
+            goToPrev();
+          }}
           className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white text-gray-800 rounded-full p-3 shadow-lg transition-all hover:scale-110"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,9 +101,11 @@ export function PhotoCarousel() {
           </svg>
         </button>
 
-        {/* 右箭头 */}
         <button
-          onClick={goToNext}
+          onClick={(e) => {
+            e.stopPropagation();
+            goToNext();
+          }}
           className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-white/80 hover:bg-white text-gray-800 rounded-full p-3 shadow-lg transition-all hover:scale-110"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,7 +114,6 @@ export function PhotoCarousel() {
         </button>
       </div>
 
-      {/* 底部指示器 */}
       <div className="flex justify-center gap-3 mt-6">
         {carouselPhotos.map((_, index) => (
           <button
@@ -124,7 +128,6 @@ export function PhotoCarousel() {
         ))}
       </div>
 
-      {/* 自动播放状态提示 */}
       <div className="flex justify-center mt-4">
         <button
           onClick={() => setIsAutoPlaying(!isAutoPlaying)}
