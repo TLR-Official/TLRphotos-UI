@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
 import { mockPhotos } from './mockData';
 
@@ -6,36 +7,40 @@ interface PhotoCardProps {
   photo: PhotoListItem;
 }
 
-// 单张照片卡片组件
+// 单张照片卡片组件 - 液态玻璃风格
 function PhotoCard({ photo }: PhotoCardProps) {
+  const navigate = useNavigate();
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
   return (
-    <div className="group relative overflow-hidden rounded-lg bg-gray-100 shadow-md transition-transform duration-300 hover:scale-[1.02] hover:shadow-xl">
+    <div
+      onClick={() => navigate(`/photos/${photo.id}`)}
+      className="group relative overflow-hidden rounded-xl glass glass-hover cursor-pointer"
+    >
       {/* 加载占位符 */}
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 animate-pulse bg-gray-200" />
+        <div className="absolute inset-0 animate-pulse bg-white/5 rounded-xl" />
       )}
-      
+
       {/* 错误占位符 */}
       {hasError && (
-        <div className="flex h-full min-h-[200px] items-center justify-center bg-gray-100 text-gray-400">
+        <div className="flex h-full min-h-[200px] items-center justify-center text-slate-500">
           图片加载失败
         </div>
       )}
-      
+
       {/* 图片 */}
       <img
         src={photo.thumbnail_path}
         alt={photo.title}
-        className={`h-auto w-full object-cover transition-opacity duration-300 ${
+        className={`h-auto w-full object-cover transition-all duration-500 ${
           isLoaded ? 'opacity-100' : 'opacity-0'
-        }`}
+        } group-hover:scale-105`}
         onLoad={() => setIsLoaded(true)}
         onError={() => setHasError(true)}
       />
-      
+
       {/* 悬停信息层 */}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <div className="p-4">
@@ -46,7 +51,7 @@ function PhotoCard({ photo }: PhotoCardProps) {
             {photo.tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-white/20 px-2 py-0.5 text-xs text-white/90"
+                className="glass-sm rounded-full px-2 py-0.5 text-xs text-white/90"
               >
                 {tag}
               </span>
@@ -106,7 +111,7 @@ export function WaterfallGallery() {
     mockPhotos.forEach((photo) => {
       const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights));
       const photoHeight = getPhotoDisplayHeight(photo);
-      
+
       newColumns[shortestColumnIndex].push(photo);
       columnHeights[shortestColumnIndex] += photoHeight + gap;
     });
@@ -117,10 +122,10 @@ export function WaterfallGallery() {
   return (
     <div className="w-full px-4 py-8">
       {/* 标题 */}
-      <h1 className="mb-8 text-center text-3xl font-bold text-gray-800">
+      <h1 className="mb-8 text-center text-3xl font-bold text-white">
         航空摄影作品
       </h1>
-      
+
       {/* 瀑布流网格 */}
       <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {columns.map((column, colIndex) => (

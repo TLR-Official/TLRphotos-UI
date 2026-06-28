@@ -163,6 +163,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-06-28 17:25 | [feat] 新增鼠标跟随动态背景 + 液态玻璃效果，全站改造为深色主题 | src/shared/MouseFollowBackground.tsx, src/index.css, src/App.tsx, src/shared/Header.tsx, src/shared/Footer.tsx, src/features/gallery/* |
 | 2026-06-28 16:30 | [refactor] 瀑布流智能分配算法优化 | src/features/gallery/WaterfallGallery.tsx |
 
 ---
