@@ -119,7 +119,10 @@ export function PhotoCarousel() {
         {carouselPhotos.map((_, index) => (
           <button
             key={index}
-            onClick={() => goToSlide(index)}
+            onClick={(e) => {
+              e.stopPropagation();
+              goToSlide(index);
+            }}
             className={`transition-all duration-300 ${
               index === currentIndex
                 ? 'w-8 h-3 bg-white/70 rounded-full'

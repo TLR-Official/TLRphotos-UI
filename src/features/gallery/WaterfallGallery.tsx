@@ -15,7 +15,10 @@ function PhotoCard({ photo }: PhotoCardProps) {
 
   return (
     <div
-      onClick={() => navigate(`/photos/${photo.id}`)}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigate(`/photos/${photo.id}`);
+      }}
       className="group relative overflow-hidden rounded-xl glass glass-hover cursor-pointer"
     >
       {/* 加载占位符 */}
