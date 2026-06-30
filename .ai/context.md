@@ -152,6 +152,12 @@ TLRphotos/
 | 2026-06-28 | 首页轮播组件 + 照片网格列表 Mock 版本 | ✅ 完成 |
 | 2026-06-28 | 配置 Favicon 和网站图标 | ✅ 完成 |
 | 2026-06-28 | GitHub 仓库初始化并完成首次推送 | ✅ 完成 |
+| 2026-06-28 | GitHub Actions 自动化：dev 分支每周一自动合并到 main | ✅ 完成 |
+| 2026-06-30 | 主题切换功能：深色/浅色模式 + 平滑动画过渡 | ✅ 完成 |
+| 2026-06-30 | 动态背景线条效果：48 条流动线条 + 鼠标干扰效果 | ✅ 完成 |
+| 2026-06-30 | 照片详情页：点击跳转 + 完整 EXIF 信息展示 | ✅ 完成 |
+| 2026-06-30 | 轮播图优化：固定白色标题文字，适应深浅主题 | ✅ 完成 |
+| 2026-06-30 | TypeScript 类型修复：ThemeContext 和 MouseFollowBackground | ✅ 完成 |
 
 ### Git 仓库信息
 
@@ -163,6 +169,9 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-06-30 21:00 | [fix] 修复 TypeScript 类型错误：ThemeContext ReactNode 导入、MouseFollowBackground 数组类型注解 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx |
+| 2026-06-30 20:30 | [feat] 主题切换功能：深色/浅色模式 + 平滑动画、48 条动态线条背景、轮播图固定白色文字 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoCarousel.tsx |
+| 2026-06-30 19:00 | [feat] 照片详情页：点击跳转、完整 EXIF 信息展示、标签系统 | src/features/gallery/PhotoDetailPage.tsx, src/features/gallery/types.ts, src/features/gallery/mockData.ts |
 | 2026-06-28 17:25 | [feat] 新增鼠标跟随动态背景 + 液态玻璃效果，全站改造为深色主题 | src/shared/MouseFollowBackground.tsx, src/index.css, src/App.tsx, src/shared/Header.tsx, src/shared/Footer.tsx, src/features/gallery/* |
 | 2026-06-28 16:30 | [refactor] 瀑布流智能分配算法优化 | src/features/gallery/WaterfallGallery.tsx |
 
@@ -177,6 +186,6 @@ TLRphotos/
 
 ---
 
-*文档版本：v0.2*
+*文档版本：v0.3*
 *创建日期：2026-06-28*
-*最后更新：2026-06-28*
+*最后更新：2026-06-30*
