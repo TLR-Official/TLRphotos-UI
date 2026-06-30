@@ -45,7 +45,22 @@ export function MouseFollowBackground() {
     const baseColor = isDark ? 'rgba(168, 85, 247, ' : 'rgba(79, 70, 229, ';
     const mouseRippleColor = isDark ? 'rgba(255, 255, 255, ' : 'rgba(0, 0, 0, ';
 
-    const lines = [];
+    const lines: Array<{
+      baseX: number;
+      baseY: number;
+      speedX: number;
+      speedY: number;
+      radiusX: number;
+      radiusY: number;
+      phaseX: number;
+      phaseY: number;
+      length: number;
+      width: number;
+      opacity: number;
+      hueOffset: number;
+      currentX: number;
+      currentY: number;
+    }> = [];
     const lineCount = 48;
 
     for (let i = 0; i < lineCount; i++) {
