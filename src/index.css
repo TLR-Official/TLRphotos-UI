@@ -171,3 +171,50 @@ code {
 .page-dark .text-sub {
   color: #94a3b8;
 }
+
+/* ========================================
+   黑白主题切换动画
+   ======================================== */
+
+/* 主题过渡基础类 */
+.theme-bg-transition {
+  transition: background 0.5s ease-in-out, opacity 0.5s ease-in-out;
+}
+
+.theme-text-transition {
+  transition: color 0.4s ease-in-out;
+}
+
+.theme-header-transition {
+  transition: background 0.4s ease-in-out, border-color 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
+}
+
+.theme-button-transition {
+  transition: background 0.3s ease-in-out;
+}
+
+/* 白色主题下的玻璃效果 */
+.glass-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* 白色主题下的页面样式 */
+.page-light {
+  color: #334155;
+}
+
+.page-light h1,
+.page-light h2,
+.page-light .text-title {
+  color: #1e293b;
+}
+
+.page-light .text-sub {
+  color: #64748b;
+}

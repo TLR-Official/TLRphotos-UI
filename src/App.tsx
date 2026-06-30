@@ -5,10 +5,15 @@ import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
+import { ThemeProvider, useTheme } from './shared/ThemeContext';
 
 function HomePage() {
+  const { theme } = useTheme();
+
   return (
-    <div className="relative min-h-screen page-dark">
+    <div className={`relative min-h-screen theme-bg-transition ${
+      theme === 'dark' ? 'page-dark' : 'page-light'
+    }`}>
       {/* 动态背景层 */}
       <MouseFollowBackground />
 
@@ -34,12 +39,14 @@ function HomePage() {
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/photos/:id" element={<PhotoDetailPage />} />
-      </Routes>
-    </Router>
+    <ThemeProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/photos/:id" element={<PhotoDetailPage />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 
