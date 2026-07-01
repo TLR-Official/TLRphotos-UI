@@ -171,6 +171,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-01 20:00 | [fix] 修复文章渲染问题：Vite配置允许访问articles目录、修正文章路径为绝对路径 | vite.config.ts, src/features/column/mockData.ts |
 | 2026-07-01 19:30 | [feat] 专栏详情页点赞评论功能：点赞状态切换、评论输入与展示、时间格式化 | src/features/column/ArticleDetailPage.tsx |
 | 2026-07-01 19:00 | [feat] 专栏功能：列表组件、详情页、Markdown/LaTeX 渲染、测试文章 | src/features/column/*, articles/test-markdown-latex.md |
 | 2026-07-01 18:50 | [refactor] 首页布局重构：轮播图左中位置 + 右侧专栏 + 底部疏松图片 | src/App.tsx |
