@@ -10,12 +10,40 @@ import { Footer } from '../../shared/Footer';
 import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
 
+interface Comment {
+  id: string;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
+const mockComments: Comment[] = [
+  {
+    id: 'comment_001',
+    author: '摄影爱好者',
+    content: '这篇文章太棒了！Markdown 和 LaTeX 的渲染效果都非常完美。',
+    created_at: '2024-07-01T12:30:00Z',
+  },
+  {
+    id: 'comment_002',
+    author: '技术达人',
+    content: '公式渲染特别清晰，尤其是数学公式部分，强烈推荐！',
+    created_at: '2024-07-01T14:45:00Z',
+  },
+];
+
 export function ArticleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { theme } = useTheme();
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const article = getArticleById(id || '');
 
   useEffect(() => {
@@ -31,7 +59,41 @@ export function ArticleDetailPage() {
         setContent('# 文章加载失败\n\n无法加载文章内容，请稍后重试。');
         setIsLoading(false);
       });
+
+    setLikeCount(article.like_count);
+    setCommentCount(article.comment_count);
+    setComments(mockComments);
   }, [article]);
+
+  const handleLike = () => {
+    if (isLiked) {
+      setLikeCount((prev) => prev - 1);
+      setIsLiked(false);
+    } else {
+      setLikeCount((prev) => prev + 1);
+      setIsLiked(true);
+    }
+  };
+
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const comment: Comment = {
+      id: `comment_${Date.now()}`,
+      author: '访客',
+      content: newComment.trim(),
+      created_at: new Date().toISOString(),
+    };
+
+    setComments((prev) => [comment, ...prev]);
+    setCommentCount((prev) => prev + 1);
+    setNewComment('');
+    setIsSubmitting(false);
+  };
 
   if (!article) {
     return (
@@ -62,6 +124,21 @@ export function ArticleDetailPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const formatCommentDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 30) return `${diffDays}天前`;
+    return formatDate(dateString);
   };
 
   const isDark = theme === 'dark';
@@ -135,16 +212,19 @@ export function ArticleDetailPage() {
                   }`}>阅读</span>
                 </div>
 
-                <div className="flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform">
-                  <svg className={`w-5 h-5 ${
-                    isDark ? 'text-slate-400' : 'text-gray-500'
-                  }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div
+                  onClick={handleLike}
+                  className={`flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform ${
+                    isLiked ? 'text-red-500' : ''
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                   </svg>
                   <span className={`text-lg font-bold ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}>
-                    {article.like_count}
+                    {likeCount}
                   </span>
                   <span className={`text-sm ${
                     isDark ? 'text-slate-400' : 'text-gray-500'
@@ -160,7 +240,7 @@ export function ArticleDetailPage() {
                   <span className={`text-lg font-bold ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}>
-                    {article.comment_count}
+                    {commentCount}
                   </span>
                   <span className={`text-sm ${
                     isDark ? 'text-slate-400' : 'text-gray-500'
@@ -359,35 +439,17 @@ export function ArticleDetailPage() {
               isDark ? 'text-slate-300' : 'text-gray-600'
             }`}>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
+                onClick={handleLike}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all hover:scale-105 ${
                   isDark
-                    ? 'bg-white/10 hover:bg-white/20'
-                    : 'bg-gray-100 hover:bg-gray-200'
+                    ? `${isLiked ? 'bg-red-500/20 text-red-400' : 'bg-white/10 hover:bg-white/20'}`
+                    : `${isLiked ? 'bg-red-50 text-red-600' : 'bg-gray-100 hover:bg-gray-200'}`
                 }`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                 </svg>
-                点赞
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all hover:scale-105 ${
-                  isDark
-                    ? 'bg-white/10 hover:bg-white/20'
-                    : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-                评论
+                {isLiked ? '已点赞' : '点赞'}
               </button>
 
               <button
@@ -405,6 +467,98 @@ export function ArticleDetailPage() {
                 </svg>
                 分享
               </button>
+            </div>
+
+            <div className={`mt-8 rounded-2xl shadow-lg p-6 theme-bg-transition ${
+              isDark ? 'glass' : 'bg-white'
+            }`}>
+              <h3 className={`text-lg font-semibold mb-4 ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}>
+                评论 ({commentCount})
+              </h3>
+
+              <form onSubmit={handleSubmitComment} className="mb-6">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="写下你的评论..."
+                    className={`flex-1 px-4 py-3 rounded-xl border outline-none transition-all ${
+                      isDark
+                        ? 'bg-white/5 border-white/10 text-white placeholder-slate-500 focus:border-blue-500/50'
+                        : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newComment.trim()}
+                    className={`px-6 py-3 rounded-xl font-medium transition-all ${
+                      isSubmitting || !newComment.trim()
+                        ? isDark
+                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : isDark
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {isSubmitting ? '发送中...' : '发送'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="space-y-4">
+                {comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className={`p-4 rounded-xl ${
+                      isDark ? 'bg-white/5' : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        isDark ? 'bg-blue-500/30' : 'bg-blue-100'
+                      }`}>
+                        <svg className={`w-4 h-4 ${
+                          isDark ? 'text-blue-400' : 'text-blue-600'
+                        }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <span className={`font-medium text-sm ${
+                          isDark ? 'text-white' : 'text-gray-900'
+                        }`}>
+                          {comment.author}
+                        </span>
+                        <span className={`text-xs ml-2 ${
+                          isDark ? 'text-slate-500' : 'text-gray-400'
+                        }`}>
+                          {formatCommentDate(comment.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className={`text-sm ${
+                      isDark ? 'text-slate-300' : 'text-gray-700'
+                    }`}>
+                      {comment.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {comments.length === 0 && (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-slate-500' : 'text-gray-400'
+                }`}>
+                  <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  <p>暂无评论，快来发表第一条评论吧！</p>
+                </div>
+              )}
             </div>
           </div>
         </main>
