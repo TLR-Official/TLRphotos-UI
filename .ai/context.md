@@ -158,6 +158,8 @@ TLRphotos/
 | 2026-06-30 | 照片详情页：点击跳转 + 完整 EXIF 信息展示 | ✅ 完成 |
 | 2026-06-30 | 轮播图优化：固定白色标题文字，适应深浅主题 | ✅ 完成 |
 | 2026-06-30 | TypeScript 类型修复：ThemeContext 和 MouseFollowBackground | ✅ 完成 |
+| 2026-07-01 | 首页布局重构：轮播图左中位置 + 右侧专栏 + 底部疏松图片 | ✅ 完成 |
+| 2026-07-01 | 专栏功能：列表组件 + 详情页 + Markdown/LaTeX 渲染 | ✅ 完成 |
 
 ### Git 仓库信息
 
@@ -169,6 +171,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-01 19:00 | [feat] 专栏功能：列表组件、详情页、Markdown/LaTeX 渲染、测试文章 | src/features/column/*, articles/test-markdown-latex.md |
+| 2026-07-01 18:50 | [refactor] 首页布局重构：轮播图左中位置 + 右侧专栏 + 底部疏松图片 | src/App.tsx |
 | 2026-06-30 21:00 | [fix] 修复 TypeScript 类型错误：ThemeContext ReactNode 导入、MouseFollowBackground 数组类型注解 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx |
 | 2026-06-30 20:30 | [feat] 主题切换功能：深色/浅色模式 + 平滑动画、48 条动态线条背景、轮播图固定白色文字 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoCarousel.tsx |
 | 2026-06-30 19:00 | [feat] 照片详情页：点击跳转、完整 EXIF 信息展示、标签系统 | src/features/gallery/PhotoDetailPage.tsx, src/features/gallery/types.ts, src/features/gallery/mockData.ts |
@@ -186,6 +190,6 @@ TLRphotos/
 
 ---
 
-*文档版本：v0.3*
+*文档版本：v0.4*
 *创建日期：2026-06-28*
 *最后更新：2026-06-30*
