@@ -1,15 +1,39 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { getPhotoDetail } from './mockData';
+import { getPhotoById } from '../../api/photos';
 import { Header } from '../../shared/Header';
 import { Footer } from '../../shared/Footer';
 import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
+import { useState, useEffect } from 'react';
+import type { PhotoDetail } from './types';
 
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const photo = getPhotoDetail(id || '');
+  const [photo, setPhoto] = useState<PhotoDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    getPhotoById(id || '').then((result) => {
+      if (result.success && result.data) {
+        setPhoto(result.data);
+      }
+      setIsLoading(false);
+    });
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center theme-bg-transition ${
+        theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'
+      }`}>
+        <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${
+          theme === 'dark' ? 'border-white/30 border-t-white' : 'border-gray-300 border-t-blue-600'
+        }`} />
+      </div>
+    );
+  }
 
   if (!photo) {
     return (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
-import { mockPhotos } from './mockData';
+import { getPhotos } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
 
 interface CarouselSlideProps {
@@ -49,9 +49,19 @@ export function PhotoCarousel() {
   const { theme } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
 
   const isDark = theme === 'dark';
-  const carouselPhotos = mockPhotos.slice(0, 5);
+
+  useEffect(() => {
+    getPhotos().then((result) => {
+      if (result.success && result.data) {
+        setPhotos(result.data);
+      }
+    });
+  }, []);
+
+  const carouselPhotos = photos.slice(0, 5);
 
   useEffect(() => {
     if (!isAutoPlaying) return;
