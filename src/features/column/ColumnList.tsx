@@ -1,12 +1,28 @@
 import { useNavigate } from 'react-router-dom';
-import { mockArticles, mockColumn } from './mockData';
+import { getArticles, getColumn } from '../../api/articles';
 import { useTheme } from '../../shared/ThemeContext';
+import { useState, useEffect } from 'react';
+import type { Article, Column } from './types';
 
 export function ColumnList() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const articles = mockArticles.slice(0, 5);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [column, setColumn] = useState<Column | null>(null);
+
+  useEffect(() => {
+    getArticles().then((result) => {
+      if (result.success && result.data) {
+        setArticles(result.data.slice(0, 5));
+      }
+    });
+    getColumn().then((result) => {
+      if (result.success && result.data) {
+        setColumn(result.data);
+      }
+    });
+  }, []);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -27,10 +43,10 @@ export function ColumnList() {
       <div className="p-4 border-b border-white/10">
         <h3 className={`text-lg font-semibold mb-1 ${
           isDark ? 'text-white' : 'text-gray-900'
-        }`}>{mockColumn.name}</h3>
+        }`}>{column?.name || '专栏'}</h3>
         <p className={`text-sm ${
           isDark ? 'text-slate-400' : 'text-gray-500'
-        }`}>{mockColumn.description}</p>
+        }`}>{column?.description || ''}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto">

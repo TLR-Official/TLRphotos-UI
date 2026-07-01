@@ -4,33 +4,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { getArticleById } from './mockData';
+import { getArticleById, getArticleContent, getComments, createComment, likeArticle, unlikeArticle } from '../../api/articles';
 import { Header } from '../../shared/Header';
 import { Footer } from '../../shared/Footer';
 import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
-
-interface Comment {
-  id: string;
-  author: string;
-  content: string;
-  created_at: string;
-}
-
-const mockComments: Comment[] = [
-  {
-    id: 'comment_001',
-    author: '摄影爱好者',
-    content: '这篇文章太棒了！Markdown 和 LaTeX 的渲染效果都非常完美。',
-    created_at: '2024-07-01T12:30:00Z',
-  },
-  {
-    id: 'comment_002',
-    author: '技术达人',
-    content: '公式渲染特别清晰，尤其是数学公式部分，强烈推荐！',
-    created_at: '2024-07-01T14:45:00Z',
-  },
-];
+import type { Article, Comment } from '../../api/articles';
 
 export function ArticleDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -44,54 +23,69 @@ export function ArticleDetailPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const article = getArticleById(id || '');
+  const [article, setArticle] = useState<Article | null>(null);
 
   useEffect(() => {
+    getArticleById(id || '').then((result) => {
+      if (result.success && result.data) {
+        setArticle(result.data);
+        setLikeCount(result.data.like_count);
+        setCommentCount(result.data.comment_count);
+
+        getArticleContent(result.data.content_path).then((contentResult) => {
+          if (contentResult.success && contentResult.data) {
+            setContent(contentResult.data);
+          } else {
+            setContent('# 文章加载失败\n\n无法加载文章内容，请稍后重试。');
+          }
+          setIsLoading(false);
+        });
+
+        getComments(result.data.id).then((commentsResult) => {
+          if (commentsResult.success && commentsResult.data) {
+            setComments(commentsResult.data);
+          }
+        });
+      } else {
+        setIsLoading(false);
+      }
+    });
+  }, [id]);
+
+  const handleLike = async () => {
     if (!article) return;
-    fetch(article.content_path)
-      .then((response) => response.text())
-      .then((text) => {
-        setContent(text);
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        console.error('Failed to load article content:', error);
-        setContent('# 文章加载失败\n\n无法加载文章内容，请稍后重试。');
-        setIsLoading(false);
-      });
-
-    setLikeCount(article.like_count);
-    setCommentCount(article.comment_count);
-    setComments(mockComments);
-  }, [article]);
-
-  const handleLike = () => {
     if (isLiked) {
-      setLikeCount((prev) => prev - 1);
+      const result = await unlikeArticle(article.id);
+      if (result.success && result.data) {
+        setLikeCount(result.data.like_count);
+      } else {
+        setLikeCount((prev) => prev - 1);
+      }
       setIsLiked(false);
     } else {
-      setLikeCount((prev) => prev + 1);
+      const result = await likeArticle(article.id);
+      if (result.success && result.data) {
+        setLikeCount(result.data.like_count);
+      } else {
+        setLikeCount((prev) => prev + 1);
+      }
       setIsLiked(true);
     }
   };
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || isSubmitting) return;
+    if (!newComment.trim() || isSubmitting || !article) return;
 
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const comment: Comment = {
-      id: `comment_${Date.now()}`,
-      author: '访客',
-      content: newComment.trim(),
-      created_at: new Date().toISOString(),
-    };
-
-    setComments((prev) => [comment, ...prev]);
-    setCommentCount((prev) => prev + 1);
-    setNewComment('');
+    const result = await createComment(article.id, newComment.trim());
+    
+    if (result.success && result.data) {
+      const newCommentData = result.data;
+      setComments((prev) => [newCommentData, ...prev]);
+      setCommentCount((prev) => prev + 1);
+      setNewComment('');
+    }
     setIsSubmitting(false);
   };
 
@@ -249,7 +243,7 @@ export function ArticleDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {article.tags.map((tag) => (
+                {article.tags.map((tag: string) => (
                   <span
                     key={tag}
                     className={`px-3 py-1 rounded-full text-sm font-medium ${

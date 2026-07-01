@@ -7,15 +7,26 @@ import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
-import { mockPhotos } from './features/gallery/mockData';
+import { getPhotos } from './api/photos';
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import type { PhotoListItem } from './features/gallery/types';
 
 function HomePage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const isDark = theme === 'dark';
+  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
 
-  const bottomPhotos = mockPhotos.slice(5, 9);
+  useEffect(() => {
+    getPhotos().then((result) => {
+      if (result.success && result.data) {
+        setPhotos(result.data);
+      }
+    });
+  }, []);
+
+  const bottomPhotos = photos.slice(5, 9);
 
   const handlePhotoClick = (photoId: string) => {
     navigate(`/photos/${photoId}`);
@@ -49,7 +60,7 @@ function HomePage() {
                 isDark ? 'text-white' : 'text-gray-900'
               }`}>精选作品</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                {bottomPhotos.map((photo) => (
+                {bottomPhotos.map((photo: PhotoListItem) => (
                   <div
                     key={photo.id}
                     onClick={() => handlePhotoClick(photo.id)}
@@ -71,7 +82,7 @@ function HomePage() {
                         {photo.title}
                       </h3>
                       <div className="flex flex-wrap gap-1">
-                        {photo.tags.slice(0, 2).map((tag) => (
+                        {photo.tags.slice(0, 2).map((tag: string) => (
                           <span
                             key={tag}
                             className={`px-2 py-0.5 rounded-full text-xs ${
