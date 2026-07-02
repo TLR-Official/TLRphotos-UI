@@ -171,6 +171,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-02 01:00 | [refactor] 项目审查修复：XSS防护、URL白名单、PhotosContext、工具函数提取、ApiResponse复用、AbortController、ErrorBoundary、删除WaterfallGallery | src/**/* |
 | 2026-07-02 00:10 | [fix] 清理无用代码：删除未使用的getPhotoDetail函数，修复Footer类型定义，更新项目名称 | mockData.ts, Footer.tsx, package.json |
 | 2026-07-02 00:00 | [config] 忽略SSH密钥文件(id_ed25519.pub等)防止上传 [push-deferred] | .gitignore |
 | 2026-07-01 21:00 | [feat] API服务层：照片接口、文章接口、评论接口、点赞接口，所有组件接入API | src/api/*, src/App.tsx, src/features/gallery/*, src/features/column/* |

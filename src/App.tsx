@@ -7,25 +7,15 @@ import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
-import { getPhotos } from './api/photos';
+import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import type { PhotoListItem } from './features/gallery/types';
 
 function HomePage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const { photos } = usePhotos();
   const isDark = theme === 'dark';
-  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
-
-  useEffect(() => {
-    getPhotos().then((result) => {
-      if (result.success && result.data) {
-        setPhotos(result.data);
-      }
-    });
-  }, []);
-
   const bottomPhotos = photos.slice(5, 9);
 
   const handlePhotoClick = (photoId: string) => {
@@ -112,13 +102,15 @@ function HomePage() {
 function App() {
   return (
     <ThemeProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/photos/:id" element={<PhotoDetailPage />} />
-          <Route path="/articles/:id" element={<ArticleDetailPage />} />
-        </Routes>
-      </Router>
+      <PhotosProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/photos/:id" element={<PhotoDetailPage />} />
+            <Route path="/articles/:id" element={<ArticleDetailPage />} />
+          </Routes>
+        </Router>
+      </PhotosProvider>
     </ThemeProvider>
   );
 }

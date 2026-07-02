@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeSanitize from 'rehype-sanitize';
 import 'katex/dist/katex.min.css';
 import { getArticleById, getArticleContent, getComments, createComment, likeArticle, unlikeArticle } from '../../api/articles';
 import { Header } from '../../shared/Header';
@@ -10,6 +11,7 @@ import { Footer } from '../../shared/Footer';
 import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
 import type { Article, Comment } from '../../api/articles';
+import { formatDate, formatRelativeDate } from '../../shared/utils';
 
 export function ArticleDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,13 +28,15 @@ export function ArticleDetailPage() {
   const [article, setArticle] = useState<Article | null>(null);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     getArticleById(id || '').then((result) => {
       if (result.success && result.data) {
         setArticle(result.data);
         setLikeCount(result.data.like_count);
         setCommentCount(result.data.comment_count);
 
-        getArticleContent(result.data.content_path).then((contentResult) => {
+        getArticleContent(result.data.content_path, abortController.signal).then((contentResult) => {
           if (contentResult.success && contentResult.data) {
             setContent(contentResult.data);
           } else {
@@ -50,6 +54,10 @@ export function ArticleDetailPage() {
         setIsLoading(false);
       }
     });
+
+    return () => {
+      abortController.abort();
+    };
   }, [id]);
 
   const handleLike = async () => {
@@ -108,32 +116,6 @@ export function ArticleDetailPage() {
       </div>
     );
   }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatCommentDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) return '刚刚';
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 30) return `${diffDays}天前`;
-    return formatDate(dateString);
-  };
 
   const isDark = theme === 'dark';
 
@@ -273,7 +255,7 @@ export function ArticleDetailPage() {
                 }`}>
                   <ReactMarkdown
                     remarkPlugins={[remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
+                    rehypePlugins={[rehypeKatex, rehypeSanitize]}
                     components={{
                       h1: ({ children }) => (
                         <h1 className={`text-2xl md:text-3xl font-bold mt-8 mb-4 ${
@@ -530,7 +512,7 @@ export function ArticleDetailPage() {
                         <span className={`text-xs ml-2 ${
                           isDark ? 'text-slate-500' : 'text-gray-400'
                         }`}>
-                          {formatCommentDate(comment.created_at)}
+                          {formatRelativeDate(comment.created_at)}
                         </span>
                       </div>
                     </div>

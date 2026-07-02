@@ -3,6 +3,7 @@ import { getArticles, getColumn } from '../../api/articles';
 import { useTheme } from '../../shared/ThemeContext';
 import { useState, useEffect } from 'react';
 import type { Article, Column } from './types';
+import { formatShortDate } from '../../shared/utils';
 
 export function ColumnList() {
   const navigate = useNavigate();
@@ -23,14 +24,6 @@ export function ColumnList() {
       }
     });
   }, []);
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
 
   const handleArticleClick = (articleId: string) => {
     navigate(`/articles/${articleId}`);
@@ -93,7 +86,7 @@ export function ColumnList() {
                   <span className={`${
                     isDark ? 'text-slate-500' : 'text-gray-400'
                   }`}>
-                    {formatDate(article.published_at)}
+                    {formatShortDate(article.published_at)}
                   </span>
                   <span className={`flex items-center gap-1 ${
                     isDark ? 'text-slate-500' : 'text-gray-400'
