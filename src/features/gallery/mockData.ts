@@ -354,6 +354,4 @@ export const mockPhotoDetails: Record<string, PhotoDetail> = {
   },
 };
 
-export function getPhotoDetail(id: string): PhotoDetail | undefined {
-  return mockPhotoDetails[id];
-}
+
