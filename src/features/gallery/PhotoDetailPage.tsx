@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 
+
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
