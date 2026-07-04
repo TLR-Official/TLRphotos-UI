@@ -33,7 +33,15 @@ async function request<T = unknown>(
       };
     }
 
-    return response.json();
+    try {
+      return await response.json();
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      return {
+        success: false,
+        message: '响应数据格式错误',
+      };
+    }
   } catch (error) {
     console.error('API request error:', error);
     if (error instanceof Error && error.name === 'AbortError') {

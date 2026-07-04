@@ -1,57 +1,17 @@
 import { useNavigate } from 'react-router-dom';
-import { getArticles, getColumn } from '../../api/articles';
 import { useTheme } from '../../shared/ThemeContext';
 import { useState, useEffect } from 'react';
 import type { Article, Column } from './types';
 import { formatShortDate } from '../../shared/utils';
+import { mockArticles, mockColumn } from './mockData';
 
 export function ColumnList() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [column, setColumn] = useState<Column | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const [articlesResult, columnResult] = await Promise.all([
-          getArticles(),
-          getColumn(),
-        ]);
-        
-        if (isMounted) {
-          if (articlesResult.success && articlesResult.data) {
-            setArticles(articlesResult.data.slice(0, 5));
-          } else {
-            console.warn('Failed to load articles, using mock data');
-          }
-          
-          if (columnResult.success && columnResult.data) {
-            setColumn(columnResult.data);
-          } else {
-            console.warn('Failed to load column, using default');
-          }
-        }
-      } catch (error) {
-        console.error('ColumnList load error:', error);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadData();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const [articles, setArticles] = useState<Article[]>(mockArticles.slice(0, 5));
+  const [column, setColumn] = useState<Column | null>(mockColumn);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleArticleClick = (articleId: string) => {
     navigate(`/articles/${articleId}`);

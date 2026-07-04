@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { getPhotos } from '../api/photos';
 import type { PhotoListItem } from '../features/gallery/types';
+import { mockPhotos } from '../features/gallery/mockData';
 
 interface PhotosContextType {
   photos: PhotoListItem[];
@@ -13,31 +13,19 @@ interface PhotosContextType {
 const PhotosContext = createContext<PhotosContextType | undefined>(undefined);
 
 export function PhotosProvider({ children }: { children: ReactNode }) {
-  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [photos, setPhotos] = useState<PhotoListItem[]>(mockPhotos);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPhotos = useCallback(async () => {
+  const loadPhotos = useCallback(() => {
     setIsLoading(true);
     setError(null);
-    try {
-      const result = await getPhotos();
-      if (result.success && result.data) {
-        setPhotos(result.data);
-      } else {
-        console.warn('API request failed, falling back to mock data');
-      }
-    } catch (err) {
-      console.error('Load photos error:', err);
-      setError('加载照片数据失败');
-    } finally {
+    
+    setTimeout(() => {
+      setPhotos(mockPhotos);
       setIsLoading(false);
-    }
+    }, 300);
   }, []);
-
-  useEffect(() => {
-    loadPhotos();
-  }, [loadPhotos]);
 
   return (
     <PhotosContext.Provider value={{ photos, isLoading, error, refreshPhotos: loadPhotos }}>
