@@ -2,10 +2,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoById } from '../../api/photos';
 import { Header } from '../../shared/Header';
 import { Footer } from '../../shared/Footer';
-import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
+import { TimeBasedBackground } from '../../shared/TimeBasedBackground';
 import { useTheme } from '../../shared/ThemeContext';
 import { useState, useEffect } from 'react';
 import type { PhotoDetail } from './types';
+import { formatDate } from '../../shared/utils';
+
 
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,12 +17,18 @@ export function PhotoDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     getPhotoById(id || '').then((result) => {
       if (result.success && result.data) {
         setPhoto(result.data);
       }
       setIsLoading(false);
     });
+
+    return () => {
+      abortController.abort();
+    };
   }, [id]);
 
   if (isLoading) {
@@ -55,23 +63,11 @@ export function PhotoDetailPage() {
     );
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   return (
     <div className={`relative min-h-screen theme-bg-transition ${
       theme === 'dark' ? 'page-dark' : 'page-light'
     }`}>
-      {/* 动态背景层 */}
-      <MouseFollowBackground />
+      <TimeBasedBackground />
 
       {/* 内容层 */}
       <div className="relative z-10">

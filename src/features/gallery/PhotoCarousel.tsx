@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
-import { getPhotos } from '../../api/photos';
+import { usePhotos } from '../../shared/PhotosContext';
 import { useTheme } from '../../shared/ThemeContext';
 
 interface CarouselSlideProps {
@@ -47,20 +47,11 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
 export function PhotoCarousel() {
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const { photos, isLoading } = usePhotos();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
 
   const isDark = theme === 'dark';
-
-  useEffect(() => {
-    getPhotos().then((result) => {
-      if (result.success && result.data) {
-        setPhotos(result.data);
-      }
-    });
-  }, []);
-
   const carouselPhotos = photos.slice(0, 5);
 
   useEffect(() => {
@@ -91,6 +82,18 @@ export function PhotoCarousel() {
   const handleSlideClick = useCallback((photo: PhotoListItem) => {
     navigate(`/photos/${photo.id}`);
   }, [navigate]);
+
+  if (isLoading || carouselPhotos.length === 0) {
+    return (
+      <div className="relative w-full px-4 py-8">
+        <div className="relative mx-auto max-w-[1200px] h-[400px] md:h-[500px] flex items-center justify-center">
+          <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${
+            isDark ? 'border-white/30 border-t-white' : 'border-gray-300 border-t-blue-600'
+          }`} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full px-4 py-8">

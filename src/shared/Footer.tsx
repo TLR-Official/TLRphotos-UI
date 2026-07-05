@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import { useTheme } from './ThemeContext';
 
-export function Footer() {
+export function Footer(): ReactNode {
   const { theme } = useTheme();
 
   return (
