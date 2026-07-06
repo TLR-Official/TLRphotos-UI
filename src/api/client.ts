@@ -1,5 +1,6 @@
 const API_BASE_URL = '/api';
-const TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT = 3000;
+const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA === 'true' || !import.meta.env.PROD;
 
 interface ApiResponse<T = unknown> {
   success: boolean;
@@ -11,9 +12,18 @@ async function request<T = unknown>(
   url: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
+  if (USE_MOCK_DATA) {
+    return {
+      success: false,
+      message: '使用 Mock 数据',
+    };
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT);
 
     const response = await fetch(`${API_BASE_URL}${url}`, {
       ...options,
@@ -33,22 +43,12 @@ async function request<T = unknown>(
       };
     }
 
-    try {
-      return await response.json();
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError);
-      return {
-        success: false,
-        message: '响应数据格式错误',
-      };
-    }
+    return response.json();
   } catch (error) {
-    console.error('API request error:', error);
     if (error instanceof Error && error.name === 'AbortError') {
-      return {
-        success: false,
-        message: '请求超时，请稍后重试',
-      };
+      console.warn('API request timeout:', url);
+    } else {
+      console.error('API request error:', error);
     }
     return {
       success: false,

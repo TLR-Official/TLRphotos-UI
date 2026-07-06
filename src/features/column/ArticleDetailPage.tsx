@@ -8,7 +8,7 @@ import 'katex/dist/katex.min.css';
 import { getArticleById, getArticleContent, getComments, createComment, likeArticle, unlikeArticle } from '../../api/articles';
 import { Header } from '../../shared/Header';
 import { Footer } from '../../shared/Footer';
-import { TimeBasedBackground } from '../../shared/TimeBasedBackground';
+import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
 import type { Article, Comment } from '../../api/articles';
 import { formatDate, formatRelativeDate } from '../../shared/utils';
@@ -123,7 +123,7 @@ export function ArticleDetailPage() {
     <div className={`relative min-h-screen theme-bg-transition ${
       theme === 'dark' ? 'page-dark' : 'page-light'
     }`}>
-      <TimeBasedBackground />
+      <MouseFollowBackground />
 
       <div className="relative z-10">
         <Header />

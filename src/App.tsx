@@ -5,7 +5,7 @@ import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
-import { TimeBasedBackground } from './shared/TimeBasedBackground';
+import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +26,7 @@ function HomePage() {
     <div className={`relative min-h-screen theme-bg-transition ${
       theme === 'dark' ? 'page-dark' : 'page-light'
     }`}>
-      <TimeBasedBackground />
+      <MouseFollowBackground />
 
       <div className="relative z-10">
         <Header />
