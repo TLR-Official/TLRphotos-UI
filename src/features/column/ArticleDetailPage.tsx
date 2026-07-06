@@ -28,15 +28,13 @@ export function ArticleDetailPage() {
   const [article, setArticle] = useState<Article | null>(null);
 
   useEffect(() => {
-    const abortController = new AbortController();
-
     getArticleById(id || '').then((result) => {
       if (result.success && result.data) {
         setArticle(result.data);
         setLikeCount(result.data.like_count);
         setCommentCount(result.data.comment_count);
 
-        getArticleContent(result.data.content_path, abortController.signal).then((contentResult) => {
+        getArticleContent(result.data.id).then((contentResult) => {
           if (contentResult.success && contentResult.data) {
             setContent(contentResult.data);
           } else {
@@ -54,10 +52,6 @@ export function ArticleDetailPage() {
         setIsLoading(false);
       }
     });
-
-    return () => {
-      abortController.abort();
-    };
   }, [id]);
 
   const handleLike = async () => {

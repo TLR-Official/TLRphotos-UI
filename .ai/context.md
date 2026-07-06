@@ -24,19 +24,22 @@
 - **样式**：TailwindCSS
 - **构建工具**：Vite
 - **开发环境**：本地开发，本地调试，构建产物上传至服务器静态目录
+- **数据请求层**：纯代码实现，与后端 `api.md` 契约严格对齐，无 NocoBase/PocketBase 耦合
 
 ### 2.2 后端
 
-- **框架**：PocketBase（Go 语言编写，单二进制文件）
-- **数据库**：SQLite（单文件数据库）
-- **部署环境**：服务器端运行
-- **访问方式**：通过 RESTful API 提供服务
+- **框架**：Node.js + Express
+- **数据库**：SQLite（通过 sqlite3 + sqlite 包）
+- **代码位置**：`backend/` 目录，所有表结构、路由、权限均写在代码中
+- **开发环境**：本地运行 `npm run dev`，端口 3001
+- **访问方式**：通过 RESTful API 提供服务，前端通过 Vite Proxy 联调
 
 ### 2.3 存储
 
 - **混合存储模式**：
-  - 高清缩略图：以 WebP Blob 形式存储在服务器本地数据盘 `/mnt/data/pb_data`
-  - 原图：存储在 Cloudflare R2 对象存储
+  - 缩略图：以 URL 形式存储（开发环境使用 picsum.photos）
+  - 原图：存储在 Cloudflare R2 对象存储（生产环境）
+  - 数据库文件：`backend/data/database.db`
 
 ***
 
@@ -187,7 +190,8 @@ TLRphotos/
 
 ## Changelog
 
-\| 2026-07-02 01:10 | \[fix] 修复PhotosContext和PhotoDetailPage类型错误：修正setPhotos参数、移除无用getPhotoById、修正日期格式化函数引用 | PhotosContext.tsx, PhotoDetailPage.tsx |
+| 2026-07-07 21:30 | [feat] 纯代码全栈架构迁移完成：Express后端、SQLite数据库、API路由、前端数据层重写、本地联调通过 | backend/*, src/api/*, src/shared/PhotosContext.tsx |
+| 2026-07-02 01:10 | [fix] 修复PhotosContext和PhotoDetailPage类型错误：修正setPhotos参数、移除无用getPhotoById、修正日期格式化函数引用 | PhotosContext.tsx, PhotoDetailPage.tsx |
 \| 2026-07-02 01:00 | \[refactor] 项目审查修复：XSS防护、URL白名单、PhotosContext、工具函数提取、ApiResponse复用、AbortController、ErrorBoundary、删除WaterfallGallery | src/\*\*/\* |
 \| 2026-07-02 00:10 | \[fix] 清理无用代码：删除未使用的getPhotoDetail函数，修复Footer类型定义，更新项目名称 | mockData.ts, Footer.tsx, package.json |
 \| 2026-07-02 00:00 | \[config] 忽略SSH密钥文件(id\_ed25519.pub等)防止上传 \[push-deferred] | .gitignore |

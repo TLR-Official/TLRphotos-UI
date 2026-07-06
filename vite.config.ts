@@ -8,5 +8,15 @@ export default defineConfig({
     fs: {
       allow: ['.'],
     },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/articles': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 })
