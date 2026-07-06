@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoById } from '../../api/photos';
 import { Header } from '../../shared/Header';
 import { Footer } from '../../shared/Footer';
-import { TimeBasedBackground } from '../../shared/TimeBasedBackground';
+import { MouseFollowBackground } from '../../shared/MouseFollowBackground';
 import { useTheme } from '../../shared/ThemeContext';
 import { useState, useEffect } from 'react';
 import type { PhotoDetail } from './types';
@@ -67,7 +67,8 @@ export function PhotoDetailPage() {
     <div className={`relative min-h-screen theme-bg-transition ${
       theme === 'dark' ? 'page-dark' : 'page-light'
     }`}>
-      <TimeBasedBackground />
+      {/* 动态背景层 */}
+      <MouseFollowBackground />
 
       {/* 内容层 */}
       <div className="relative z-10">
