@@ -190,7 +190,7 @@ TLRphotos/
 
 ## Changelog
 
-| 2026-07-07 19:30 | [feat] 用户认证系统：users表、bcrypt密码哈希、JWT令牌、登录/注册页面（流畅动画切换）、微信/QQ登录预留、Header登录按钮 | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/shared/UserContext.tsx, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/Header.tsx, src/App.tsx |
+| 2026-07-07 19:30 | [feat] 用户认证系统：users表、bcrypt密码哈希、JWT令牌、登录/注册页面（流畅动画切换）、微信/QQ登录预留、Header登录按钮 [push-deferred] | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/shared/UserContext.tsx, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/Header.tsx, src/App.tsx |
 | 2026-07-07 21:30 | [feat] 纯代码全栈架构迁移完成：Express后端、SQLite数据库、API路由、前端数据层重写、本地联调通过 | backend/*, src/api/*, src/shared/PhotosContext.tsx |
 | 2026-07-02 01:10 | [fix] 修复PhotosContext和PhotoDetailPage类型错误：修正setPhotos参数、移除无用getPhotoById、修正日期格式化函数引用 | PhotosContext.tsx, PhotoDetailPage.tsx |
 \| 2026-07-02 01:00 | \[refactor] 项目审查修复：XSS防护、URL白名单、PhotosContext、工具函数提取、ApiResponse复用、AbortController、ErrorBoundary、删除WaterfallGallery | src/\*\*/\* |

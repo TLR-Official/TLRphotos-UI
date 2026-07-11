@@ -2,6 +2,34 @@ import { request } from './client';
 import type { ApiResponse } from './client';
 import type { PhotoListItem, PhotoDetail } from '../features/gallery/types';
 
+export interface PhotoUploadMeta {
+  title?: string;
+  tags?: string[] | string;
+  description?: string;
+  camera_model?: string;
+  vehicle?: string;
+  location?: string;
+  altitude?: number;
+  focal_length?: string;
+  iso?: number;
+  shutter_speed?: string;
+  aperture?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface PresignedUrlResponse {
+  uploadUrl: string;
+  key: string;
+}
+
+export interface UploadCompleteResponse {
+  photoId: string;
+  key: string;
+  url: string;
+  thumbnailUrl: string;
+}
+
 export async function getPhotos(): Promise<ApiResponse<PhotoListItem[]>> {
   return request<PhotoListItem[]>('/photos');
 }
@@ -27,5 +55,24 @@ export async function unlikePhoto(id: string): Promise<ApiResponse<{ likes: numb
 export async function incrementView(id: string): Promise<ApiResponse<{ views: number }>> {
   return request<{ views: number }>(`/photos/${id}/view`, {
     method: 'POST',
+  });
+}
+
+export async function getPresignedUrl(
+  fileName: string
+): Promise<ApiResponse<PresignedUrlResponse>> {
+  return request<PresignedUrlResponse>('/photos/upload/presigned', {
+    method: 'POST',
+    body: JSON.stringify({ fileName }),
+  });
+}
+
+export async function completeUpload(
+  key: string,
+  meta?: PhotoUploadMeta
+): Promise<ApiResponse<UploadCompleteResponse>> {
+  return request<UploadCompleteResponse>('/photos/upload/complete', {
+    method: 'POST',
+    body: JSON.stringify({ key, ...meta }),
   });
 }

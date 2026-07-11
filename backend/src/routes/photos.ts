@@ -1,5 +1,6 @@
 import express from 'express';
 import { db } from '../db';
+import { generatePresignedUploadUrl, completeUpload } from '../services/ossService';
 
 const router = express.Router();
 
@@ -105,6 +106,99 @@ router.post('/:id/view', async (req, res) => {
   } catch (error) {
     console.error('Error incrementing view:', error);
     res.status(500).json({ success: false, message: '更新浏览量失败' });
+  }
+});
+
+router.post('/upload/presigned', async (req, res) => {
+  try {
+    const { fileName } = req.body;
+
+    if (!fileName) {
+      return res.status(400).json({ success: false, message: '文件名不能为空' });
+    }
+
+    const presignedUrl = await generatePresignedUploadUrl(fileName);
+
+    res.json({
+      success: true,
+      data: {
+        uploadUrl: presignedUrl.url,
+        key: presignedUrl.key,
+      },
+    });
+  } catch (error) {
+    console.error('Error generating presigned URL:', error);
+    res.status(500).json({ success: false, message: '生成上传地址失败' });
+  }
+});
+
+router.post('/upload/complete', async (req, res) => {
+  try {
+    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height } = req.body;
+
+    if (!key) {
+      return res.status(400).json({ success: false, message: '文件Key不能为空' });
+    }
+
+    const uploadResult = await completeUpload(key);
+
+    const newPhoto = {
+      id: `photo_${Date.now()}`,
+      title: title || '未命名照片',
+      thumbnail_path: uploadResult.thumbnailUrl,
+      original_url: uploadResult.url,
+      tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(',').map((t: string) => t.trim())) : '[]',
+      width: width || 0,
+      height: height || 0,
+      description: description || '',
+      camera_model: camera_model || '',
+      vehicle: vehicle || '',
+      location: location || '',
+      altitude: altitude || 0,
+      focal_length: focal_length || '',
+      iso: iso || 0,
+      shutter_speed: shutter_speed || '',
+      aperture: aperture || '',
+      likes: 0,
+      views: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    await db.run(
+      'INSERT INTO photos (id, title, thumbnail_path, original_url, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      newPhoto.id,
+      newPhoto.title,
+      newPhoto.thumbnail_path,
+      newPhoto.original_url,
+      newPhoto.tags,
+      newPhoto.width,
+      newPhoto.height,
+      newPhoto.description,
+      newPhoto.camera_model,
+      newPhoto.vehicle,
+      newPhoto.location,
+      newPhoto.altitude,
+      newPhoto.focal_length,
+      newPhoto.iso,
+      newPhoto.shutter_speed,
+      newPhoto.aperture,
+      newPhoto.likes,
+      newPhoto.views,
+      newPhoto.created_at
+    );
+
+    res.json({
+      success: true,
+      data: {
+        photoId: newPhoto.id,
+        key: uploadResult.key,
+        url: uploadResult.url,
+        thumbnailUrl: uploadResult.thumbnailUrl,
+      },
+    });
+  } catch (error) {
+    console.error('Error completing upload:', error);
+    res.status(500).json({ success: false, message: '上传完成处理失败' });
   }
 });
 

@@ -22,7 +22,7 @@ export function Header() {
           <img src="/favicon.svg" alt="TLRphotos Logo" className="h-24 w-24 object-contain" />
           <span className={`text-lg font-medium theme-text-transition ${
             theme === 'dark' ? 'text-white' : 'text-slate-800'
-          }`}>航空摄影工作室</span>
+          }`}>交通摄影工作室</span>
         </button>
         <div className="flex items-center gap-4">
           <button
