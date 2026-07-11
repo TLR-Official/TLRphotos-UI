@@ -1,10 +1,14 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import dotenv from 'dotenv';
 import photosRouter from './routes/photos';
 import articlesRouter from './routes/articles';
 import columnRouter from './routes/column';
+import authRouter from './routes/auth';
 import { initDb } from './db';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -13,6 +17,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use('/api/auth', authRouter);
 app.use('/api/photos', photosRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);

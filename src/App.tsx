@@ -3,11 +3,13 @@ import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
+import { AuthPage } from './features/auth/AuthPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
+import { UserProvider } from './shared/UserContext';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './features/gallery/types';
 
@@ -102,15 +104,18 @@ function HomePage() {
 function App() {
   return (
     <ThemeProvider>
-      <PhotosProvider>
-        <Router>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/photos/:id" element={<PhotoDetailPage />} />
-            <Route path="/articles/:id" element={<ArticleDetailPage />} />
-          </Routes>
-        </Router>
-      </PhotosProvider>
+      <UserProvider>
+        <PhotosProvider>
+          <Router>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/photos/:id" element={<PhotoDetailPage />} />
+              <Route path="/articles/:id" element={<ArticleDetailPage />} />
+              <Route path="/auth" element={<AuthPage />} />
+            </Routes>
+          </Router>
+        </PhotosProvider>
+      </UserProvider>
     </ThemeProvider>
   );
 }

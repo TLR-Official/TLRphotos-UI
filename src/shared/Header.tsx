@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeContext';
+import { useUser } from './UserContext';
 
 export function Header() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, logout } = useUser();
 
   return (
     <header className={`sticky top-0 z-50 py-2 theme-header-transition ${
@@ -37,8 +39,38 @@ export function Header() {
             作品集
           </button>
           <span className={`theme-text-transition ${
-            theme === 'dark' ? 'text-slate-300' : 'text-slate-600'
-          }`}>关于我们</span>
+              theme === 'dark' ? 'text-slate-300' : 'text-slate-600'
+            }`}>关于我们</span>
+
+          {isAuthenticated ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                logout();
+              }}
+              className={`theme-text-transition px-4 py-2 rounded-full ${
+                theme === 'dark'
+                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                  : 'bg-red-100 text-red-600 hover:bg-red-200'
+              } transition-all duration-300`}
+            >
+              退出登录
+            </button>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate('/auth');
+              }}
+              className={`theme-text-transition px-4 py-2 rounded-full ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
+                  : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
+              } transition-all duration-300 shadow-lg`}
+            >
+              登录
+            </button>
+          )}
 
           {/* 黑白风格切换按钮 */}
           <button
