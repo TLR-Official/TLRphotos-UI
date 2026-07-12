@@ -50,6 +50,9 @@ coverage/
 *.temp
 .cache/
 
+# Backend database
+backend/data/
+
 # Trae AI history
 .history/
 

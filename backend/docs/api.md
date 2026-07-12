@@ -133,6 +133,65 @@
 }
 ```
 
+### 获取预签名上传地址
+
+**POST** `/api/photos/upload/presigned`
+
+**请求体**:
+```json
+{
+  "fileName": "photo.jpg"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "uploadUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/1234567890_abc123.jpg?X-Amz-Signature=...",
+    "key": "photos/1234567890_abc123.jpg"
+  }
+}
+```
+
+### 完成上传并保存照片
+
+**POST** `/api/photos/upload/complete`
+
+**请求体**:
+```json
+{
+  "key": "photos/1234567890_abc123.jpg",
+  "title": "城市天际线",
+  "tags": ["城市", "航拍"],
+  "description": "傍晚时分的城市天际线",
+  "camera_model": "Sony A7R IV",
+  "vehicle": "DJI Mavic 3 Pro",
+  "location": "上海市浦东新区",
+  "altitude": 120,
+  "focal_length": "24mm",
+  "iso": 100,
+  "shutter_speed": "1/500s",
+  "aperture": "f/8",
+  "width": 1200,
+  "height": 800
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "photoId": "photo_1234567890123",
+    "key": "photos/1234567890_abc123.jpg",
+    "url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/1234567890_abc123.jpg",
+    "thumbnailUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/thumbnails/1234567890_abc123_thumb.webp"
+  }
+}
+```
+
 ---
 
 ## 文章接口 (Articles)
@@ -300,6 +359,98 @@
     "content": "评论内容",
     "created_at": "2024-07-01T10:00:00Z"
   }
+}
+```
+
+---
+
+## 认证接口 (Auth)
+
+### 用户注册
+
+**POST** `/api/auth/register`
+
+**请求体**:
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "username": "用户名"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "email": "user@example.com",
+    "username": "用户名"
+  }
+}
+```
+
+### 用户登录
+
+**POST** `/api/auth/login`
+
+**请求体**:
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_1234567890123",
+      "email": "user@example.com",
+      "username": "用户名",
+      "avatar_url": null
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+### 获取当前用户信息
+
+**GET** `/api/auth/me`
+
+**请求头**:
+```
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "email": "user@example.com",
+    "username": "用户名",
+    "avatar_url": null,
+    "created_at": "2024-07-01T10:00:00Z"
+  }
+}
+```
+
+### 退出登录
+
+**POST** `/api/auth/logout`
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "退出成功"
 }
 ```
 

@@ -8,6 +8,19 @@ export let db: Database;
 
 const initSchema = async () => {
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      username TEXT,
+      avatar_url TEXT,
+      wechat_openid TEXT,
+      qq_openid TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS photos (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
