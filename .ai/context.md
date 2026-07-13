@@ -190,6 +190,9 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-13 23:58 | [config] 配置GitHub同步安全策略，.gitignore保护本地数据，创建sync.sh同步脚本 | .gitignore, sync.sh |
+| 2026-07-13 23:55 | [config] 安装SSL证书，配置HTTPS和HTTP重定向，支持Cloudflare DNS挑战获取证书 | nginx.conf |
+| 2026-07-13 23:40 | [config] 配置前端和后端监听所有网卡地址，允许外部设备通过IP访问，修复API地址硬编码问题，添加nginx生产部署配置，创建systemd服务保证后端持久运行 | vite.config.ts, backend/src/server.ts, src/api/client.ts, nginx.conf, backend/tlrphotos-backend.service |
 | 2026-07-13 15:30 | [feat] 用户个人页面：头像上传预览、资料编辑表单、自定义字段、密码修改（二次确认）、隐私设置切换、Header下拉菜单、ProfilePage组件 | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/api/auth.ts, src/shared/UserContext.tsx, src/shared/Header.tsx, src/features/profile/ProfilePage.tsx, src/App.tsx |
 | 2026-07-13 00:00 | [fix] 删除背景动画（保留静态渐变）、修复双重顶部栏（PhotoDetailPage/ArticleDetailPage移除重复Header/Footer）、登录页面浅色主题适配、粘性页脚实现 | src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/column/ArticleDetailPage.tsx, src/features/auth/AuthPage.tsx, src/App.tsx |
 | 2026-07-07 19:30 | [feat] 用户认证系统：users表、bcrypt密码哈希、JWT令牌、登录/注册页面（流畅动画切换）、微信/QQ登录预留、Header登录按钮 [push-deferred] | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/shared/UserContext.tsx, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/Header.tsx, src/App.tsx |

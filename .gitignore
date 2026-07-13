@@ -42,6 +42,24 @@ Thumbs.db
 # Thumbnails cache (缩略图缓存)
 .thumbnails/
 
+# Local uploads (用户上传的图片)
+uploads/
+
+# Nginx SSL certificates (SSL证书，不上传)
+nginx.conf
+/etc/nginx/sites-available/tlrphotos
+/etc/letsencrypt/
+/root/.cloudflare.ini
+
+# Cloudflare credentials
+*.cloudflare.ini
+
+# Systemd service files
+*.service
+
+# Local sync scripts
+sync.sh
+
 # Test coverage
 coverage/
 

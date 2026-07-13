@@ -11,7 +11,7 @@ import { initDb } from './db';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 app.use(cors());
 app.use(express.json());
@@ -32,8 +32,8 @@ app.get('/api/health', (req, res) => {
 const startServer = async () => {
   try {
     await initDb();
-    app.listen(PORT, () => {
-      console.log(`TLRphotos backend server running on http://localhost:${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`TLRphotos backend server running on http://0.0.0.0:${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
