@@ -1,0 +1,17 @@
+[Unit]
+Description=TLRphotos Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=ecs-user
+WorkingDirectory=/opt/tlr-photos-ui/TLRphotos-UI/backend
+Environment="PATH=/home/ecs-user/.local/share/fnm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ecs-user/.local/share/fnm/fnm exec --using 20 -- node dist/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

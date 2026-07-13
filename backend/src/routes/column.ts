@@ -3,9 +3,9 @@ import { db } from '../db';
 
 const router = express.Router();
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const column = db.prepare('SELECT * FROM column_info WHERE id = ?').get('column_001') as {
+    const column = await db.get('SELECT * FROM column_info WHERE id = ?', 'column_001') as {
       id: string;
       name: string;
       description: string;
