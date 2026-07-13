@@ -5,6 +5,7 @@ import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
+import { UploadPage } from './features/upload/UploadPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
@@ -46,6 +47,7 @@ function AppContent() {
               <Route path="/articles/:id" element={<ArticleDetailPage />} />
               <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/upload" element={<UploadPage />} />
             </Routes>
           </main>
           

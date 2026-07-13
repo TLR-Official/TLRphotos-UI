@@ -124,6 +124,20 @@ export function Header() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowDropdown(false);
+                      navigate('/upload');
+                    }}
+                    className={`w-full px-4 py-2 text-left text-sm transition-colors ${
+                      theme === 'dark'
+                        ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    上传图片
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDropdown(false);
                       navigate('/');
                     }}
                     className={`w-full px-4 py-2 text-left text-sm transition-colors ${
