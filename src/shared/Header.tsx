@@ -45,14 +45,16 @@ export function Header() {
             }`}>关于我们</span>
 
           {isAuthenticated ? (
-            <div className="relative">
+            <div
+              className="relative"
+              onMouseEnter={() => setShowDropdown(true)}
+              onMouseLeave={() => setShowDropdown(false)}
+            >
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowDropdown(!showDropdown);
                 }}
-                onMouseEnter={() => setShowDropdown(true)}
-                onMouseLeave={() => setShowDropdown(false)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-300 ${
                   theme === 'dark'
                     ? 'bg-white/10 hover:bg-white/20'
