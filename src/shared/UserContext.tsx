@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { login, register, getCurrentUser } from '../api/auth';
+import { login, register, getCurrentUser, updateUser } from '../api/auth';
 import type { User } from '../api/auth';
 
 interface UserContextType {
@@ -9,6 +9,8 @@ interface UserContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username?: string) => Promise<void>;
   logout: () => void;
+  updateUserInfo: (data: Partial<User>) => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -58,6 +60,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const handleUpdateUserInfo = useCallback(async (data: Partial<User>) => {
+    const result = await updateUser(data);
+    if (result.success && result.data) {
+      setUser(result.data);
+    } else {
+      throw new Error(result.message || '更新用户信息失败');
+    }
+  }, []);
+
+  const handleRefreshUser = useCallback(async () => {
+    const result = await getCurrentUser();
+    if (result.success && result.data) {
+      setUser(result.data);
+    }
+  }, []);
+
   return (
     <UserContext.Provider
       value={{
@@ -67,6 +85,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
         login: handleLogin,
         register: handleRegister,
         logout: handleLogout,
+        updateUserInfo: handleUpdateUserInfo,
+        refreshUser: handleRefreshUser,
       }}
     >
       {children}

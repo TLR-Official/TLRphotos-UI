@@ -81,14 +81,14 @@ export function PhotoDetailPage() {
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 flex justify-center">
-            <div className={`rounded-xl shadow-lg overflow-hidden max-w-full theme-bg-transition ${
+          <div className="lg:col-span-2 flex justify-center items-start">
+            <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'
             }`}>
               <img
                 src={photo.original_url}
                 alt={photo.title}
-                className="w-full h-auto max-w-full"
+                className="block max-w-full h-auto"
               />
             </div>
           </div>

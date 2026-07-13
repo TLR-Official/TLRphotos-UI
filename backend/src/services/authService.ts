@@ -11,6 +11,11 @@ export interface User {
   email: string;
   username: string | null;
   avatar_url: string | null;
+  bio: string | null;
+  phone: string | null;
+  website: string | null;
+  location: string | null;
+  custom_fields: string | null;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -86,6 +91,70 @@ export function verifyToken(token: string): { userId: string } | null {
 }
 
 export async function getUserById(userId: string): Promise<User | null> {
-  const user = await db.get('SELECT id, email, username, avatar_url, is_active, created_at, updated_at FROM users WHERE id = ?', userId);
+  const user = await db.get('SELECT id, email, username, avatar_url, bio, phone, website, location, custom_fields, is_active, created_at, updated_at FROM users WHERE id = ?', userId);
   return user ? (user as User) : null;
+}
+
+export async function updateUser(userId: string, data: Partial<User>): Promise<User> {
+  const { username, avatar_url, bio, phone, website, location, custom_fields } = data;
+  
+  await db.run(
+    'UPDATE users SET username = ?, avatar_url = ?, bio = ?, phone = ?, website = ?, location = ?, custom_fields = ?, updated_at = ? WHERE id = ?',
+    username || null,
+    avatar_url || null,
+    bio || null,
+    phone || null,
+    website || null,
+    location || null,
+    custom_fields || null,
+    new Date().toISOString(),
+    userId
+  );
+
+  const updatedUser = await getUserById(userId);
+  if (!updatedUser) {
+    throw new Error('用户不存在');
+  }
+  return updatedUser;
+}
+
+export async function changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
+  const user = await db.get('SELECT password_hash FROM users WHERE id = ?', userId);
+  
+  if (!user) {
+    throw new Error('用户不存在');
+  }
+
+  const isPasswordValid = await bcrypt.compare(oldPassword, user.password_hash);
+  if (!isPasswordValid) {
+    throw new Error('原密码错误');
+  }
+
+  if (newPassword.length < 6) {
+    throw new Error('新密码长度至少为6位');
+  }
+
+  const newPasswordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  
+  await db.run(
+    'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+    newPasswordHash,
+    new Date().toISOString(),
+    userId
+  );
+}
+
+export async function updateAvatar(userId: string, avatarUrl: string): Promise<User> {
+  await db.run(
+    'UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?',
+    avatarUrl,
+    new Date().toISOString(),
+    userId
+  );
+
+  const updatedUser = await getUserById(userId);
+  if (!updatedUser) {
+    throw new Error('用户不存在');
+  }
+  return updatedUser;
 }

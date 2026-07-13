@@ -23,6 +23,7 @@ app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);
 
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'TLRphotos API is running', timestamp: new Date().toISOString() });
