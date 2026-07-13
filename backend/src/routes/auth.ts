@@ -1,5 +1,22 @@
 import express from 'express';
-import { register, login, verifyToken, getUserById } from '../services/authService';
+import { register, login, verifyToken, getUserById, updateUser, changePassword, updateAvatar } from '../services/authService';
+import multer from 'multer';
+import path from 'path';
+
+const upload = multer({
+  dest: path.join(__dirname, '../../uploads/'),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('只允许上传 JPG、PNG 或 WebP 格式的图片'));
+    }
+  },
+});
 
 const router = express.Router();
 
@@ -82,12 +99,125 @@ router.get('/me', async (req, res) => {
         email: user.email,
         username: user.username,
         avatar_url: user.avatar_url,
+        bio: user.bio,
+        phone: user.phone,
+        website: user.website,
+        location: user.location,
+        custom_fields: user.custom_fields ? JSON.parse(user.custom_fields) : null,
         created_at: user.created_at,
       },
     });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ success: false, message: '获取用户信息失败' });
+  }
+});
+
+router.put('/me', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: '无效的令牌' });
+    }
+
+    const { username, bio, phone, website, location, custom_fields } = req.body;
+
+    const updatedUser = await updateUser(decoded.userId, {
+      username,
+      bio,
+      phone,
+      website,
+      location,
+      custom_fields: custom_fields ? JSON.stringify(custom_fields) : null,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        username: updatedUser.username,
+        avatar_url: updatedUser.avatar_url,
+        bio: updatedUser.bio,
+        phone: updatedUser.phone,
+        website: updatedUser.website,
+        location: updatedUser.location,
+        custom_fields: updatedUser.custom_fields ? JSON.parse(updatedUser.custom_fields) : null,
+      },
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({ success: false, message: error instanceof Error ? error.message : '更新用户信息失败' });
+  }
+});
+
+router.put('/me/password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: '无效的令牌' });
+    }
+
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: '原密码和新密码不能为空' });
+    }
+
+    await changePassword(decoded.userId, oldPassword, newPassword);
+
+    res.json({ success: true, message: '密码修改成功' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(400).json({ success: false, message: error instanceof Error ? error.message : '密码修改失败' });
+  }
+});
+
+router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: '无效的令牌' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: '请上传图片' });
+    }
+
+    const avatarUrl = `/uploads/${req.file.filename}`;
+    const updatedUser = await updateAvatar(decoded.userId, avatarUrl);
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedUser.id,
+        avatar_url: updatedUser.avatar_url,
+      },
+    });
+  } catch (error) {
+    console.error('Upload avatar error:', error);
+    res.status(500).json({ success: false, message: error instanceof Error ? error.message : '头像上传失败' });
   }
 });
 

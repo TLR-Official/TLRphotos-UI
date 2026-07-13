@@ -437,7 +437,107 @@ Authorization: Bearer <token>
     "email": "user@example.com",
     "username": "用户名",
     "avatar_url": null,
+    "bio": "个人简介",
+    "phone": "13800138000",
+    "website": "https://example.com",
+    "location": "北京市",
+    "custom_fields": {},
     "created_at": "2024-07-01T10:00:00Z"
+  }
+}
+```
+
+### 更新用户资料
+
+**PUT** `/api/auth/me`
+
+**请求头**:
+```
+Authorization: Bearer <token>
+```
+
+**请求体**:
+```json
+{
+  "username": "新用户名",
+  "bio": "个人简介",
+  "phone": "13800138000",
+  "website": "https://example.com",
+  "location": "北京市",
+  "custom_fields": {
+    "字段名": {
+      "value": "字段值",
+      "isPrivate": false
+    }
+  }
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "email": "user@example.com",
+    "username": "新用户名",
+    "avatar_url": null,
+    "bio": "个人简介",
+    "phone": "13800138000",
+    "website": "https://example.com",
+    "location": "北京市",
+    "custom_fields": {}
+  }
+}
+```
+
+### 修改密码
+
+**PUT** `/api/auth/me/password`
+
+**请求头**:
+```
+Authorization: Bearer <token>
+```
+
+**请求体**:
+```json
+{
+  "oldPassword": "旧密码",
+  "newPassword": "新密码"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "密码修改成功"
+}
+```
+
+### 上传头像
+
+**POST** `/api/auth/me/avatar`
+
+**请求头**:
+```
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**请求体**:
+```
+avatar: <file> (JPG/PNG/WebP, 最大5MB)
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "avatar_url": "/uploads/abc123def456.jpg"
   }
 }
 ```

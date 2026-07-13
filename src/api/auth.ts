@@ -1,8 +1,18 @@
+export interface CustomField {
+  value: string;
+  isPrivate: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
   username: string | null;
   avatar_url: string | null;
+  bio: string | null;
+  phone: string | null;
+  website: string | null;
+  location: string | null;
+  custom_fields: Record<string, CustomField> | null;
   created_at?: string;
 }
 
@@ -63,6 +73,79 @@ export async function getCurrentUser(): Promise<GetCurrentUserResponse> {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+  });
+  return response.json();
+}
+
+export interface UpdateUserResponse {
+  success: boolean;
+  message?: string;
+  data?: User;
+}
+
+export async function updateUser(data: Partial<User>): Promise<UpdateUserResponse> {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return { success: false, message: '未登录' };
+  }
+
+  const response = await fetch('/api/auth/me', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+export interface ChangePasswordResponse {
+  success: boolean;
+  message?: string;
+}
+
+export async function changePassword(oldPassword: string, newPassword: string): Promise<ChangePasswordResponse> {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return { success: false, message: '未登录' };
+  }
+
+  const response = await fetch('/api/auth/me/password', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  return response.json();
+}
+
+export interface UploadAvatarResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    id: string;
+    avatar_url: string;
+  };
+}
+
+export async function uploadAvatar(file: File): Promise<UploadAvatarResponse> {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return { success: false, message: '未登录' };
+  }
+
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  const response = await fetch('/api/auth/me/avatar', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
   });
   return response.json();
 }
