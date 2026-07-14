@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
+import { GalleryPage } from './features/gallery/GalleryPage';
 import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
@@ -48,6 +49,7 @@ function AppContent() {
               <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/upload" element={<UploadPage />} />
+              <Route path="/gallery" element={<GalleryPage />} />
             </Routes>
           </main>
           
