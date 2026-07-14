@@ -4,6 +4,83 @@ import { generatePresignedUploadUrl, completeUpload } from '../services/ossServi
 
 const router = express.Router();
 
+router.get('/search', async (req, res) => {
+  try {
+    const { keyword, tag, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
+
+    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, created_at FROM photos';
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (keyword) {
+      conditions.push('(title LIKE ? OR description LIKE ?)');
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+
+    if (tag) {
+      conditions.push('tags LIKE ?');
+      params.push(`%"${tag}"%`);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    const validSortBy = ['created_at', 'likes', 'views', 'title'];
+    const validSortOrder = ['asc', 'desc'];
+    const safeSortBy = validSortBy.includes(String(sortBy)) ? sortBy : 'created_at';
+    const safeSortOrder = validSortOrder.includes(String(sortOrder)) ? sortOrder : 'desc';
+
+    query += ` ORDER BY ${safeSortBy} ${safeSortOrder}`;
+
+    const photos = await db.all(query, params);
+
+    const result = photos.map((photo: any) => {
+      let tags: string[] = [];
+      if (photo.tags) {
+        try {
+          tags = JSON.parse(photo.tags);
+        } catch {
+          tags = photo.tags.split(' ').filter(Boolean);
+        }
+      }
+      return { ...photo, tags };
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error searching photos:', error);
+    res.status(500).json({ success: false, message: '搜索照片失败' });
+  }
+});
+
+router.get('/tags', async (req, res) => {
+  try {
+    const photos = await db.all('SELECT tags FROM photos');
+    const tagSet = new Set<string>();
+
+    photos.forEach((photo: any) => {
+      if (photo.tags) {
+        try {
+          const tags = JSON.parse(photo.tags);
+          if (Array.isArray(tags)) {
+            tags.forEach((tag: string) => tagSet.add(tag));
+          }
+        } catch {
+          const tags = photo.tags.split(' ').filter(Boolean);
+          tags.forEach((tag: string) => tagSet.add(tag));
+        }
+      }
+    });
+
+    const tags = Array.from(tagSet).sort();
+    res.json({ success: true, data: tags });
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ success: false, message: '获取标签列表失败' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos ORDER BY created_at DESC');
@@ -142,8 +219,12 @@ router.post('/upload/complete', async (req, res) => {
 
     const uploadResult = await completeUpload(key);
 
+    const maxIdResult = await db.get('SELECT MAX(id) as maxId FROM photos');
+    const currentMaxId = maxIdResult?.maxId ? parseInt(maxIdResult.maxId, 10) : 0;
+    const newId = String(currentMaxId + 1).padStart(6, '0');
+
     const newPhoto = {
-      id: `photo_${Date.now()}`,
+      id: newId,
       title: title || '未命名照片',
       thumbnail_path: uploadResult.thumbnailUrl,
       original_url: uploadResult.url,

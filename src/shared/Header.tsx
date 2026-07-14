@@ -45,7 +45,7 @@ export function Header() {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              navigate('/');
+              navigate('/gallery');
             }}
             className={`theme-text-transition ${
               theme === 'dark'

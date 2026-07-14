@@ -101,7 +101,7 @@ const seedMockData = async () => {
   if (photoCount.count === 0) {
     const photos = [
       {
-        id: 'photo_001',
+        id: '000001',
         title: '城市天际线',
         thumbnail_path: 'https://picsum.photos/seed/aero1/1200/800',
         original_url: 'https://picsum.photos/seed/aero1/2048/1365',
@@ -122,7 +122,7 @@ const seedMockData = async () => {
         created_at: '2024-05-15T18:30:00Z',
       },
       {
-        id: 'photo_002',
+        id: '000002',
         title: '海岸线全景',
         thumbnail_path: 'https://picsum.photos/seed/aero2/1200/900',
         original_url: 'https://picsum.photos/seed/aero2/2048/1536',
@@ -143,7 +143,7 @@ const seedMockData = async () => {
         created_at: '2024-06-20T09:15:00Z',
       },
       {
-        id: 'photo_003',
+        id: '000003',
         title: '山地梯田',
         thumbnail_path: 'https://picsum.photos/seed/aero3/1200/750',
         original_url: 'https://picsum.photos/seed/aero3/2048/1280',
@@ -164,7 +164,7 @@ const seedMockData = async () => {
         created_at: '2024-04-10T10:00:00Z',
       },
       {
-        id: 'photo_004',
+        id: '000004',
         title: '都市夜景',
         thumbnail_path: 'https://picsum.photos/seed/aero4/1200/700',
         original_url: 'https://picsum.photos/seed/aero4/2048/1190',
@@ -185,7 +185,7 @@ const seedMockData = async () => {
         created_at: '2024-07-05T21:30:00Z',
       },
       {
-        id: 'photo_005',
+        id: '000005',
         title: '河流蜿蜒',
         thumbnail_path: 'https://picsum.photos/seed/aero5/1200/850',
         original_url: 'https://picsum.photos/seed/aero5/2048/1466',
@@ -206,7 +206,7 @@ const seedMockData = async () => {
         created_at: '2024-03-20T14:20:00Z',
       },
       {
-        id: 'photo_006',
+        id: '000006',
         title: '森林覆盖',
         thumbnail_path: 'https://picsum.photos/seed/aero6/400/320',
         original_url: 'https://picsum.photos/seed/aero6/2048/1638',
@@ -227,7 +227,7 @@ const seedMockData = async () => {
         created_at: '2024-05-01T11:45:00Z',
       },
       {
-        id: 'photo_007',
+        id: '000007',
         title: '港口码头',
         thumbnail_path: 'https://picsum.photos/seed/aero7/400/380',
         original_url: 'https://picsum.photos/seed/aero7/2048/1945',
@@ -248,7 +248,7 @@ const seedMockData = async () => {
         created_at: '2024-06-10T08:00:00Z',
       },
       {
-        id: 'photo_008',
+        id: '000008',
         title: '农田纹理',
         thumbnail_path: 'https://picsum.photos/seed/aero8/400/420',
         original_url: 'https://picsum.photos/seed/aero8/2048/2150',
@@ -269,7 +269,7 @@ const seedMockData = async () => {
         created_at: '2024-07-25T09:30:00Z',
       },
       {
-        id: 'photo_009',
+        id: '000009',
         title: '桥梁连接',
         thumbnail_path: 'https://picsum.photos/seed/aero9/400/300',
         original_url: 'https://picsum.photos/seed/aero9/2048/1536',
@@ -290,7 +290,7 @@ const seedMockData = async () => {
         created_at: '2024-04-28T15:00:00Z',
       },
       {
-        id: 'photo_010',
+        id: '000010',
         title: '沙漠纹理',
         thumbnail_path: 'https://picsum.photos/seed/aero10/400/360',
         original_url: 'https://picsum.photos/seed/aero10/2048/1843',
@@ -311,7 +311,7 @@ const seedMockData = async () => {
         created_at: '2024-08-05T16:30:00Z',
       },
       {
-        id: 'photo_011',
+        id: '000011',
         title: '雪山之巅',
         thumbnail_path: 'https://picsum.photos/seed/aero11/400/480',
         original_url: 'https://picsum.photos/seed/aero11/2048/2458',
@@ -332,7 +332,7 @@ const seedMockData = async () => {
         created_at: '2024-09-15T07:00:00Z',
       },
       {
-        id: 'photo_012',
+        id: '000012',
         title: '城市建筑群',
         thumbnail_path: 'https://picsum.photos/seed/aero12/400/340',
         original_url: 'https://picsum.photos/seed/aero12/2048/1748',

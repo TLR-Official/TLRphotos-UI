@@ -2,6 +2,13 @@ import { request } from './client';
 import type { ApiResponse } from './client';
 import type { PhotoListItem, PhotoDetail } from '../features/gallery/types';
 
+export interface SearchParams {
+  keyword?: string;
+  tag?: string;
+  sortBy?: 'created_at' | 'likes' | 'views' | 'title';
+  sortOrder?: 'asc' | 'desc';
+}
+
 export interface PhotoUploadMeta {
   title?: string;
   tags?: string[] | string;
@@ -32,6 +39,19 @@ export interface UploadCompleteResponse {
 
 export async function getPhotos(): Promise<ApiResponse<PhotoListItem[]>> {
   return request<PhotoListItem[]>('/photos');
+}
+
+export async function searchPhotos(params: SearchParams): Promise<ApiResponse<PhotoListItem[]>> {
+  const query = new URLSearchParams();
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.tag) query.set('tag', params.tag);
+  if (params.sortBy) query.set('sortBy', params.sortBy);
+  if (params.sortOrder) query.set('sortOrder', params.sortOrder);
+  return request<PhotoListItem[]>(`/photos/search?${query.toString()}`);
+}
+
+export async function getTags(): Promise<ApiResponse<string[]>> {
+  return request<string[]>('/photos/tags');
 }
 
 export async function getPhotoById(id: string): Promise<ApiResponse<PhotoDetail>> {

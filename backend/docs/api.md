@@ -28,7 +28,7 @@
   "success": true,
   "data": [
     {
-      "id": "photo_001",
+      "id": "000001",
       "title": "城市天际线",
       "thumbnail_path": "https://picsum.photos/seed/aero1/1200/800",
       "tags": ["城市", "航拍", "日落"],
@@ -37,6 +37,50 @@
       "created_at": "2024-05-15T18:30:00Z"
     }
   ]
+}
+```
+
+### 搜索照片
+
+**GET** `/api/photos/search`
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| keyword | string | 关键词（匹配标题、描述） |
+| tag | string | 标签筛选 |
+| sortBy | string | 排序字段（created_at/likes/views/title），默认created_at |
+| sortOrder | string | 排序顺序（asc/desc），默认desc |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "000001",
+      "title": "城市天际线",
+      "thumbnail_path": "https://picsum.photos/seed/aero1/1200/800",
+      "tags": ["城市", "航拍", "日落"],
+      "width": 1200,
+      "height": 800,
+      "likes": 1256,
+      "views": 8932,
+      "created_at": "2024-05-15T18:30:00Z"
+    }
+  ]
+}
+```
+
+### 获取所有标签
+
+**GET** `/api/photos/tags`
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": ["城市", "航拍", "日落", "自然", "全景"]
 }
 ```
 
@@ -54,7 +98,7 @@
 {
   "success": true,
   "data": {
-    "id": "photo_001",
+    "id": "000001",
     "title": "城市天际线",
     "thumbnail_path": "https://picsum.photos/seed/aero1/1200/800",
     "original_url": "https://picsum.photos/seed/aero1/2048/1365",
@@ -184,7 +228,7 @@
 {
   "success": true,
   "data": {
-    "photoId": "photo_1234567890123",
+    "photoId": "000013",
     "key": "photos/1234567890_abc123.jpg",
     "url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/1234567890_abc123.jpg",
     "thumbnailUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/thumbnails/1234567890_abc123_thumb.webp"
