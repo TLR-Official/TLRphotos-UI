@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { db } from '../db';
+import { createSession, deleteUserSessions } from './cookieService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
@@ -24,6 +25,7 @@ export interface User {
 export interface LoginResult {
   user: User;
   token: string;
+  session_token?: string;
 }
 
 export async function register(email: string, password: string, username?: string): Promise<User> {
@@ -49,7 +51,7 @@ export async function register(email: string, password: string, username?: strin
   return newUser as User;
 }
 
-export async function login(email: string, password: string): Promise<LoginResult> {
+export async function login(email: string, password: string, remember?: boolean, ipAddress?: string): Promise<LoginResult> {
   const user = await db.get('SELECT id, email, password_hash, username, avatar_url, is_active, created_at, updated_at FROM users WHERE email = ?', email);
   
   if (!user) {
@@ -67,6 +69,11 @@ export async function login(email: string, password: string): Promise<LoginResul
 
   const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
+  let session_token: string | undefined;
+  if (remember && ipAddress) {
+    session_token = await createSession(user.id, ipAddress);
+  }
+
   return {
     user: {
       id: user.id,
@@ -83,6 +90,7 @@ export async function login(email: string, password: string): Promise<LoginResul
       updated_at: user.updated_at,
     },
     token,
+    session_token,
   };
 }
 

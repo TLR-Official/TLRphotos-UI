@@ -22,6 +22,7 @@ export interface LoginResponse {
   data?: {
     user: User;
     token: string;
+    session_token?: string;
   };
 }
 
@@ -41,13 +42,33 @@ export interface GetCurrentUserResponse {
   data?: User;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, remember }),
+  });
+  return response.json();
+}
+
+export interface RefreshResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    user: User;
+    token: string;
+  };
+}
+
+export async function refresh(sessionToken: string): Promise<RefreshResponse> {
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_token: sessionToken }),
   });
   return response.json();
 }
