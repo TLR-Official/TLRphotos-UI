@@ -82,7 +82,7 @@ export async function completeUpload(key: string): Promise<UploadResult> {
 
   return {
     key,
-    url: getPublicUrl(key),
-    thumbnailUrl: getPublicUrl(thumbnailKey),
+    url: await getFileUrl(key),
+    thumbnailUrl: await getFileUrl(thumbnailKey),
   };
 }
