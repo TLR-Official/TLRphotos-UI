@@ -138,7 +138,7 @@ export function Header() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowDropdown(false);
-                      navigate('/');
+                      navigate('/gallery');
                     }}
                     className={`w-full px-4 py-2 text-left text-sm transition-colors ${
                       theme === 'dark'

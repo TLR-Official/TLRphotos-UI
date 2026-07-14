@@ -190,6 +190,10 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-15 07:35 | [fix] 部署到生产环境：修复nginx代理解码%2F导致图片路由404，改用通配符路由匹配，移除fetch的timeout选项，前后端构建并重启服务 | backend/src/routes/photos.ts, dist/ |
+| 2026-07-14 23:30 | [fix] 统一照片ID格式：修复ID生成逻辑防止NaN，将数据库中所有非标准ID(photo_xxx、000NaN等)统一转换为纯数字格式 | backend/src/routes/photos.ts |
+| 2026-07-14 23:15 | [fix] 修复图片显示问题：代理路由支持从OSS预签名URL中提取文件路径，确保旧照片和新照片都能通过代理访问，修复"我的作品"导航到首页的问题 | backend/src/routes/photos.ts, src/shared/Header.tsx |
+| 2026-07-14 22:30 | [fix] 修复上传图片无法查看：completeUpload返回预签名URL而非文件路径，修复GalleryPage导航路径/photo->/photos | backend/src/routes/photos.ts, src/features/gallery/GalleryPage.tsx |
 | 2026-07-14 19:05 | [fix] 修复auth.ts语法错误：远程仓库合并冲突导致接口定义缺少闭合花括号，修复LoginData/UploadAvatarData接口 | src/api/auth.ts |
 | 2026-07-14 11:00 | [feat] 作品集图库页面：6位数字ID、搜索API、标签筛选、时间/热度/浏览排序、响应式网格、GalleryPage组件 | backend/src/db.ts, backend/src/routes/photos.ts, backend/docs/api.md, src/api/photos.ts, src/features/gallery/GalleryPage.tsx, src/shared/Header.tsx, src/App.tsx |
 | 2026-07-14 10:30 | [fix] 修复顶部栏玻璃效果失效：增强.glass/.glass-sm/.glass-lg背景不透明度和模糊度 | src/index.css |

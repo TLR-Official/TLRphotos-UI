@@ -64,6 +64,10 @@ export async function generatePresignedUploadUrl(
 }
 
 export async function getFileUrl(key: string): Promise<string> {
+  if (key.startsWith('http://') || key.startsWith('https://')) {
+    return key;
+  }
+
   const command = new GetObjectCommand({
     Bucket: OSS_BUCKET,
     Key: key,
@@ -82,6 +86,14 @@ export async function completeUpload(key: string): Promise<UploadResult> {
 
   return {
     key,
+    url: await getFileUrl(key),
+    thumbnailUrl: await getFileUrl(thumbnailKey),
+  };
+}
+
+export async function getPhotoUrls(key: string): Promise<{ url: string; thumbnailUrl: string }> {
+  const thumbnailKey = generateThumbnailKey(key);
+  return {
     url: await getFileUrl(key),
     thumbnailUrl: await getFileUrl(thumbnailKey),
   };

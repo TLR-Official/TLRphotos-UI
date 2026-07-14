@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from '../db';
-import { generatePresignedUploadUrl, completeUpload } from '../services/ossService';
+import { generatePresignedUploadUrl, completeUpload, getFileUrl } from '../services/ossService';
 
 const router = express.Router();
 
@@ -35,7 +35,7 @@ router.get('/search', async (req, res) => {
 
     const photos = await db.all(query, params);
 
-    const result = photos.map((photo: any) => {
+    const result = await Promise.all(photos.map(async (photo: any) => {
       let tags: string[] = [];
       if (photo.tags) {
         try {
@@ -44,8 +44,20 @@ router.get('/search', async (req, res) => {
           tags = photo.tags.split(' ').filter(Boolean);
         }
       }
-      return { ...photo, tags };
-    });
+      const getProxyUrl = (key: string) => {
+        if (key.startsWith('http://') || key.startsWith('https://')) {
+          const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+          if (key.startsWith(ossDomain)) {
+            const filePath = key.replace(ossDomain, '').split('?')[0];
+            return `/api/photos/image/${encodeURIComponent(filePath)}`;
+          }
+          return key;
+        }
+        return `/api/photos/image/${encodeURIComponent(key)}`;
+      };
+      const thumbnailUrl = getProxyUrl(photo.thumbnail_path);
+      return { ...photo, tags, thumbnail_path: thumbnailUrl };
+    }));
 
     res.json({ success: true, data: result });
   } catch (error) {
@@ -85,7 +97,7 @@ router.get('/', async (req, res) => {
   try {
     const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos ORDER BY created_at DESC');
 
-    const result = photos.map((photo: any) => {
+    const result = await Promise.all(photos.map(async (photo: any) => {
       let tags: string[] = [];
       if (photo.tags) {
         try {
@@ -94,8 +106,20 @@ router.get('/', async (req, res) => {
           tags = photo.tags.split(' ').filter(Boolean);
         }
       }
-      return { ...photo, tags };
-    });
+      const getProxyUrl = (key: string) => {
+        if (key.startsWith('http://') || key.startsWith('https://')) {
+          const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+          if (key.startsWith(ossDomain)) {
+            const filePath = key.replace(ossDomain, '').split('?')[0];
+            return `/api/photos/image/${encodeURIComponent(filePath)}`;
+          }
+          return key;
+        }
+        return `/api/photos/image/${encodeURIComponent(key)}`;
+      };
+      const thumbnailUrl = getProxyUrl(photo.thumbnail_path);
+      return { ...photo, tags, thumbnail_path: thumbnailUrl };
+    }));
 
     res.json({ success: true, data: result });
   } catch (error) {
@@ -113,10 +137,24 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: '照片不存在' });
     }
 
+    const getProxyUrl = (key: string) => {
+      if (key.startsWith('http://') || key.startsWith('https://')) {
+        const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+        if (key.startsWith(ossDomain)) {
+          const filePath = key.replace(ossDomain, '').split('?')[0];
+          return `/api/photos/image/${encodeURIComponent(filePath)}`;
+        }
+        return key;
+      }
+      return `/api/photos/image/${encodeURIComponent(key)}`;
+    };
+
     res.json({
       success: true,
       data: {
         ...photo,
+        original_url: getProxyUrl(photo.original_url),
+        thumbnail_path: getProxyUrl(photo.thumbnail_path),
         tags: photo.tags ? JSON.parse(photo.tags) : [],
       },
     });
@@ -186,6 +224,60 @@ router.post('/:id/view', async (req, res) => {
   }
 });
 
+router.get('/image/*', async (req: any, res) => {
+  try {
+    const key: string = req.params[0];
+    let decodedKey = decodeURIComponent(key);
+    
+    console.log('Proxy image request:', decodedKey);
+    
+    const presignedUrl = await getFileUrl(decodedKey);
+    const response = await fetch(presignedUrl);
+    
+    if (!response.ok) {
+      if (response.status === 404 && decodedKey.includes('_thumb')) {
+        const originalKey = decodedKey.replace('_thumb.webp', '.jpg').replace('_thumb.jpg', '.jpg').replace('_thumb.png', '.png');
+        console.log('Thumbnail not found, falling back to original:', originalKey);
+        
+        const originalPresignedUrl = await getFileUrl(originalKey);
+        const originalResponse = await fetch(originalPresignedUrl);
+        
+        if (!originalResponse.ok) {
+          console.error('Original image also not found:', originalKey);
+          throw new Error('Image not found');
+        }
+        
+        const contentType = originalResponse.headers.get('content-type') || 'image/jpeg';
+        const contentLength = originalResponse.headers.get('content-length');
+        
+        res.setHeader('Content-Type', contentType);
+        if (contentLength) {
+          res.setHeader('Content-Length', contentLength);
+        }
+        
+        const arrayBuffer = await originalResponse.arrayBuffer();
+        res.send(Buffer.from(arrayBuffer));
+        return;
+      }
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const contentLength = response.headers.get('content-length');
+    
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (error) {
+    console.error('Error proxying image:', error);
+    res.status(404).json({ success: false, message: '图片不存在' });
+  }
+});
+
 router.post('/upload/presigned', async (req, res) => {
   try {
     const { fileName } = req.body;
@@ -219,8 +311,14 @@ router.post('/upload/complete', async (req, res) => {
 
     const uploadResult = await completeUpload(key);
 
-    const maxIdResult = await db.get('SELECT MAX(id) as maxId FROM photos');
-    const currentMaxId = maxIdResult?.maxId ? parseInt(maxIdResult.maxId, 10) : 0;
+    const maxIdResult = await db.get("SELECT id FROM photos ORDER BY CAST(id AS INTEGER) DESC LIMIT 1");
+    let currentMaxId = 0;
+    if (maxIdResult?.id) {
+      const parsed = parseInt(maxIdResult.id, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        currentMaxId = parsed;
+      }
+    }
     const newId = String(currentMaxId + 1).padStart(6, '0');
 
     const newPhoto = {
@@ -273,8 +371,8 @@ router.post('/upload/complete', async (req, res) => {
       data: {
         photoId: newPhoto.id,
         key: uploadResult.key,
-        url: uploadResult.url,
-        thumbnailUrl: uploadResult.thumbnailUrl,
+        url: `/api/photos/image/${encodeURIComponent(uploadResult.url)}`,
+        thumbnailUrl: `/api/photos/image/${encodeURIComponent(uploadResult.thumbnailUrl)}`,
       },
     });
   } catch (error) {

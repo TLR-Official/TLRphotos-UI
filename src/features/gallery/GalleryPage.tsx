@@ -109,7 +109,7 @@ export function GalleryPage() {
   };
 
   const handlePhotoClick = (photoId: string) => {
-    navigate(`/photo/${photoId}`);
+    navigate(`/photos/${photoId}`);
   };
 
   return (
