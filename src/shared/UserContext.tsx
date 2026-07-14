@@ -1,12 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { login, register, getCurrentUser, updateUser } from '../api/auth';
+import { login, register, getCurrentUser, updateUser, refresh } from '../api/auth';
 import type { User } from '../api/auth';
 
 interface UserContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, remember?: boolean) => Promise<void>;
   register: (email: string, password: string, username?: string) => Promise<void>;
   logout: () => void;
   updateUserInfo: (data: Partial<User>) => Promise<void>;
@@ -27,21 +27,46 @@ export function UserProvider({ children }: { children: ReactNode }) {
           setUser(result.data);
         } else {
           localStorage.removeItem('token');
+          autoLogin();
         }
         setIsLoading(false);
       }).catch(() => {
         localStorage.removeItem('token');
+        autoLogin();
         setIsLoading(false);
       });
     } else {
+      autoLogin();
       setIsLoading(false);
     }
   }, []);
 
-  const handleLogin = useCallback(async (email: string, password: string) => {
-    const result = await login(email, password);
+  const autoLogin = useCallback(async () => {
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) return;
+
+    try {
+      const result = await refresh(sessionToken);
+      if (result.success && result.data) {
+        localStorage.setItem('token', result.data.token);
+        setUser(result.data.user);
+      } else {
+        localStorage.removeItem('session_token');
+      }
+    } catch {
+      localStorage.removeItem('session_token');
+    }
+  }, []);
+
+  const handleLogin = useCallback(async (email: string, password: string, remember?: boolean) => {
+    const result = await login(email, password, remember);
     if (result.success && result.data) {
       localStorage.setItem('token', result.data.token);
+      if (result.data.session_token) {
+        localStorage.setItem('session_token', result.data.session_token);
+      } else {
+        localStorage.removeItem('session_token');
+      }
       setUser(result.data.user);
     } else {
       throw new Error(result.message || '登录失败');
@@ -57,6 +82,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
+    localStorage.removeItem('session_token');
     setUser(null);
   }, []);
 

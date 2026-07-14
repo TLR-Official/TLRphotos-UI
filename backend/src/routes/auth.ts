@@ -1,7 +1,20 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import { register, login, verifyToken, getUserById, updateUser, changePassword, updateAvatar } from '../services/authService';
+import { getSession, updateLastActive, deleteSession } from '../services/cookieService';
 import multer from 'multer';
 import path from 'path';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRES_IN = '24h';
+
+function getClientIp(req: express.Request): string {
+  const ip = req.headers['x-forwarded-for'] || 
+             req.headers['x-real-ip'] || 
+             req.socket.remoteAddress || 
+             'unknown';
+  return Array.isArray(ip) ? ip[0] : ip;
+}
 
 const upload = multer({
   dest: path.join(__dirname, '../../uploads/'),
@@ -46,13 +59,14 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, remember } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: '邮箱和密码不能为空' });
     }
 
-    const result = await login(email, password);
+    const ipAddress = getClientIp(req);
+    const result = await login(email, password, remember, ipAddress);
 
     res.json({
       success: true,
@@ -64,6 +78,7 @@ router.post('/login', async (req, res) => {
           avatar_url: result.user.avatar_url,
         },
         token: result.token,
+        session_token: result.session_token,
       },
     });
   } catch (error) {
@@ -90,6 +105,11 @@ router.get('/me', async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    const sessionToken = req.headers['x-session-token'] as string;
+    if (sessionToken) {
+      await updateLastActive(sessionToken);
     }
 
     res.json({
@@ -223,10 +243,57 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
 
 router.post('/logout', async (req, res) => {
   try {
+    const sessionToken = req.headers['x-session-token'] as string;
+    if (sessionToken) {
+      await deleteSession(sessionToken);
+    }
     res.json({ success: true, message: '退出成功' });
   } catch (error) {
     console.error('Logout error:', error);
     res.status(500).json({ success: false, message: '退出失败' });
+  }
+});
+
+router.post('/refresh', async (req, res) => {
+  try {
+    const { session_token } = req.body;
+
+    if (!session_token) {
+      return res.status(400).json({ success: false, message: '会话令牌不能为空' });
+    }
+
+    const session = await getSession(session_token);
+
+    if (!session) {
+      return res.status(401).json({ success: false, message: '会话已过期或无效' });
+    }
+
+    const user = await getUserById(session.user_id);
+
+    if (!user) {
+      await deleteSession(session_token);
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+    await updateLastActive(session_token);
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          avatar_url: user.avatar_url,
+        },
+        token,
+      },
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ success: false, message: '刷新令牌失败' });
   }
 });
 

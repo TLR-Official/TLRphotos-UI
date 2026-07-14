@@ -11,6 +11,7 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register, isAuthenticated } = useUser();
@@ -45,7 +46,7 @@ export function AuthPage() {
 
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(email, password, remember);
         navigate('/');
       } else {
         await register(email, password, username);
@@ -152,6 +153,26 @@ export function AuthPage() {
                 }`}
               />
             </div>
+
+            {isLogin && (
+              <div className="flex items-center justify-between">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className={`w-5 h-5 rounded border-2 transition-all duration-300 focus:ring-2 focus:ring-purple-500 ${
+                      isDark 
+                        ? 'border-white/30 text-purple-600 bg-white/10' 
+                        : 'border-gray-300 text-purple-600 bg-white'
+                    }`}
+                  />
+                  <span className={`ml-2 text-sm ${isDark ? 'text-white/70' : 'text-gray-600'}`}>
+                    保存登录状态（30天内有效）
+                  </span>
+                </label>
+              </div>
+            )}
 
             <div 
               className={`relative transition-all duration-500 ease-out ${

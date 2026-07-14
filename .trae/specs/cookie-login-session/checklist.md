@@ -1,0 +1,10 @@
+- [x] Checkpoint 1: 加密工具函数创建成功，支持 AES-256-GCM 加密解密
+- [x] Checkpoint 2: cookie 数据库表创建成功，包含必要字段和索引
+- [x] Checkpoint 3: Cookie 服务层实现完整，支持双重过期机制
+- [x] Checkpoint 4: 认证路由支持 remember 参数，登录时正确创建/不创建会话
+- [x] Checkpoint 5: 自动登录接口实现，能验证会话并返回新的 JWT token
+- [x] Checkpoint 6: 前端登录页面添加"保存登录状态"复选框
+- [x] Checkpoint 7: 前端 UserContext 支持自动登录功能
+- [x] Checkpoint 8: 定时清理任务配置成功，每天凌晨执行
+- [x] Checkpoint 9: API 文档更新完成，包含新接口说明
+- [x] Checkpoint 10: 所有功能测试通过，双重过期机制验证有效（前后端编译通过）

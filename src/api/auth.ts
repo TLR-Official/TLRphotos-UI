@@ -23,6 +23,24 @@ export interface User {
 export interface LoginData {
   user: User;
   token: string;
+export interface LoginResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    user: User;
+    token: string;
+    session_token?: string;
+  };
+}
+
+export interface RegisterResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    id: string;
+    email: string;
+    username: string | null;
+  };
 }
 
 export interface RegisterData {
@@ -34,6 +52,35 @@ export interface RegisterData {
 export interface UploadAvatarData {
   id: string;
   avatar_url: string;
+export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, password, remember }),
+  });
+  return response.json();
+}
+
+export interface RefreshResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    user: User;
+    token: string;
+  };
+}
+
+export async function refresh(sessionToken: string): Promise<RefreshResponse> {
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_token: sessionToken }),
+  });
+  return response.json();
 }
 
 export async function login(email: string, password: string): Promise<ApiResponse<LoginData>> {

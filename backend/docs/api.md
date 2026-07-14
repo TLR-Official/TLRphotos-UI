@@ -399,9 +399,54 @@
 ```json
 {
   "email": "user@example.com",
-  "password": "password123"
+  "password": "password123",
+  "remember": false
 }
 ```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| email | string | 是 | - | 邮箱地址 |
+| password | string | 是 | - | 密码 |
+| remember | boolean | 否 | false | 是否保存登录状态（30天有效） |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_1234567890123",
+      "email": "user@example.com",
+      "username": "用户名",
+      "avatar_url": null
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "abc123def456..."
+  }
+}
+```
+
+**说明**: 
+- 当 `remember` 为 `true` 时，返回 `session_token`，用于自动登录
+- `session_token` 有效期为 30 天，或连续 7 天无活动自动过期
+
+### 自动登录（刷新令牌）
+
+**POST** `/api/auth/refresh`
+
+**请求体**:
+```json
+{
+  "session_token": "abc123def456..."
+}
+```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| session_token | string | 是 | 登录时获取的会话令牌 |
 
 **响应**:
 ```json
@@ -418,6 +463,11 @@
   }
 }
 ```
+
+**说明**:
+- 使用 `session_token` 换取新的 JWT token
+- 自动更新会话的最后活动时间
+- 会话过期或无效时返回 401 错误
 
 ### 获取当前用户信息
 

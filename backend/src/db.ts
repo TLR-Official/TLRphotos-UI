@@ -93,6 +93,22 @@ const initSchema = async () => {
       description TEXT,
       cover_image TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS cookie (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      session_token TEXT UNIQUE NOT NULL,
+      encrypted_ip TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      last_active_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cookie_user_id ON cookie(user_id);
+    CREATE INDEX IF NOT EXISTS idx_cookie_session_token ON cookie(session_token);
+    CREATE INDEX IF NOT EXISTS idx_cookie_expires_at ON cookie(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_cookie_last_active_at ON cookie(last_active_at);
   `);
 };
 
