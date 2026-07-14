@@ -190,6 +190,10 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-13 21:00 | [feat] 图片上传页面：PhotoUploader支持多选拖拽上传、UploadPage编辑照片信息、/upload路由、Header下拉菜单添加上传入口 | src/shared/PhotoUploader.tsx, src/features/upload/UploadPage.tsx, src/App.tsx, src/shared/Header.tsx |
+| 2026-07-13 20:30 | [config] 数据库文件分离存储：.gitignore排除backend/data/*.db和uploads，创建.gitkeep保持目录结构 | .gitignore, backend/data/.gitkeep |
+| 2026-07-13 20:00 | [fix] Header下拉菜单悬停消失：添加200ms延迟关闭、下拉框独立鼠标事件、clearTimeout取消关闭 | src/shared/Header.tsx |
+| 2026-07-13 19:30 | [fix] PhotoDetailPage图片容器空白（flex items-start + block max-w-full）、Header下拉菜单悬停消失（onMouseEnter/onMouseLeave移到父容器） | src/features/gallery/PhotoDetailPage.tsx, src/shared/Header.tsx |
 | 2026-07-14 01:00 | [config] 配置阿里云OSS存储（香港地域），设置AccessKey和Bucket信息 | backend/.env |
 | 2026-07-14 00:30 | [feat] Cookie登录状态管理：创建cookie表、AES-256-GCM加密、双重过期机制(30天时间+7天活动)、保存登录状态复选框、自动登录接口、定时清理任务 | backend/src/utils/crypto.ts, backend/src/db.ts, backend/src/services/cookieService.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/src/server.ts, backend/docs/api.md, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/UserContext.tsx |
 | 2026-07-13 23:58 | [config] 配置GitHub同步安全策略，.gitignore保护本地数据，创建sync.sh同步脚本 | .gitignore, sync.sh |

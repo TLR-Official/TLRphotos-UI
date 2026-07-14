@@ -1,3 +1,7 @@
+import { request } from './client';
+import type { ApiResponse } from './client';
+import { deduplicatedRequest } from './requestManager';
+
 export interface CustomField {
   value: string;
   isPrivate: boolean;
@@ -16,6 +20,9 @@ export interface User {
   created_at?: string;
 }
 
+export interface LoginData {
+  user: User;
+  token: string;
 export interface LoginResponse {
   success: boolean;
   message?: string;
@@ -36,12 +43,15 @@ export interface RegisterResponse {
   };
 }
 
-export interface GetCurrentUserResponse {
-  success: boolean;
-  message?: string;
-  data?: User;
+export interface RegisterData {
+  id: string;
+  email: string;
+  username: string | null;
 }
 
+export interface UploadAvatarData {
+  id: string;
+  avatar_url: string;
 export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
@@ -73,100 +83,50 @@ export async function refresh(sessionToken: string): Promise<RefreshResponse> {
   return response.json();
 }
 
-export async function register(email: string, password: string, username?: string): Promise<RegisterResponse> {
-  const response = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password, username }),
-  });
-  return response.json();
+export async function login(email: string, password: string): Promise<ApiResponse<LoginData>> {
+  const key = `login:${email}`;
+  return deduplicatedRequest(key, () =>
+    request<LoginData>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+  );
 }
 
-export async function getCurrentUser(): Promise<GetCurrentUserResponse> {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return { success: false, message: '未登录' };
-  }
-
-  const response = await fetch('/api/auth/me', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  return response.json();
+export async function register(email: string, password: string, username?: string): Promise<ApiResponse<RegisterData>> {
+  const key = `register:${email}`;
+  return deduplicatedRequest(key, () =>
+    request<RegisterData>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, username }),
+    })
+  );
 }
 
-export interface UpdateUserResponse {
-  success: boolean;
-  message?: string;
-  data?: User;
+export async function getCurrentUser(): Promise<ApiResponse<User>> {
+  return request<User>('/auth/me');
 }
 
-export async function updateUser(data: Partial<User>): Promise<UpdateUserResponse> {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return { success: false, message: '未登录' };
-  }
-
-  const response = await fetch('/api/auth/me', {
+export async function updateUser(data: Partial<User>): Promise<ApiResponse<User>> {
+  return request<User>('/auth/me', {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
     body: JSON.stringify(data),
   });
-  return response.json();
 }
 
-export interface ChangePasswordResponse {
-  success: boolean;
-  message?: string;
-}
-
-export async function changePassword(oldPassword: string, newPassword: string): Promise<ChangePasswordResponse> {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return { success: false, message: '未登录' };
-  }
-
-  const response = await fetch('/api/auth/me/password', {
+export async function changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse<{ message?: string }>> {
+  return request<{ message?: string }>('/auth/me/password', {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
     body: JSON.stringify({ oldPassword, newPassword }),
   });
-  return response.json();
 }
 
-export interface UploadAvatarResponse {
-  success: boolean;
-  message?: string;
-  data?: {
-    id: string;
-    avatar_url: string;
-  };
-}
-
-export async function uploadAvatar(file: File): Promise<UploadAvatarResponse> {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return { success: false, message: '未登录' };
-  }
-
+export async function uploadAvatar(file: File): Promise<ApiResponse<UploadAvatarData>> {
   const formData = new FormData();
   formData.append('avatar', file);
 
-  const response = await fetch('/api/auth/me/avatar', {
+  return request<UploadAvatarData>('/auth/me/avatar', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
     body: formData,
   });
-  return response.json();
 }

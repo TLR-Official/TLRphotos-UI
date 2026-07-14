@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeContext';
 import { useUser } from './UserContext';
@@ -8,6 +8,21 @@ export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, logout, user } = useUser();
   const [showDropdown, setShowDropdown] = useState(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setShowDropdown(true);
+  };
+
+  const handleMouseLeave = () => {
+    closeTimeoutRef.current = setTimeout(() => {
+      setShowDropdown(false);
+    }, 200);
+  };
 
   return (
     <header className={`sticky top-0 z-50 py-2 theme-header-transition ${
@@ -45,14 +60,16 @@ export function Header() {
             }`}>关于我们</span>
 
           {isAuthenticated ? (
-            <div className="relative">
+            <div
+              className="relative"
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+            >
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowDropdown(!showDropdown);
                 }}
-                onMouseEnter={() => setShowDropdown(true)}
-                onMouseLeave={() => setShowDropdown(false)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-300 ${
                   theme === 'dark'
                     ? 'bg-white/10 hover:bg-white/20'
@@ -79,11 +96,15 @@ export function Header() {
                 </span>
               </button>
 
-              <div className={`absolute right-0 mt-2 w-48 rounded-xl shadow-xl transition-all duration-300 ${
-                showDropdown ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
-              } ${
-                theme === 'dark' ? 'bg-slate-800/95 border border-white/10' : 'bg-white border border-gray-200'
-              }`}>
+              <div
+                className={`absolute right-0 mt-2 w-48 rounded-xl shadow-xl transition-all duration-300 ${
+                  showDropdown ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
+                } ${
+                  theme === 'dark' ? 'bg-slate-800/95 border border-white/10' : 'bg-white border border-gray-200'
+                }`}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+              >
                 <div className="py-2">
                   <button
                     onClick={(e) => {
@@ -98,6 +119,20 @@ export function Header() {
                     }`}
                   >
                     个人资料
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDropdown(false);
+                      navigate('/upload');
+                    }}
+                    className={`w-full px-4 py-2 text-left text-sm transition-colors ${
+                      theme === 'dark'
+                        ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    上传图片
                   </button>
                   <button
                     onClick={(e) => {

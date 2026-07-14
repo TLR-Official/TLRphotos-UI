@@ -69,7 +69,13 @@ coverage/
 .cache/
 
 # Backend database
-backend/data/
+backend/data/*.db
+backend/data/*.log
+backend/data/*
+!backend/data/.gitkeep
+
+# Uploads directory
+backend/uploads/
 
 # Trae AI history
 .history/
