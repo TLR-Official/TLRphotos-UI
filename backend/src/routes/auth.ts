@@ -2,11 +2,24 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { register, login, verifyToken, getUserById, updateUser, changePassword, updateAvatar } from '../services/authService';
 import { getSession, updateLastActive, deleteSession } from '../services/cookieService';
+import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
+
+function getProxyUrl(key: string) {
+  if (key.startsWith('http://') || key.startsWith('https://')) {
+    const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+    if (key.startsWith(ossDomain)) {
+      const filePath = key.replace(ossDomain, '').split('?')[0];
+      return `/api/photos/image/${encodeURIComponent(filePath)}`;
+    }
+    return key;
+  }
+  return `/api/photos/image/${encodeURIComponent(key)}`;
+}
 
 function getClientIp(req: express.Request): string {
   const ip = req.headers['x-forwarded-for'] || 
@@ -251,6 +264,67 @@ router.post('/logout', async (req, res) => {
   } catch (error) {
     console.error('Logout error:', error);
     res.status(500).json({ success: false, message: '退出失败' });
+  }
+});
+
+router.get('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await getUserById(id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: user.id,
+        username: user.username || '用户',
+        avatar_url: user.avatar_url,
+        bio: user.bio,
+        website: user.website,
+        location: user.location,
+        created_at: user.created_at,
+      },
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ success: false, message: '获取用户信息失败' });
+  }
+});
+
+router.get('/users/:id/photos', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, pageSize = 20 } = req.query;
+
+    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+
+    const photos = await db.all(
+      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      id,
+      parseInt(pageSize as string),
+      offset
+    );
+
+    const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE user_id = ?', id);
+
+    res.json({
+      success: true,
+      data: {
+        photos: photos.map(photo => ({
+          ...photo,
+          thumbnail_path: getProxyUrl(photo.thumbnail_path),
+          tags: photo.tags ? JSON.parse(photo.tags) : [],
+        })),
+        total: total?.count || 0,
+      },
+    });
+  } catch (error) {
+    console.error('Get user photos error:', error);
+    res.status(500).json({ success: false, message: '获取用户照片失败' });
   }
 });
 

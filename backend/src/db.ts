@@ -123,6 +123,9 @@ const initSchema = async () => {
   try {
     await db.run("ALTER TABLE photos ADD COLUMN watermark_config TEXT DEFAULT '{}'");
   } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN user_id TEXT');
+  } catch {}
 };
 
 const seedMockData = async () => {

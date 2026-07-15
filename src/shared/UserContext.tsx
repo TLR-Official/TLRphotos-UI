@@ -4,6 +4,7 @@ import type { User } from '../api/auth';
 
 interface UserContextType {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
@@ -18,6 +19,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -62,6 +64,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const result = await login(email, password, remember);
     if (result.success && result.data) {
       localStorage.setItem('token', result.data.token);
+      setToken(result.data.token);
       if (result.data.session_token) {
         localStorage.setItem('session_token', result.data.session_token);
       } else {
@@ -83,6 +86,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('session_token');
+    setToken(null);
     setUser(null);
   }, []);
 
@@ -106,6 +110,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     <UserContext.Provider
       value={{
         user,
+        token,
         isAuthenticated: !!user,
         isLoading,
         login: handleLogin,

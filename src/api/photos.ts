@@ -145,3 +145,68 @@ export async function directUpload(
 
   return response.json();
 }
+
+export async function deletePhoto(id: string, token: string): Promise<ApiResponse<{ message: string }>> {
+  const response = await fetch(`/api/photos/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    return {
+      success: false,
+      message: `服务器返回非JSON响应: ${text.substring(0, 100)}`,
+    };
+  }
+
+  return response.json();
+}
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  website?: string | null;
+  location?: string | null;
+  created_at?: string;
+}
+
+export interface UserPhotosResponse {
+  photos: PhotoListItem[];
+  total: number;
+}
+
+export async function getPublicUser(userId: string): Promise<ApiResponse<PublicUser>> {
+  const response = await fetch(`/api/auth/users/${userId}`);
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    return {
+      success: false,
+      message: `服务器返回非JSON响应: ${text.substring(0, 100)}`,
+    };
+  }
+
+  return response.json();
+}
+
+export async function getUserPhotos(userId: string, page = 1, pageSize = 20): Promise<ApiResponse<UserPhotosResponse>> {
+  const response = await fetch(`/api/auth/users/${userId}/photos?page=${page}&pageSize=${pageSize}`);
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    return {
+      success: false,
+      message: `服务器返回非JSON响应: ${text.substring(0, 100)}`,
+    };
+  }
+
+  return response.json();
+}

@@ -7,6 +7,12 @@ export interface PhotoListItem {
   height?: number;
 }
 
+export interface Uploader {
+  id: string;
+  username: string;
+  avatar_url?: string | null;
+}
+
 export interface PhotoDetail extends PhotoListItem {
   original_url: string;
   preview_url?: string;
@@ -24,4 +30,6 @@ export interface PhotoDetail extends PhotoListItem {
   aperture: string;
   likes: number;
   views: number;
+  uploader?: Uploader | null;
+  user_id?: string | null;
 }

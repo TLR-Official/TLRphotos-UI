@@ -1,7 +1,8 @@
 import express from 'express';
 import multer from 'multer';
+import jwt from 'jsonwebtoken';
 import { db } from '../db';
-import { generatePresignedUploadUrl, completeUpload, getFileUrl } from '../services/ossService';
+import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig } from '../services/imageService';
 
 const router = express.Router();
@@ -161,10 +162,25 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
     const photo = await db.get('SELECT * FROM photos WHERE id = ?', id);
 
     if (!photo) {
       return res.status(404).json({ success: false, message: '照片不存在' });
+    }
+
+    await db.run('UPDATE photos SET views = views + 1 WHERE id = ?', id);
+
+    let uploader = null;
+    if (photo.user_id) {
+      const user = await db.get('SELECT id, username, avatar_url FROM users WHERE id = ?', photo.user_id);
+      if (user) {
+        uploader = {
+          id: user.id,
+          username: user.username || '用户',
+          avatar_url: user.avatar_url,
+        };
+      }
     }
 
     const getProxyUrl = (key: string) => {
@@ -188,6 +204,7 @@ router.get('/:id', async (req, res) => {
         preview_url: photo.preview_url ? getProxyUrl(photo.preview_url) : '',
         watermarked_url: photo.watermarked_url ? getProxyUrl(photo.watermarked_url) : '',
         tags: photo.tags ? JSON.parse(photo.tags) : [],
+        uploader,
       },
     });
   } catch (error) {
@@ -432,6 +449,16 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       return res.status(400).json({ success: false, message: '请选择要上传的图片' });
     }
 
+    let userId: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
+        userId = decoded.userId;
+      } catch {}
+    }
+
     const {
       title,
       tags,
@@ -486,6 +513,7 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       preview_url: uploadedUrls.previewUrl,
       watermarked_url: uploadedUrls.watermarkedUrl || '',
       watermark_config: watermarkConfig ? JSON.stringify(watermarkConfig) : '{}',
+      user_id: userId || null,
       tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(',').map((t: string) => t.trim())) : '[]',
       width: width || 0,
       height: height || 0,
@@ -505,10 +533,10 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
 
     await db.run(
       `INSERT INTO photos 
-        (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, 
+        (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
          tags, width, height, description, camera_model, vehicle, location, altitude, 
          focal_length, iso, shutter_speed, aperture, likes, views, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
@@ -516,6 +544,7 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       newPhoto.preview_url,
       newPhoto.watermarked_url,
       newPhoto.watermark_config,
+      newPhoto.user_id,
       newPhoto.tags,
       newPhoto.width,
       newPhoto.height,
@@ -547,6 +576,66 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
   } catch (error) {
     console.error('Error processing upload:', error);
     res.status(500).json({ success: false, message: '图片处理失败: ' + (error instanceof Error ? error.message : '未知错误') });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+
+    const token = authHeader.substring(7);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
+    } catch {
+      return res.status(401).json({ success: false, message: '无效的令牌' });
+    }
+
+    const photo = await db.get('SELECT * FROM photos WHERE id = ?', id);
+    if (!photo) {
+      return res.status(404).json({ success: false, message: '照片不存在' });
+    }
+
+    if (photo.user_id !== decoded.userId) {
+      return res.status(403).json({ success: false, message: '无权删除此照片' });
+    }
+
+    const extractKey = (url: string) => {
+      if (!url) return null;
+      const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+      if (url.startsWith(ossDomain)) {
+        return url.replace(ossDomain, '').split('?')[0];
+      }
+      return null;
+    };
+
+    const keysToDelete = [
+      extractKey(photo.original_url),
+      extractKey(photo.thumbnail_path),
+      extractKey(photo.preview_url),
+      extractKey(photo.watermarked_url),
+    ].filter(Boolean);
+
+    for (const key of keysToDelete) {
+      try {
+        await deleteFromOSS(key!);
+      } catch (error) {
+        console.error('Error deleting from OSS:', key, error);
+      }
+    }
+
+    await db.run('DELETE FROM photo_likes WHERE photo_id = ?', id);
+    await db.run('DELETE FROM photos WHERE id = ?', id);
+
+    res.json({ success: true, message: '照片删除成功' });
+  } catch (error) {
+    console.error('Error deleting photo:', error);
+    res.status(500).json({ success: false, message: '删除照片失败' });
   }
 });
 

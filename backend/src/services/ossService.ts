@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
 
@@ -109,4 +109,17 @@ export async function uploadBufferToOSS(buffer: Buffer, key: string, contentType
   await s3Client.send(command);
 
   return await getFileUrl(key);
+}
+
+export async function deleteFromOSS(key: string): Promise<void> {
+  if (!key || key.startsWith('http://') || key.startsWith('https://')) {
+    return;
+  }
+
+  const command = new DeleteObjectCommand({
+    Bucket: OSS_BUCKET,
+    Key: key,
+  });
+
+  await s3Client.send(command);
 }

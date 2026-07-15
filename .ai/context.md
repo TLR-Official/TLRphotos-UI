@@ -190,6 +190,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-15 20:30 | [feat] 实现用户系统：添加上传者信息框(照片详情页标题上方)、公共用户主页(/users/:userId)、照片删除功能(三重确认+数据库/OSS全量删除)、修复返回作品集导航错误 | backend/src/db.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/ossService.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/UserProfilePage.tsx, src/api/photos.ts, src/shared/UserContext.tsx, src/App.tsx |
 | 2026-07-15 19:40 | [fix] 修复上传超时和500错误：添加120秒请求超时保护、Nginx代理超时配置(connect 60s/send/read 120s)、优化图片处理并行生成、添加处理时间日志 | backend/src/server.ts, backend/src/services/imageService.ts, /etc/nginx/sites-available/tlrphotos |
 | 2026-07-15 19:35 | [fix] 修复轮播图点击导航错误和缩略图问题：非激活slide添加pointer-events-none防止点击穿透，添加索引越界保护，修复缩略图URL代理转换 | src/features/gallery/PhotoCarousel.tsx, backend/src/routes/photos.ts |
 | 2026-07-15 19:00 | [fix] 修复上传500错误：修复sharp水印合成尺寸不匹配、移除OSS ACL参数、添加数据库新列(preview_url/watermarked_url/watermark_config)、SQLite语法兼容 | backend/src/services/imageService.ts, backend/src/services/ossService.ts, backend/src/db.ts |
