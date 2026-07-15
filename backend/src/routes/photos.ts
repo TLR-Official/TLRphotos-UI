@@ -244,7 +244,7 @@ router.get('/image/*', async (req: any, res) => {
         
         if (!originalResponse.ok) {
           console.error('Original image also not found:', originalKey);
-          throw new Error('Image not found');
+          return sendPlaceholderImage(res);
         }
         
         const contentType = originalResponse.headers.get('content-type') || 'image/jpeg';
@@ -259,7 +259,7 @@ router.get('/image/*', async (req: any, res) => {
         res.send(Buffer.from(arrayBuffer));
         return;
       }
-      throw new Error(`Failed to fetch image: ${response.status}`);
+      return sendPlaceholderImage(res);
     }
     
     const contentType = response.headers.get('content-type') || 'image/jpeg';
@@ -274,9 +274,21 @@ router.get('/image/*', async (req: any, res) => {
     res.send(Buffer.from(arrayBuffer));
   } catch (error) {
     console.error('Error proxying image:', error);
-    res.status(404).json({ success: false, message: '图片不存在' });
+    sendPlaceholderImage(res);
   }
 });
+
+function sendPlaceholderImage(res: any) {
+  const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+    <rect width="400" height="300" fill="#374151" />
+    <text x="200" y="140" text-anchor="middle" fill="#9CA3AF" font-family="sans-serif" font-size="16">图片暂不可用</text>
+    <text x="200" y="165" text-anchor="middle" fill="#6B7280" font-family="sans-serif" font-size="12">Image Unavailable</text>
+  </svg>`;
+  
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Content-Length', Buffer.byteLength(svgContent));
+  res.send(svgContent);
+}
 
 router.post('/upload/presigned', async (req, res) => {
   try {
