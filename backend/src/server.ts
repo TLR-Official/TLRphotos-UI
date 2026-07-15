@@ -15,8 +15,15 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use((req, res, next) => {
+  res.setTimeout(120000, () => {
+    console.error('Request timeout:', req.method, req.originalUrl);
+    res.status(504).json({ success: false, message: '请求超时，请重试' });
+  });
+  next();
+});
 
 app.use('/api/auth', authRouter);
 app.use('/api/photos', photosRouter);

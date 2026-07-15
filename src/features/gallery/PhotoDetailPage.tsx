@@ -86,7 +86,7 @@ export function PhotoDetailPage() {
               theme === 'dark' ? 'glass' : 'bg-white'
             }`}>
               <img
-                src={photo.original_url}
+                src={photo.watermarked_url || photo.preview_url || photo.original_url}
                 alt={photo.title}
                 className="block max-w-full h-auto"
               />

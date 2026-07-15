@@ -1,8 +1,38 @@
 import express from 'express';
+import multer from 'multer';
 import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl } from '../services/ossService';
+import { processImage, uploadProcessedImages, WatermarkConfig } from '../services/imageService';
 
 const router = express.Router();
+
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('仅支持 JPG、PNG、WebP、HEIC 格式'));
+    }
+  },
+});
+
+const handleUploadError = (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(400).json({ success: false, message: '文件大小超过限制（最大50MB）' });
+    } else {
+      res.status(400).json({ success: false, message: '上传错误: ' + err.message });
+    }
+  } else if (err instanceof Error) {
+    res.status(400).json({ success: false, message: err.message });
+  } else {
+    next(err);
+  }
+};
 
 router.get('/search', async (req, res) => {
   try {
@@ -155,6 +185,8 @@ router.get('/:id', async (req, res) => {
         ...photo,
         original_url: getProxyUrl(photo.original_url),
         thumbnail_path: getProxyUrl(photo.thumbnail_path),
+        preview_url: photo.preview_url ? getProxyUrl(photo.preview_url) : '',
+        watermarked_url: photo.watermarked_url ? getProxyUrl(photo.watermarked_url) : '',
         tags: photo.tags ? JSON.parse(photo.tags) : [],
       },
     });
@@ -390,6 +422,131 @@ router.post('/upload/complete', async (req, res) => {
   } catch (error) {
     console.error('Error completing upload:', error);
     res.status(500).json({ success: false, message: '上传完成处理失败' });
+  }
+});
+
+router.post('/upload', upload.single('image'), handleUploadError, async (req: express.Request, res: express.Response) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: '请选择要上传的图片' });
+    }
+
+    const {
+      title,
+      tags,
+      description,
+      camera_model,
+      vehicle,
+      location,
+      altitude,
+      focal_length,
+      iso,
+      shutter_speed,
+      aperture,
+      width,
+      height,
+      watermarkText,
+      watermarkX,
+      watermarkY,
+      watermarkOpacity,
+      watermarkSize,
+    } = req.body;
+
+    let watermarkConfig: WatermarkConfig | undefined;
+    if (watermarkText) {
+      watermarkConfig = {
+        text: watermarkText,
+        x: parseInt(watermarkX) || 0,
+        y: parseInt(watermarkY) || 0,
+        opacity: parseFloat(watermarkOpacity) || 0.6,
+        size: parseInt(watermarkSize) || 32,
+      };
+    }
+
+    const processedImages = await processImage(file.buffer, file.originalname, watermarkConfig);
+
+    const uploadedUrls = await uploadProcessedImages(processedImages);
+
+    const maxIdResult = await db.get("SELECT id FROM photos ORDER BY CAST(id AS INTEGER) DESC LIMIT 1");
+    let currentMaxId = 0;
+    if (maxIdResult?.id) {
+      const parsed = parseInt(maxIdResult.id, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        currentMaxId = parsed;
+      }
+    }
+    const newId = String(currentMaxId + 1).padStart(6, '0');
+
+    const newPhoto = {
+      id: newId,
+      title: title || '未命名照片',
+      thumbnail_path: uploadedUrls.thumbnailUrl,
+      original_url: uploadedUrls.previewUrl,
+      preview_url: uploadedUrls.previewUrl,
+      watermarked_url: uploadedUrls.watermarkedUrl || '',
+      watermark_config: watermarkConfig ? JSON.stringify(watermarkConfig) : '{}',
+      tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(',').map((t: string) => t.trim())) : '[]',
+      width: width || 0,
+      height: height || 0,
+      description: description || '',
+      camera_model: camera_model || '',
+      vehicle: vehicle || '',
+      location: location || '',
+      altitude: altitude || 0,
+      focal_length: focal_length || '',
+      iso: iso || 0,
+      shutter_speed: shutter_speed || '',
+      aperture: aperture || '',
+      likes: 0,
+      views: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    await db.run(
+      `INSERT INTO photos 
+        (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, 
+         tags, width, height, description, camera_model, vehicle, location, altitude, 
+         focal_length, iso, shutter_speed, aperture, likes, views, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      newPhoto.id,
+      newPhoto.title,
+      newPhoto.thumbnail_path,
+      newPhoto.original_url,
+      newPhoto.preview_url,
+      newPhoto.watermarked_url,
+      newPhoto.watermark_config,
+      newPhoto.tags,
+      newPhoto.width,
+      newPhoto.height,
+      newPhoto.description,
+      newPhoto.camera_model,
+      newPhoto.vehicle,
+      newPhoto.location,
+      newPhoto.altitude,
+      newPhoto.focal_length,
+      newPhoto.iso,
+      newPhoto.shutter_speed,
+      newPhoto.aperture,
+      newPhoto.likes,
+      newPhoto.views,
+      newPhoto.created_at
+    );
+
+    res.json({
+      success: true,
+      data: {
+        photoId: newId,
+        thumbnailUrl: `/api/photos/image/${encodeURIComponent(processedImages.thumbnailKey)}`,
+        previewUrl: `/api/photos/image/${encodeURIComponent(processedImages.previewKey)}`,
+        ...(processedImages.watermarkedKey
+          ? { watermarkedUrl: `/api/photos/image/${encodeURIComponent(processedImages.watermarkedKey)}` }
+          : {}),
+      },
+    });
+  } catch (error) {
+    console.error('Error processing upload:', error);
+    res.status(500).json({ success: false, message: '图片处理失败: ' + (error instanceof Error ? error.message : '未知错误') });
   }
 });
 

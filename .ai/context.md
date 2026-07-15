@@ -190,6 +190,13 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-15 19:40 | [fix] 修复上传超时和500错误：添加120秒请求超时保护、Nginx代理超时配置(connect 60s/send/read 120s)、优化图片处理并行生成、添加处理时间日志 | backend/src/server.ts, backend/src/services/imageService.ts, /etc/nginx/sites-available/tlrphotos |
+| 2026-07-15 19:35 | [fix] 修复轮播图点击导航错误和缩略图问题：非激活slide添加pointer-events-none防止点击穿透，添加索引越界保护，修复缩略图URL代理转换 | src/features/gallery/PhotoCarousel.tsx, backend/src/routes/photos.ts |
+| 2026-07-15 19:00 | [fix] 修复上传500错误：修复sharp水印合成尺寸不匹配、移除OSS ACL参数、添加数据库新列(preview_url/watermarked_url/watermark_config)、SQLite语法兼容 | backend/src/services/imageService.ts, backend/src/services/ossService.ts, backend/src/db.ts |
+| 2026-07-15 18:30 | [fix] 修复上传413错误：Nginx配置client_max_body_size 50M，与后端multer配置一致 | /etc/nginx/sites-available/tlrphotos |
+| 2026-07-15 18:00 | [fix] 修复上传接口错误处理：multer错误返回HTML而非JSON，添加handleUploadError中间件统一返回JSON格式错误 | backend/src/routes/photos.ts, src/api/photos.ts |
+| 2026-07-15 17:30 | [feat] 实现图片优化与水印功能：重构上传流程为multipart方式，使用sharp生成缩略图(800px)和预览图(1200px)，添加水印编辑器(拖拽定位、透明度、大小调整)，详情页优先显示水印图 | backend/src/services/imageService.ts, backend/src/routes/photos.ts, src/features/upload/UploadPage.tsx |
+| 2026-07-15 15:25 | [feat] 重构上传页面：单选上传+强制填写标题/描述/标签+EXIF自动读取拍摄参数 | src/features/upload/UploadPage.tsx, package.json |
 | 2026-07-15 07:35 | [fix] 部署到生产环境：修复nginx代理解码%2F导致图片路由404，改用通配符路由匹配，移除fetch的timeout选项，前后端构建并重启服务 | backend/src/routes/photos.ts, dist/ |
 | 2026-07-14 23:30 | [fix] 统一照片ID格式：修复ID生成逻辑防止NaN，将数据库中所有非标准ID(photo_xxx、000NaN等)统一转换为纯数字格式 | backend/src/routes/photos.ts |
 | 2026-07-14 23:15 | [fix] 修复图片显示问题：代理路由支持从OSS预签名URL中提取文件路径，确保旧照片和新照片都能通过代理访问，修复"我的作品"导航到首页的问题 | backend/src/routes/photos.ts, src/shared/Header.tsx |

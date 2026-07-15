@@ -30,7 +30,7 @@ export interface UploadResult {
   thumbnailUrl: string;
 }
 
-function generateFileKey(originalName: string): string {
+export function generateFileKey(originalName: string): string {
   const ext = originalName.split('.').pop()?.toLowerCase() || 'jpg';
   const timestamp = Date.now();
   const randomStr = crypto.randomBytes(8).toString('hex');
@@ -51,7 +51,6 @@ export async function generatePresignedUploadUrl(
   const command = new PutObjectCommand({
     Bucket: OSS_BUCKET,
     Key: key,
-    ACL: 'public-read',
   });
 
   const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
@@ -97,4 +96,17 @@ export async function getPhotoUrls(key: string): Promise<{ url: string; thumbnai
     url: await getFileUrl(key),
     thumbnailUrl: await getFileUrl(thumbnailKey),
   };
+}
+
+export async function uploadBufferToOSS(buffer: Buffer, key: string, contentType: string): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: OSS_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+  });
+
+  await s3Client.send(command);
+
+  return await getFileUrl(key);
 }

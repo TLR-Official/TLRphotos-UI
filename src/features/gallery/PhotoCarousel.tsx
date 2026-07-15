@@ -16,7 +16,7 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
     <div
       onClick={onClick}
       className={`absolute inset-0 transition-all duration-500 ease-in-out cursor-pointer ${
-        isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
       }`}
     >
       <div className="relative h-full w-full rounded-2xl overflow-hidden shadow-xl">
@@ -55,7 +55,13 @@ export function PhotoCarousel() {
   const carouselPhotos = photos.slice(0, 5);
 
   useEffect(() => {
-    if (!isAutoPlaying) return;
+    if (currentIndex >= carouselPhotos.length && carouselPhotos.length > 0) {
+      setCurrentIndex(carouselPhotos.length - 1);
+    }
+  }, [carouselPhotos.length, currentIndex]);
+
+  useEffect(() => {
+    if (!isAutoPlaying || carouselPhotos.length === 0) return;
 
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % carouselPhotos.length);

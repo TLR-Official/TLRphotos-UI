@@ -23,6 +23,11 @@ export interface PhotoUploadMeta {
   aperture?: string;
   width?: number;
   height?: number;
+  watermarkText?: string;
+  watermarkX?: number;
+  watermarkY?: number;
+  watermarkOpacity?: number;
+  watermarkSize?: number;
 }
 
 export interface PresignedUrlResponse {
@@ -95,4 +100,48 @@ export async function completeUpload(
     method: 'POST',
     body: JSON.stringify({ key, ...meta }),
   });
+}
+
+export interface DirectUploadResponse {
+  photoId: string;
+  thumbnailUrl: string;
+  previewUrl: string;
+  watermarkedUrl?: string;
+}
+
+export async function directUpload(
+  file: File,
+  meta: PhotoUploadMeta
+): Promise<ApiResponse<DirectUploadResponse>> {
+  const formData = new FormData();
+  formData.append('image', file);
+  
+  Object.entries(meta).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      formData.append(key, String(value));
+    }
+  });
+
+  const response = await fetch('/api/photos/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    return {
+      success: false,
+      message: `上传失败: ${response.status} ${response.statusText}`,
+    };
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    return {
+      success: false,
+      message: `服务器返回非JSON响应: ${text.substring(0, 100)}`,
+    };
+  }
+
+  return response.json();
 }

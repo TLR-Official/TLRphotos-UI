@@ -31,6 +31,9 @@ const initSchema = async () => {
       title TEXT NOT NULL,
       thumbnail_path TEXT NOT NULL,
       original_url TEXT NOT NULL,
+      preview_url TEXT,
+      watermarked_url TEXT,
+      watermark_config TEXT DEFAULT '{}',
       tags TEXT,
       width INTEGER,
       height INTEGER,
@@ -110,6 +113,16 @@ const initSchema = async () => {
     CREATE INDEX IF NOT EXISTS idx_cookie_expires_at ON cookie(expires_at);
     CREATE INDEX IF NOT EXISTS idx_cookie_last_active_at ON cookie(last_active_at);
   `);
+
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN preview_url TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN watermarked_url TEXT');
+  } catch {}
+  try {
+    await db.run("ALTER TABLE photos ADD COLUMN watermark_config TEXT DEFAULT '{}'");
+  } catch {}
 };
 
 const seedMockData = async () => {
