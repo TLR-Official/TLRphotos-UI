@@ -190,6 +190,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-16 23:30 | [feat] 开发管理后台系统：三级权限体系（最高/分区总审核/分区审核）、照片审核工作流、管理员账户管理、用户管理、操作日志、数据统计 | backend/src/db.ts, backend/src/services/adminService.ts, backend/src/middleware/adminAuth.ts, backend/src/routes/admin.ts, backend/src/server.ts, src/admin/ |
 | 2026-07-16 23:15 | [fix] 修复上传者显示为"匿名用户"问题：在directUpload函数中添加Authorization header传递用户token，后端正确获取并保存user_id | src/api/photos.ts, src/features/upload/UploadPage.tsx |
 | 2026-07-16 23:00 | [fix] 修复水印预览与实际生成不一致问题：添加字体大小缩放因子(基于图片实际尺寸与1200px基准的比例)、设置font-weight为600使字体更粗 | backend/src/services/imageService.ts |
 | 2026-07-16 22:45 | [fix] 修复上传500错误：INSERT语句VALUES占位符数量与列数不匹配（24个问号→25个问号） | backend/src/routes/photos.ts |

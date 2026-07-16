@@ -108,10 +108,36 @@ const initSchema = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
-    CREATE INDEX IF NOT EXISTS idx_cookie_user_id ON cookie(user_id);
-    CREATE INDEX IF NOT EXISTS idx_cookie_session_token ON cookie(session_token);
-    CREATE INDEX IF NOT EXISTS idx_cookie_expires_at ON cookie(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_cookie_last_active_at ON cookie(last_active_at);
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      email TEXT UNIQUE,
+      name TEXT,
+      role TEXT NOT NULL DEFAULT 'zone_auditor',
+      zone TEXT DEFAULT 'default',
+      is_active INTEGER DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_logs (
+      id TEXT PRIMARY KEY,
+      admin_id TEXT NOT NULL,
+      admin_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      details TEXT,
+      ip TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id ON admin_logs(admin_id);
+    CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_admin_logs_action ON admin_logs(action);
   `);
 
   try {
@@ -130,7 +156,7 @@ const initSchema = async () => {
     await db.run('ALTER TABLE photos ADD COLUMN category TEXT');
   } catch {}
   try {
-    await db.run('ALTER TABLE photos ADD COLUMN structured_tags TEXT');
+    await db.run('ALTER TABLE photos ADD COLUMN status TEXT DEFAULT "pending"');
   } catch {}
 };
 

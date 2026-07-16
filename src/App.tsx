@@ -8,6 +8,7 @@ import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { UserProfilePage } from './features/profile/UserProfilePage';
 import { UploadPage } from './features/upload/UploadPage';
+import { AdminApp } from './admin/AdminApp';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
@@ -52,6 +53,7 @@ function AppContent() {
               <Route path="/users/:userId" element={<UserProfilePage />} />
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/gallery" element={<GalleryPage />} />
+              <Route path="/admin/*" element={<AdminApp />} />
             </Routes>
           </main>
           
