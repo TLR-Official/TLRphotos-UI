@@ -126,6 +126,12 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN user_id TEXT');
   } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN category TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN structured_tags TEXT');
+  } catch {}
 };
 
 const seedMockData = async () => {

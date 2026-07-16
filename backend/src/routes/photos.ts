@@ -478,6 +478,8 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       watermarkY,
       watermarkOpacity,
       watermarkSize,
+      category,
+      structured_tags,
     } = req.body;
 
     let watermarkConfig: WatermarkConfig | undefined;
@@ -489,6 +491,32 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
         opacity: parseFloat(watermarkOpacity) || 0.6,
         size: parseInt(watermarkSize) || 32,
       };
+    }
+
+    const blacklist = ['军用', '部队', '歼', '运-8', '运-9', '直-10', '直-20', '坦克', '装甲', '导弹', '雷达站', '军港', '护卫舰', '驱逐舰'];
+    const checkBlacklist = (text: string) => {
+      if (!text) return false;
+      return blacklist.some(word => text.includes(word));
+    };
+
+    if (checkBlacklist(title) || checkBlacklist(description) || checkBlacklist(tags)) {
+      return res.status(400).json({ success: false, message: '内容包含敏感词汇，无法上传' });
+    }
+
+    let validatedStructuredTags = '{}';
+    if (structured_tags) {
+      try {
+        const parsedTags = typeof structured_tags === 'string' ? JSON.parse(structured_tags) : structured_tags;
+        const filteredTags: Record<string, any> = {};
+        for (const [key, value] of Object.entries(parsedTags)) {
+          if (!checkBlacklist(String(value))) {
+            filteredTags[key] = value;
+          }
+        }
+        validatedStructuredTags = JSON.stringify(filteredTags);
+      } catch {
+        validatedStructuredTags = '{}';
+      }
     }
 
     const processedImages = await processImage(file.buffer, file.originalname, watermarkConfig);
@@ -514,7 +542,9 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       watermarked_url: uploadedUrls.watermarkedUrl || '',
       watermark_config: watermarkConfig ? JSON.stringify(watermarkConfig) : '{}',
       user_id: userId || null,
+      category: category || null,
       tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t)) : '[]',
+      structured_tags: validatedStructuredTags,
       width: width || 0,
       height: height || 0,
       description: description || '',
@@ -534,9 +564,9 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
     await db.run(
       `INSERT INTO photos 
         (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
-         tags, width, height, description, camera_model, vehicle, location, altitude, 
+         category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, 
          focal_length, iso, shutter_speed, aperture, likes, views, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
@@ -545,7 +575,9 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       newPhoto.watermarked_url,
       newPhoto.watermark_config,
       newPhoto.user_id,
+      newPhoto.category,
       newPhoto.tags,
+      newPhoto.structured_tags,
       newPhoto.width,
       newPhoto.height,
       newPhoto.description,

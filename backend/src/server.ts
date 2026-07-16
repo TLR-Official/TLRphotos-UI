@@ -8,7 +8,9 @@ import photosRouter from './routes/photos';
 import articlesRouter from './routes/articles';
 import columnRouter from './routes/column';
 import authRouter from './routes/auth';
+import tagsRouter from './routes/tags';
 import { initDb } from './db';
+import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 
 const app = express();
@@ -29,6 +31,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/photos', photosRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);
+app.use('/api/tags', tagsRouter);
 
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
@@ -63,6 +66,7 @@ function scheduleCleanup() {
 const startServer = async () => {
   try {
     await initDb();
+    await initTagsDb();
     scheduleCleanup();
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`TLRphotos backend server running on http://0.0.0.0:${PORT}`);

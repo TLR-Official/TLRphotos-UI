@@ -1,11 +1,13 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTheme } from '../../shared/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
+import { getTagCategories, getCategoryTags } from '../../api/tags';
 import exifr from 'exifr';
 
 type Step = 'select' | 'fill' | 'uploading' | 'done';
+type Category = 'aviation' | 'railway' | 'automobile';
 
 interface ExifData {
   camera_model?: string;
@@ -19,7 +21,38 @@ interface ExifData {
   height?: number;
 }
 
+interface SelectedTag {
+  objectId: string;
+  objectName: string;
+  attributes: Record<string, string>;
+}
 
+interface TagCategory {
+  id: string;
+  name: string;
+  name_en: string;
+  description: string;
+  icon: string;
+}
+
+interface TagAttribute {
+  id: string;
+  object_id: string;
+  key: string;
+  key_en: string;
+  label: string;
+  type: 'text' | 'select' | 'number';
+  options: string[];
+}
+
+interface TagObject {
+  id: string;
+  category_id: string;
+  name: string;
+  name_en: string;
+  description: string;
+  attributes: TagAttribute[];
+}
 
 export function UploadPage() {
   const { theme } = useTheme();
@@ -38,8 +71,12 @@ export function UploadPage() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [tags, setTags] = useState('');
+  const [category, setCategory] = useState<Category | null>(null);
+  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([]);
   const [exif, setExif] = useState<ExifData>({});
+  const [categories, setCategories] = useState<TagCategory[]>([]);
+  const [categoryTags, setCategoryTags] = useState<TagObject[]>([]);
+  const [safetyAgreement, setSafetyAgreement] = useState(false);
 
   const watermarkText = 'TLRphotos';
   const [watermarkX, setWatermarkX] = useState(50);
@@ -47,6 +84,25 @@ export function UploadPage() {
   const [watermarkOpacity, setWatermarkOpacity] = useState(60);
   const [watermarkSize, setWatermarkSize] = useState(32);
   const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    getTagCategories().then((res) => {
+      if (res.success && res.data) {
+        setCategories(res.data);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (category) {
+      getCategoryTags(category).then((res) => {
+        if (res.success && res.data) {
+          setCategoryTags(res.data.objects);
+        }
+      });
+      setSelectedTags([]);
+    }
+  }, [category]);
 
   const inputCls = `w-full px-4 py-2 rounded-lg border ${
     theme === 'dark'
@@ -120,17 +176,37 @@ export function UploadPage() {
     setPreview('');
     setTitle('');
     setDescription('');
-    setTags('');
+    setCategory(null);
+    setSelectedTags([]);
     setExif({});
     setWatermarkX(50);
     setWatermarkY(50);
     setWatermarkOpacity(60);
     setWatermarkSize(32);
+    setSafetyAgreement(false);
     setStep('select');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const canSubmit = title.trim() && description.trim() && tags.trim();
+  const handleTagToggle = (objectId: string, objectName: string) => {
+    setSelectedTags((prev) => {
+      const existing = prev.find((t) => t.objectId === objectId);
+      if (existing) {
+        return prev.filter((t) => t.objectId !== objectId);
+      }
+      return [...prev, { objectId, objectName, attributes: {} }];
+    });
+  };
+
+  const handleAttributeChange = (objectId: string, attrKey: string, value: string) => {
+    setSelectedTags((prev) =>
+      prev.map((tag) =>
+        tag.objectId === objectId ? { ...tag, attributes: { ...tag.attributes, [attrKey]: value } } : tag
+      )
+    );
+  };
+
+  const canSubmit = title.trim() && category && safetyAgreement;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -163,14 +239,25 @@ export function UploadPage() {
       setProgress(30);
       setUploadMsg('正在生成缩略图和水印...');
 
-      const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean);
+      const tagsList = selectedTags.map((t) => t.objectName);
 
-      const uploadMeta = {
+      const structuredTags: Record<string, any> = {};
+      selectedTags.forEach((tag) => {
+        Object.entries(tag.attributes).forEach(([key, value]) => {
+          if (value) {
+            structuredTags[key] = value;
+          }
+        });
+      });
+
+      const uploadMeta: any = {
         title: title.trim(),
         description: description.trim(),
-        tags: tagList,
+        tags: tagsList,
+        category: category,
+        structured_tags: JSON.stringify(structuredTags),
         ...exif,
-      } as any;
+      };
 
       if (watermarkText) {
         uploadMeta.watermarkText = watermarkText;
@@ -223,7 +310,7 @@ export function UploadPage() {
           <h1 className={`text-3xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>
             上传图片
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">分享您的精彩航空摄影作品</p>
+          <p className="text-gray-600 dark:text-gray-400">分享您的精彩交通摄影作品</p>
         </div>
 
         {error && (
@@ -289,19 +376,113 @@ export function UploadPage() {
 
             <div className="space-y-4">
               <div>
+                <label className={labelCls}>选择分类 <span className="text-red-500">*</span></label>
+                <div className="flex gap-3 mt-2">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCategory(cat.id as Category)}
+                      disabled={step === 'uploading'}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                        category === cat.id
+                          ? 'bg-blue-500 text-white shadow-lg'
+                          : theme === 'dark'
+                          ? 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span>{cat.icon}</span>
+                      <span>{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <label className={labelCls}>标题 <span className="text-red-500">*</span></label>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片标题" className={inputCls} />
               </div>
 
               <div>
-                <label className={labelCls}>照片描述 <span className="text-red-500">*</span></label>
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片描述" rows={3} className={`${inputCls} resize-none`} />
+                <label className={labelCls}>照片描述</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片描述（可选）" rows={3} className={`${inputCls} resize-none`} />
               </div>
 
-              <div>
-                <label className={labelCls}>标签 <span className="text-red-500">*</span></label>
-                <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} disabled={step === 'uploading'} placeholder="多个标签用逗号分隔，如：航拍,城市,日落" className={inputCls} />
-              </div>
+              {category && (
+                <div>
+                  <label className={labelCls}>选择标签</label>
+                  <div className="mt-2 space-y-3">
+                    {categoryTags.map((obj) => {
+                      const isSelected = selectedTags.some((t) => t.objectId === obj.id);
+                      return (
+                        <div
+                          key={obj.id}
+                          className={`rounded-lg border p-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+                              : theme === 'dark'
+                              ? 'border-gray-600 bg-slate-700/50 hover:border-gray-500'
+                              : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                          }`}
+                          onClick={() => handleTagToggle(obj.id, obj.name)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={`font-medium ${isSelected ? 'text-blue-600 dark:text-blue-400' : theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {obj.name}
+                            </span>
+                            <span className={`text-sm px-2 py-1 rounded ${
+                              isSelected
+                                ? 'bg-blue-500 text-white'
+                                : theme === 'dark'
+                                ? 'bg-slate-600 text-gray-400'
+                                : 'bg-gray-200 text-gray-600'
+                            }`}>
+                              {isSelected ? '已选择' : '点击选择'}
+                            </span>
+                          </div>
+                          {obj.description && (
+                            <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                              {obj.description}
+                            </p>
+                          )}
+                          {isSelected && obj.attributes.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              {obj.attributes.map((attr) => {
+                                const currentValue = selectedTags.find((t) => t.objectId === obj.id)?.attributes[attr.key] || '';
+                                return (
+                                  <div key={attr.id}>
+                                    <span className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{attr.label}</span>
+                                    {attr.type === 'select' ? (
+                                      <select
+                                        value={currentValue}
+                                        onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
+                                        className={`${inputCls} mt-1`}
+                                      >
+                                        <option value="">请选择</option>
+                                        {attr.options.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type={attr.type}
+                                        value={currentValue}
+                                        onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
+                                        placeholder={`请输入${attr.label}`}
+                                        className={`${inputCls} mt-1`}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className={labelCls}>水印设置</label>
@@ -395,6 +576,21 @@ export function UploadPage() {
                 </div>
               </div>
 
+              <div className={`flex items-start gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-red-900/20 border border-red-700/50' : 'bg-red-50 border border-red-200'}`}>
+                <input
+                  type="checkbox"
+                  id="safety-agreement"
+                  checked={safetyAgreement}
+                  onChange={(e) => setSafetyAgreement(e.target.checked)}
+                  disabled={step === 'uploading'}
+                  className="mt-1"
+                />
+                <label htmlFor="safety-agreement" className={`text-sm flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span className="text-red-500 font-medium">我确认本影像不涉及任何军事设施、装备或敏感区域</span>
+                  <span className="text-red-500">*</span>
+                </label>
+              </div>
+
               <div className="flex justify-between pt-2">
                 <button
                   onClick={handleReSelect}
@@ -417,7 +613,11 @@ export function UploadPage() {
               </div>
 
               {!canSubmit && step === 'fill' && (
-                <p className="text-xs text-center text-gray-400">请填写标题、照片描述和标签后才能上传</p>
+                <p className="text-xs text-center text-gray-400">
+                  {!title.trim() && '请填写标题'}
+                  {title.trim() && !category && '请选择分类'}
+                  {title.trim() && category && !safetyAgreement && '请勾选安全声明'}
+                </p>
               )}
             </div>
           </div>
