@@ -566,7 +566,7 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
         (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
          category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, 
          focal_length, iso, shutter_speed, aperture, likes, views, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
