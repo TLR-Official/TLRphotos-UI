@@ -456,6 +456,7 @@ export function UploadPage() {
                                       <select
                                         value={currentValue}
                                         onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
                                         className={`${inputCls} mt-1`}
                                       >
                                         <option value="">请选择</option>
@@ -468,6 +469,7 @@ export function UploadPage() {
                                         type={attr.type}
                                         value={currentValue}
                                         onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
                                         placeholder={`请输入${attr.label}`}
                                         className={`${inputCls} mt-1`}
                                       />

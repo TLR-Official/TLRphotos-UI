@@ -190,6 +190,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-16 21:00 | [fix] 修复三级标签下拉框点击消失问题：在select和input元素上添加stopPropagation阻止事件冒泡到父级标签卡片 | src/features/upload/UploadPage.tsx |
 | 2026-07-16 20:00 | [feat] 上传页面大改版：添加航空/铁路/汽车三大分类、取消强制描述、采用预设标签选择、实现差异化上传模板、添加安全合规声明 | backend/src/db/tagsDb.ts, backend/src/routes/tags.ts, backend/src/server.ts, backend/src/db.ts, backend/src/routes/photos.ts, src/api/tags.ts, src/features/upload/UploadPage.tsx |
 | 2026-07-16 09:30 | [fix] 修复标签分隔问题：支持中英文逗号(,和，)分隔标签，添加空标签过滤 | backend/src/routes/photos.ts |
 | 2026-07-15 20:30 | [feat] 实现用户系统：添加上传者信息框(照片详情页标题上方)、公共用户主页(/users/:userId)、照片删除功能(三重确认+数据库/OSS全量删除)、修复返回作品集导航错误 | backend/src/db.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/ossService.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/UserProfilePage.tsx, src/api/photos.ts, src/shared/UserContext.tsx, src/App.tsx |
