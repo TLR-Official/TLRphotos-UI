@@ -128,42 +128,42 @@ export function PhotoDetailPage() {
           </div>
 
           <div className="space-y-6">
-            {photo.uploader && (
-              <div
-                onClick={() => navigate(`/users/${photo.uploader!.id}`)}
-                className={`rounded-xl shadow-lg p-4 theme-bg-transition cursor-pointer hover:shadow-xl transition-shadow ${
-                  theme === 'dark' ? 'glass' : 'bg-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
-                    photo.uploader.avatar_url
-                      ? ''
-                      : 'bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center'
-                  }`}>
-                    {photo.uploader.avatar_url ? (
-                      <img
-                        src={photo.uploader.avatar_url.startsWith('/') ? `/api${photo.uploader.avatar_url}` : photo.uploader.avatar_url}
-                        alt={photo.uploader.username}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    )}
-                  </div>
-                  <div>
-                    <p className={`font-semibold ${
-                      theme === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>上传者</p>
-                    <p className={`text-sm ${
-                      theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'
-                    }`}>{photo.uploader.username}</p>
-                  </div>
+            <div
+              onClick={() => photo.uploader && navigate(`/users/${photo.uploader.id}`)}
+              className={`rounded-xl shadow-lg p-4 theme-bg-transition ${
+                theme === 'dark' ? 'glass' : 'bg-white'
+              } ${photo.uploader ? 'cursor-pointer hover:shadow-xl transition-shadow' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
+                  photo.uploader?.avatar_url
+                    ? ''
+                    : 'bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center'
+                }`}>
+                  {photo.uploader?.avatar_url ? (
+                    <img
+                      src={photo.uploader.avatar_url.startsWith('/') ? `/api${photo.uploader.avatar_url}` : photo.uploader.avatar_url}
+                      alt={photo.uploader.username}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <p className={`font-semibold ${
+                    theme === 'dark' ? 'text-white' : 'text-gray-900'
+                  }`}>上传者</p>
+                  <p className={`text-sm ${
+                    photo.uploader
+                      ? theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'
+                      : theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                  }`}>{photo.uploader?.username || '匿名用户'}</p>
                 </div>
               </div>
-            )}
+            </div>
 
             <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'
