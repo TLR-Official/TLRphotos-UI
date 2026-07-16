@@ -190,6 +190,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-16 23:15 | [fix] 修复上传者显示为"匿名用户"问题：在directUpload函数中添加Authorization header传递用户token，后端正确获取并保存user_id | src/api/photos.ts, src/features/upload/UploadPage.tsx |
+| 2026-07-16 23:00 | [fix] 修复水印预览与实际生成不一致问题：添加字体大小缩放因子(基于图片实际尺寸与1200px基准的比例)、设置font-weight为600使字体更粗 | backend/src/services/imageService.ts |
 | 2026-07-16 22:45 | [fix] 修复上传500错误：INSERT语句VALUES占位符数量与列数不匹配（24个问号→25个问号） | backend/src/routes/photos.ts |
 | 2026-07-16 21:00 | [fix] 修复三级标签下拉框点击消失问题：在select和input元素上添加stopPropagation阻止事件冒泡到父级标签卡片 | src/features/upload/UploadPage.tsx |
 | 2026-07-16 20:00 | [feat] 上传页面大改版：添加航空/铁路/汽车三大分类、取消强制描述、采用预设标签选择、实现差异化上传模板、添加安全合规声明 | backend/src/db/tagsDb.ts, backend/src/routes/tags.ts, backend/src/server.ts, backend/src/db.ts, backend/src/routes/photos.ts, src/api/tags.ts, src/features/upload/UploadPage.tsx |

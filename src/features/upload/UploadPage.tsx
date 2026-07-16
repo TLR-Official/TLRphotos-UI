@@ -57,7 +57,7 @@ interface TagObject {
 export function UploadPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
-  const { isAuthenticated } = useUser();
+  const { isAuthenticated, token } = useUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const watermarkRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -267,7 +267,7 @@ export function UploadPage() {
         uploadMeta.watermarkSize = watermarkSize;
       }
 
-      const result = await directUpload(file, uploadMeta);
+      const result = await directUpload(file, uploadMeta, token || undefined);
 
       if (!result.success || !result.data) {
         setError(result.message || '上传失败');

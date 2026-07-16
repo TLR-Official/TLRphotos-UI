@@ -111,7 +111,8 @@ export interface DirectUploadResponse {
 
 export async function directUpload(
   file: File,
-  meta: PhotoUploadMeta
+  meta: PhotoUploadMeta,
+  token?: string
 ): Promise<ApiResponse<DirectUploadResponse>> {
   const formData = new FormData();
   formData.append('image', file);
@@ -122,9 +123,15 @@ export async function directUpload(
     }
   });
 
+  const headers: HeadersInit = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch('/api/photos/upload', {
     method: 'POST',
     body: formData,
+    headers,
   });
 
   if (!response.ok) {
