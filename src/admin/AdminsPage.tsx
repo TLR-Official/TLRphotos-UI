@@ -1,91 +1,86 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, User } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Search, Shield, Eye, EyeOff } from 'lucide-react';
 import { getAdminUsers, createAdmin, updateAdmin, deleteAdmin } from './api';
 import type { AdminUser } from './types';
 
 export function AdminsPage() {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showModal, setShowModal] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     email: '',
     name: '',
-    role: 'zone_auditor' as 'zone_master' | 'zone_auditor',
+    role: 'zone_auditor' as 'super' | 'zone_master' | 'zone_auditor',
     zone: 'default',
   });
-  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
+    const fetchAdmins = async () => {
+      const result = await getAdminUsers();
+      if (result.success && result.data) {
+        setAdmins(result.data);
+      }
+      setLoading(false);
+    };
     fetchAdmins();
   }, []);
 
-  const fetchAdmins = async () => {
-    setLoading(true);
-    const result = await getAdminUsers();
-    if (result.success && result.data) {
-      setAdmins(result.data);
-    }
-    setLoading(false);
-  };
-
-  const handleCreate = async () => {
-    setError('');
-    if (!formData.username || !formData.password) {
-      setError('请填写用户名和密码');
-      return;
-    }
-    const result = await createAdmin(formData);
-    if (result.success) {
-      fetchAdmins();
-      setShowCreateModal(false);
-      setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingAdmin) {
+      const result = await updateAdmin(editingAdmin.id, formData);
+      if (result.success) {
+        setAdmins(admins.map(a => a.id === editingAdmin.id ? { ...a, ...formData } : a));
+      }
     } else {
-      setError(result.message || '创建失败');
+      const result = await createAdmin(formData);
+      if (result.success) {
+        setAdmins([...admins, result.data!]);
+      }
+    }
+    setShowModal(false);
+    setEditingAdmin(null);
+    setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' });
+  };
+
+  const handleDelete = async (adminId: string) => {
+    if (confirm('确定要删除这个管理员吗？')) {
+      const result = await deleteAdmin(adminId);
+      if (result.success) {
+        setAdmins(admins.filter(a => a.id !== adminId));
+      }
     }
   };
 
-  const handleEdit = async () => {
-    if (!editingAdmin) return;
-    setError('');
-    const result = await updateAdmin(editingAdmin.id, {
-      email: formData.email || undefined,
-      name: formData.name || undefined,
-      role: formData.role,
-      zone: formData.zone,
-    });
-    if (result.success) {
-      fetchAdmins();
-      setShowEditModal(false);
-      setEditingAdmin(null);
-    } else {
-      setError(result.message || '更新失败');
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除该管理员吗？')) return;
-    const result = await deleteAdmin(id);
-    if (result.success) {
-      fetchAdmins();
-    }
-  };
-
-  const openEditModal = (admin: AdminUser) => {
+  const handleEdit = (admin: AdminUser) => {
     setEditingAdmin(admin);
     setFormData({
       username: admin.username,
       password: '',
       email: admin.email || '',
       name: admin.name || '',
-      role: admin.role as 'zone_master' | 'zone_auditor',
+      role: admin.role,
       zone: admin.zone,
     });
-    setShowEditModal(true);
+    setShowModal(true);
   };
+
+  const handleAdd = () => {
+    setEditingAdmin(null);
+    setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' });
+    setShowModal(true);
+  };
+
+  const filteredAdmins = admins.filter(admin =>
+    admin.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (admin.name && admin.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (admin.email && admin.email.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const roleLabel = {
     super: '最高账户',
@@ -93,169 +88,226 @@ export function AdminsPage() {
     zone_auditor: '分区审核',
   };
 
+  const roleColor = {
+    super: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+    zone_master: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    zone_auditor: 'bg-green-500/10 text-green-400 border-green-500/30',
+  };
+
+  const statusLabel = {
+    1: '启用',
+    0: '禁用',
+  };
+
+  const statusColor = {
+    1: 'bg-green-500/10 text-green-400',
+    0: 'bg-red-500/10 text-red-400',
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white">管理员管理</h2>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">管理员管理</h2>
+          <p className="text-slate-400 mt-1">管理系统管理员账户</p>
+        </div>
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          onClick={handleAdd}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-all"
         >
           <Plus className="w-5 h-5" />
-          创建管理员
+          添加管理员
         </button>
       </div>
 
-      {loading ? (
-        <div className="text-white text-center py-10">加载中...</div>
-      ) : (
-        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-700">
-              <tr>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">用户名</th>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">姓名</th>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">邮箱</th>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">角色</th>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">分区</th>
-                <th className="text-left px-4 py-3 text-slate-300 font-medium">操作</th>
+      <div className="relative max-w-md">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-12 pr-4 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder="搜索用户名、姓名或邮箱..."
+        />
+      </div>
+
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-700">
+              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">管理员信息</th>
+              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">角色</th>
+              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">分区</th>
+              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">状态</th>
+              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredAdmins.map(admin => (
+              <tr key={admin.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                <td className="py-4 px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold">
+                      {admin.name?.charAt(0).toUpperCase() || admin.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{admin.name || admin.username}</p>
+                      <p className="text-slate-400 text-sm">{admin.username}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-4 px-6">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${roleColor[admin.role as keyof typeof roleColor]}`}>
+                    <Shield className="w-3 h-3" />
+                    {roleLabel[admin.role as keyof typeof roleLabel]}
+                  </span>
+                </td>
+                <td className="py-4 px-6">
+                  <span className="text-slate-300 text-sm">{admin.zone}</span>
+                </td>
+                <td className="py-4 px-6">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${statusColor[admin.is_active as keyof typeof statusColor]}`}>
+                    <div className={`w-2 h-2 rounded-full ${admin.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    {statusLabel[admin.is_active as keyof typeof statusLabel]}
+                  </span>
+                </td>
+                <td className="py-4 px-6">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleEdit(admin)}
+                      className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-all"
+                      title="编辑"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    {admin.role !== 'super' && (
+                      <button
+                        onClick={() => handleDelete(admin.id)}
+                        className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all"
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {admins.map(admin => (
-                <tr key={admin.id} className="border-t border-slate-700">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <span className="text-white">{admin.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">{admin.name || '-'}</td>
-                  <td className="px-4 py-3 text-slate-300">{admin.email || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded text-sm ${
-                      admin.role === 'super' ? 'bg-purple-500/20 text-purple-400' :
-                      admin.role === 'zone_master' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-green-500/20 text-green-400'
-                    }`}>
-                      {roleLabel[admin.role]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">{admin.zone}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      {admin.role !== 'super' && (
-                        <>
-                          <button
-                            onClick={() => openEditModal(admin)}
-                            className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
-                            title="编辑"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(admin.id)}
-                            className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
-                            title="删除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {admins.length === 0 && (
-            <div className="text-center py-10 text-slate-400">暂无管理员</div>
-          )}
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl max-w-md w-full" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-700">
-              <h3 className="text-white font-medium">创建管理员</h3>
-            </div>
-            <div className="p-4 space-y-4">
-              {error && <div className="text-red-400 text-sm">{error}</div>}
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">用户名 *</label>
-                <input type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
-              </div>
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">密码 *</label>
-                <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
-              </div>
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">姓名</label>
-                <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
-              </div>
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">邮箱</label>
-                <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
-              </div>
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">角色</label>
-                <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as 'zone_master' | 'zone_auditor'})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white">
-                  <option value="zone_auditor">分区审核</option>
-                  <option value="zone_master">分区总审核</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-slate-300 text-sm mb-1">分区</label>
-                <input type="text" value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => { setShowCreateModal(false); setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' }); }} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg">取消</button>
-                <button onClick={handleCreate} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">创建</button>
-              </div>
-            </div>
+        {filteredAdmins.length === 0 && (
+          <div className="p-12 text-center">
+            <Users className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+            <p className="text-slate-400">暂无管理员</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl max-w-md w-full" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-700">
-              <h3 className="text-white font-medium">编辑管理员</h3>
-            </div>
-            <div className="p-4 space-y-4">
-              {error && <div className="text-red-400 text-sm">{error}</div>}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-md p-6">
+            <h3 className="text-xl font-semibold text-white mb-6">
+              {editingAdmin ? '编辑管理员' : '添加管理员'}
+            </h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-slate-300 text-sm mb-1">用户名 (不可修改)</label>
-                <input type="text" value={formData.username} disabled className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-slate-500" />
+                <label className="block text-sm font-medium text-slate-300 mb-2">用户名</label>
+                <input
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
               </div>
               <div>
-                <label className="block text-slate-300 text-sm mb-1">姓名</label>
-                <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  {editingAdmin ? '新密码（留空不修改）' : '密码'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-4 py-2.5 pr-12 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="输入密码"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
               <div>
-                <label className="block text-slate-300 text-sm mb-1">邮箱</label>
-                <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
+                <label className="block text-sm font-medium text-slate-300 mb-2">姓名</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="输入姓名"
+                />
               </div>
               <div>
-                <label className="block text-slate-300 text-sm mb-1">角色</label>
-                <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as 'zone_master' | 'zone_auditor'})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white">
+                <label className="block text-sm font-medium text-slate-300 mb-2">邮箱</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="输入邮箱"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">角色</label>
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as 'super' | 'zone_master' | 'zone_auditor' })}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
                   <option value="zone_auditor">分区审核</option>
                   <option value="zone_master">分区总审核</option>
+                  <option value="super">最高账户</option>
                 </select>
               </div>
               <div>
-                <label className="block text-slate-300 text-sm mb-1">分区</label>
-                <input type="text" value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-white" />
+                <label className="block text-sm font-medium text-slate-300 mb-2">分区</label>
+                <input
+                  type="text"
+                  value={formData.zone}
+                  onChange={(e) => setFormData({ ...formData, zone: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  defaultValue="default"
+                />
               </div>
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => { setShowEditModal(false); setEditingAdmin(null); }} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg">取消</button>
-                <button onClick={handleEdit} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">保存</button>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); setEditingAdmin(null); }}
+                  className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-xl transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-all"
+                >
+                  {editingAdmin ? '保存' : '添加'}
+                </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
