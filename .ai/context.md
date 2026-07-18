@@ -190,6 +190,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-18 00:50 | [fix] 管理后台页面隐藏主站Header：在AppRouterContent中添加条件渲染 | src/App.tsx |
 | 2026-07-18 00:45 | [fix] 修复页面加载失败问题：useLocation()在Router组件外部调用导致React渲染错误，重构App组件结构 | src/App.tsx |
 | 2026-07-18 00:30 | [fix] 删除管理后台顶部栏和底部版权栏，保留侧边栏退出登录按钮 | src/admin/Layout.tsx, src/App.tsx |
 | 2026-07-18 00:00 | [config] 更新照片列表接口仅返回已审核照片(status=approved)，管理后台前端组件优化 | backend/src/routes/photos.ts, src/admin/ |

@@ -52,7 +52,7 @@ function AppRouterContent() {
 
   return (
     <div className="relative z-10 flex flex-col min-h-screen">
-      <Header />
+      {!isAdminPage && <Header />}
       
       <main className="flex-1">
         <Routes>
