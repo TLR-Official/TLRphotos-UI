@@ -76,6 +76,9 @@ export async function processImage(
     const x = (processedWidth * xPercent) / 100;
     const y = (processedHeight * yPercent) / 100;
 
+    const scaleFactor = Math.max(processedWidth, processedHeight) / 1200;
+    const scaledFontSize = fontSize * scaleFactor;
+
     const textBuffer = await sharp({
       create: {
         width: processedWidth,
@@ -87,7 +90,7 @@ export async function processImage(
       .composite([{
         input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${processedHeight}">
           <text x="${x}" y="${y}" font-family="${watermarkConfig.font || 'Arial'}" 
-                font-size="${fontSize}" fill="white" opacity="${opacity}"
+                font-size="${scaledFontSize}" font-weight="600" fill="white" opacity="${opacity}"
                 text-anchor="middle" dominant-baseline="middle"
                 stroke="black" stroke-width="1" stroke-opacity="${opacity * 0.5}">
             ${watermarkConfig.text}

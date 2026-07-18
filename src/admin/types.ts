@@ -23,17 +23,10 @@ export interface AdminPhoto {
   title: string;
   thumbnail_path: string;
   original_url: string;
-  preview_url?: string;
-  watermarked_url?: string;
   status: 'pending' | 'approved' | 'rejected';
   user_id?: string;
   uploader_name?: string;
   uploader_avatar?: string;
-  tags?: string;
-  description?: string;
-  width?: number;
-  height?: number;
-  category?: string;
   created_at: string;
 }
 

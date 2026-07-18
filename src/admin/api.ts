@@ -41,9 +41,9 @@ export async function createAdmin(data: {
   password: string;
   email?: string;
   name?: string;
-  role: 'super' | 'zone_master' | 'zone_auditor';
+  role: 'zone_master' | 'zone_auditor';
   zone: string;
-}): Promise<{ success: boolean; data?: AdminUser; message?: string }> {
+}): Promise<{ success: boolean; admin?: AdminUser; message?: string }> {
   const response = await fetch(`${API_BASE}/users`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

@@ -40,34 +40,26 @@ function AppContent() {
       <MouseFollowBackground />
       
       <Router>
-        <Routes>
-          <Route path="/admin/*" element={<AdminApp />} />
-          <Route path="*" element={<MainApp />} />
-        </Routes>
+        <div className="relative z-10 flex flex-col min-h-screen">
+          <Header />
+          
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<HomePageContent />} />
+              <Route path="/photos/:id" element={<PhotoDetailPage />} />
+              <Route path="/articles/:id" element={<ArticleDetailPage />} />
+              <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/users/:userId" element={<UserProfilePage />} />
+              <Route path="/upload" element={<UploadPage />} />
+              <Route path="/gallery" element={<GalleryPage />} />
+              <Route path="/admin/*" element={<AdminApp />} />
+            </Routes>
+          </main>
+          
+          <Footer />
+        </div>
       </Router>
-    </div>
-  );
-}
-
-function MainApp() {
-  return (
-    <div className="relative z-10 flex flex-col min-h-screen">
-      <Header />
-      
-      <main className="flex-1">
-        <Routes>
-          <Route path="/" element={<HomePageContent />} />
-          <Route path="/photos/:id" element={<PhotoDetailPage />} />
-          <Route path="/articles/:id" element={<ArticleDetailPage />} />
-          <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/users/:userId" element={<UserProfilePage />} />
-          <Route path="/upload" element={<UploadPage />} />
-          <Route path="/gallery" element={<GalleryPage />} />
-        </Routes>
-      </main>
-      
-      <Footer />
     </div>
   );
 }

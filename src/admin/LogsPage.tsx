@@ -1,142 +1,121 @@
 import { useState, useEffect } from 'react';
-import { FileText, Search, Clock, User, MousePointerClick } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getLogs } from './api';
 import type { AdminLog } from './types';
 
 export function LogsPage() {
   const [logs, setLogs] = useState<AdminLog[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const fetchLogs = async () => {
-      const result = await getLogs();
-      if (result.success && result.data) {
-        setLogs(result.data);
-      }
-      setLoading(false);
-    };
     fetchLogs();
-  }, []);
+  }, [page]);
 
-  const filteredLogs = logs.filter(log =>
-    log.admin_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (log.target_type && log.target_type.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (log.details && log.details.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const fetchLogs = async () => {
+    setLoading(true);
+    const result = await getLogs(page, pageSize);
+    if (result.success && result.data) {
+      setLogs(result.data);
+      setTotal(result.pagination?.total || 0);
+    }
+    setLoading(false);
+  };
+
+  const goToPage = (newPage: number) => {
+    if (newPage >= 1 && newPage <= Math.ceil(total / pageSize)) {
+      setPage(newPage);
+    }
+  };
 
   const actionLabel: Record<string, string> = {
-    login: '登录系统',
-    logout: '退出登录',
+    login: '登录',
     create_admin: '创建管理员',
-    update_admin: '编辑管理员',
+    update_admin: '更新管理员',
     delete_admin: '删除管理员',
-    approve_photo: '通过照片审核',
-    reject_photo: '拒绝照片审核',
-    toggle_user_status: '切换用户状态',
+    approve_photo: '审核通过',
+    reject_photo: '审核拒绝',
+    activate_user: '启用用户',
+    deactivate_user: '禁用用户',
   };
-
-  const actionColor: Record<string, string> = {
-    login: 'text-green-400',
-    logout: 'text-slate-400',
-    create_admin: 'text-blue-400',
-    update_admin: 'text-blue-400',
-    delete_admin: 'text-red-400',
-    approve_photo: 'text-green-400',
-    reject_photo: 'text-red-400',
-    toggle_user_status: 'text-amber-400',
-  };
-
-  const targetTypeLabel: Record<string, string> = {
-    admin: '管理员',
-    photo: '照片',
-    user: '用户',
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white">操作日志</h2>
-          <p className="text-slate-400 mt-1">查看系统操作记录</p>
-        </div>
-      </div>
+    <div>
+      <h2 className="text-2xl font-bold text-white mb-6">操作日志</h2>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-12 pr-4 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="搜索管理员、操作类型或详情..."
-        />
-      </div>
-
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-700">
-              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">时间</th>
-              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">管理员</th>
-              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">操作</th>
-              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">目标</th>
-              <th className="text-left py-4 px-6 text-slate-400 font-medium text-sm">详情</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredLogs.map(log => (
-              <tr key={log.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
-                <td className="py-4 px-6">
-                  <span className="flex items-center gap-2 text-slate-300 text-sm">
-                    <Clock className="w-4 h-4 text-slate-500" />
-                    {log.created_at?.replace('T', ' ').slice(0, 19) || '-'}
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <span className="flex items-center gap-2 text-slate-300 text-sm">
-                    <User className="w-4 h-4 text-slate-500" />
-                    {log.admin_name}
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <span className={`flex items-center gap-2 font-medium text-sm ${actionColor[log.action] || 'text-slate-400'}`}>
-                    <MousePointerClick className="w-4 h-4" />
-                    {actionLabel[log.action] || log.action}
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <span className="text-slate-300 text-sm">
-                    {log.target_type ? `${targetTypeLabel[log.target_type] || log.target_type}` : '-'}
-                    {log.target_id && ` #${log.target_id.slice(0, 8)}...`}
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <span className="text-slate-400 text-sm max-w-xs truncate">
-                    {log.details || '-'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {filteredLogs.length === 0 && (
-          <div className="p-12 text-center">
-            <FileText className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">暂无操作日志</p>
+      {loading ? (
+        <div className="text-white text-center py-10">加载中...</div>
+      ) : (
+        <>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-700">
+                <tr>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">操作人</th>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">操作</th>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">目标</th>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">详情</th>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">IP</th>
+                  <th className="text-left px-4 py-3 text-slate-300 font-medium">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map(log => (
+                  <tr key={log.id} className="border-t border-slate-700">
+                    <td className="px-4 py-3 text-white">{log.admin_name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded text-sm ${
+                        log.action.includes('approve') ? 'bg-green-500/20 text-green-400' :
+                        log.action.includes('reject') || log.action.includes('delete') ? 'bg-red-500/20 text-red-400' :
+                        log.action.includes('create') ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-slate-500/20 text-slate-400'
+                      }`}>
+                        {actionLabel[log.action] || log.action}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {log.target_type && log.target_id ? `${log.target_type}: ${log.target_id}` : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-sm max-w-xs truncate">
+                      {log.details ? (
+                        <span title={log.details}>{log.details}</span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">{log.ip || '-'}</td>
+                    <td className="px-4 py-3 text-slate-300">{new Date(log.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {logs.length === 0 && (
+              <div className="text-center py-10 text-slate-400">暂无操作日志</div>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="flex items-center justify-between mt-6">
+            <p className="text-slate-400">共 {total} 条记录</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goToPage(page - 1)}
+                disabled={page === 1}
+                className="p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <span className="text-slate-300 px-2">{page} / {Math.ceil(total / pageSize)}</span>
+              <button
+                onClick={() => goToPage(page + 1)}
+                disabled={page >= Math.ceil(total / pageSize)}
+                className="p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-lg transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

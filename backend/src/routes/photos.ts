@@ -126,7 +126,7 @@ router.get('/tags', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos ORDER BY created_at DESC');
+    const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved" ORDER BY created_at DESC');
 
     const result = await Promise.all(photos.map(async (photo: any) => {
       let tags: string[] = [];
@@ -565,8 +565,8 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       `INSERT INTO photos 
         (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
          category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, 
-         focal_length, iso, shutter_speed, aperture, likes, views, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         focal_length, iso, shutter_speed, aperture, likes, views, status, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
@@ -591,6 +591,7 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       newPhoto.aperture,
       newPhoto.likes,
       newPhoto.views,
+      'pending',
       newPhoto.created_at
     );
 
