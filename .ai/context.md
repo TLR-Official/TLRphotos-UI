@@ -190,6 +190,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-18 00:45 | [fix] 修复页面加载失败问题：useLocation()在Router组件外部调用导致React渲染错误，重构App组件结构 | src/App.tsx |
 | 2026-07-18 00:30 | [fix] 删除管理后台顶部栏和底部版权栏，保留侧边栏退出登录按钮 | src/admin/Layout.tsx, src/App.tsx |
 | 2026-07-18 00:00 | [config] 更新照片列表接口仅返回已审核照片(status=approved)，管理后台前端组件优化 | backend/src/routes/photos.ts, src/admin/ |
 | 2026-07-16 23:30 | [feat] 开发管理后台系统：三级权限体系（最高/分区总审核/分区审核）、照片审核工作流、管理员账户管理、用户管理、操作日志、数据统计 | backend/src/db.ts, backend/src/services/adminService.ts, backend/src/middleware/adminAuth.ts, backend/src/routes/admin.ts, backend/src/server.ts, src/admin/ |

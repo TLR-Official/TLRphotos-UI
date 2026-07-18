@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { GalleryPage } from './features/gallery/GalleryPage';
@@ -15,7 +15,7 @@ import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { UserProvider } from './shared/UserContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './features/gallery/types';
 
 function App() {
@@ -32,8 +32,6 @@ function App() {
 
 function AppContent() {
   const { theme } = useTheme();
-  const location = useLocation();
-  const isAdminPage = location.pathname.startsWith('/admin');
 
   return (
     <div className={`relative min-h-screen theme-bg-transition ${
@@ -42,26 +40,35 @@ function AppContent() {
       <MouseFollowBackground />
       
       <Router>
-        <div className="relative z-10 flex flex-col min-h-screen">
-          <Header />
-          
-          <main className="flex-1">
-            <Routes>
-              <Route path="/" element={<HomePageContent />} />
-              <Route path="/photos/:id" element={<PhotoDetailPage />} />
-              <Route path="/articles/:id" element={<ArticleDetailPage />} />
-              <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/users/:userId" element={<UserProfilePage />} />
-              <Route path="/upload" element={<UploadPage />} />
-              <Route path="/gallery" element={<GalleryPage />} />
-              <Route path="/admin/*" element={<AdminApp />} />
-            </Routes>
-          </main>
-          
-          {!isAdminPage && <Footer />}
-        </div>
+        <AppRouterContent />
       </Router>
+    </div>
+  );
+}
+
+function AppRouterContent() {
+  const location = useLocation();
+  const isAdminPage = location.pathname.startsWith('/admin');
+
+  return (
+    <div className="relative z-10 flex flex-col min-h-screen">
+      <Header />
+      
+      <main className="flex-1">
+        <Routes>
+          <Route path="/" element={<HomePageContent />} />
+          <Route path="/photos/:id" element={<PhotoDetailPage />} />
+          <Route path="/articles/:id" element={<ArticleDetailPage />} />
+          <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/users/:userId" element={<UserProfilePage />} />
+          <Route path="/upload" element={<UploadPage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/admin/*" element={<AdminApp />} />
+        </Routes>
+      </main>
+      
+      {!isAdminPage && <Footer />}
     </div>
   );
 }
