@@ -15,7 +15,7 @@ import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider, useTheme } from './shared/ThemeContext';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { UserProvider } from './shared/UserContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { PhotoListItem } from './features/gallery/types';
 
 function App() {
@@ -32,6 +32,8 @@ function App() {
 
 function AppContent() {
   const { theme } = useTheme();
+  const location = useLocation();
+  const isAdminPage = location.pathname.startsWith('/admin');
 
   return (
     <div className={`relative min-h-screen theme-bg-transition ${
@@ -57,7 +59,7 @@ function AppContent() {
             </Routes>
           </main>
           
-          <Footer />
+          {!isAdminPage && <Footer />}
         </div>
       </Router>
     </div>

@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 
@@ -20,17 +19,9 @@ const menuItems = [
 ];
 
 export function Layout({ admin, children, currentPage, onPageChange, onLogout }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
   const handleLogout = () => {
     setAdminToken(null);
     onLogout();
-  };
-
-  const roleLabel = {
-    super: '最高账户',
-    zone_master: '分区总审核',
-    zone_auditor: '分区审核',
   };
 
   const canAccess = (page: string) => {
@@ -43,7 +34,7 @@ export function Layout({ admin, children, currentPage, onPageChange, onLogout }:
 
   return (
     <div className="min-h-screen bg-slate-900 flex">
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} bg-slate-800 border-r border-slate-700 flex flex-col transition-all duration-300 overflow-hidden`}>
+      <aside className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
         <div className="p-6 border-b border-slate-700">
           <h1 className="text-xl font-bold text-white">TLRphotos</h1>
           <p className="text-sm text-slate-400 mt-1">管理后台</p>
@@ -77,27 +68,8 @@ export function Layout({ admin, children, currentPage, onPageChange, onLogout }:
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col">
-        <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-slate-400 hover:text-white transition-colors"
-          >
-            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-white font-medium">{admin.name || admin.username}</p>
-              <p className="text-sm text-slate-400">{roleLabel[admin.role]} | {admin.zone}</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
-              {admin.name?.charAt(0) || admin.username.charAt(0)}
-            </div>
-          </div>
-        </header>
-
-        <main className="flex-1 p-6">
+      <div className="flex-1">
+        <main className="p-6">
           {children}
         </main>
       </div>
