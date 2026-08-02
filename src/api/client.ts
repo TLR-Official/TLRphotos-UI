@@ -82,13 +82,39 @@ async function request<T = unknown>(
         return request(url, { ...options, retryCount: retryCount - 1 });
       }
 
+      try {
+        const text = await response.text();
+        if (text) {
+          const errorData = JSON.parse(text);
+          return {
+            success: false,
+            message: errorData.message || `请求失败: ${response.status} ${response.statusText}`,
+          };
+        }
+      } catch {}
+
       return {
         success: false,
         message: `请求失败: ${response.status} ${response.statusText}`,
       };
     }
 
-    return response.json();
+    try {
+      const text = await response.text();
+      if (!text) {
+        return {
+          success: false,
+          message: '服务器未返回响应',
+        };
+      }
+      return JSON.parse(text);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      return {
+        success: false,
+        message: '响应格式错误',
+      };
+    }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return {

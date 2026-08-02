@@ -5,21 +5,10 @@ import { getSession, updateLastActive, deleteSession } from '../services/cookieS
 import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
+import { getProxyUrl } from '../utils/url';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const JWT_EXPIRES_IN = '24h';
-
-function getProxyUrl(key: string) {
-  if (key.startsWith('http://') || key.startsWith('https://')) {
-    const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
-    if (key.startsWith(ossDomain)) {
-      const filePath = key.replace(ossDomain, '').split('?')[0];
-      return `/api/photos/image/${encodeURIComponent(filePath)}`;
-    }
-    return key;
-  }
-  return `/api/photos/image/${encodeURIComponent(key)}`;
-}
 
 function getClientIp(req: express.Request): string {
   const ip = req.headers['x-forwarded-for'] || 
@@ -303,13 +292,13 @@ router.get('/users/:id/photos', async (req, res) => {
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
 
     const photos = await db.all(
-      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE user_id = ? AND status = "approved" ORDER BY created_at DESC LIMIT ? OFFSET ?',
       id,
       parseInt(pageSize as string),
       offset
     );
 
-    const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE user_id = ?', id);
+    const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE user_id = ? AND status = "approved"', id);
 
     res.json({
       success: true,

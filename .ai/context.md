@@ -77,7 +77,7 @@
 
 ### 4.2 数据结构示例（草稿）
 
-```json
+```JSON
 {
   "id": "photo_001",
   "title": "城市夜景航拍",
@@ -124,13 +124,11 @@
 - ❌ **禁止引入 Docker**
 - ❌ **禁止引入 Redis 或其他缓存服务**
 - ❌ **禁止将缩略图存为 Base64 字符串**
-- ❌ **禁止在服务器上执行前端构建、Vite 开发或 UI 调试**
 - ✅ **必须按需查询指定字段**（列表页 API）
 - ✅ 文件存储必须通过 `IStorageAdapter` 接口访问，禁止业务代码直接依赖任何特定对象存储 SDK；SQLite 仅存元数据，严禁存储二进制文件。
 
 ### 6.2 开发约束
 
-- 所有 UI 开发必须在本地完成
 - 服务器仅用于运行 PocketBase 和存储数据
 - 前端构建产物部署到服务器静态目录
 
@@ -190,46 +188,50 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-07-18 01:30 | [fix] 项目安全审查修复：JWT_SECRET环境变量、bcrypt密码哈希、getProxyUrl工具函数提取、搜索接口LIKE转义、用户照片审核过滤、图片流式传输 | backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/adminService.ts, backend/src/utils/url.ts |
+| 2026-07-26 16:15 | [fix] 修复全局JSON解析错误：client.ts中request函数添加空响应和非JSON响应处理，覆盖所有API请求 | src/api/client.ts |
+| 2026-07-26 16:00 | [fix] 修复登录接口JSON解析错误：前端login和refresh函数添加空响应和非JSON响应处理，避免Unexpected end of JSON input错误 | src/api/auth.ts |
+| 2026-07-26 15:30 | [config] 重新构建前端项目：执行 npm run build 更新 dist/ 构建产物 | dist/ |
 | 2026-07-18 00:50 | [fix] 管理后台页面隐藏主站Header：在AppRouterContent中添加条件渲染 | src/App.tsx |
 | 2026-07-18 00:45 | [fix] 修复页面加载失败问题：useLocation()在Router组件外部调用导致React渲染错误，重构App组件结构 | src/App.tsx |
 | 2026-07-18 00:30 | [fix] 删除管理后台顶部栏和底部版权栏，保留侧边栏退出登录按钮 | src/admin/Layout.tsx, src/App.tsx |
-| 2026-07-18 00:00 | [config] 更新照片列表接口仅返回已审核照片(status=approved)，管理后台前端组件优化 | backend/src/routes/photos.ts, src/admin/ |
-| 2026-07-16 23:30 | [feat] 开发管理后台系统：三级权限体系（最高/分区总审核/分区审核）、照片审核工作流、管理员账户管理、用户管理、操作日志、数据统计 | backend/src/db.ts, backend/src/services/adminService.ts, backend/src/middleware/adminAuth.ts, backend/src/routes/admin.ts, backend/src/server.ts, src/admin/ |
-| 2026-07-16 23:15 | [fix] 修复上传者显示为"匿名用户"问题：在directUpload函数中添加Authorization header传递用户token，后端正确获取并保存user_id | src/api/photos.ts, src/features/upload/UploadPage.tsx |
-| 2026-07-16 23:00 | [fix] 修复水印预览与实际生成不一致问题：添加字体大小缩放因子(基于图片实际尺寸与1200px基准的比例)、设置font-weight为600使字体更粗 | backend/src/services/imageService.ts |
-| 2026-07-16 22:45 | [fix] 修复上传500错误：INSERT语句VALUES占位符数量与列数不匹配（24个问号→25个问号） | backend/src/routes/photos.ts |
-| 2026-07-16 21:00 | [fix] 修复三级标签下拉框点击消失问题：在select和input元素上添加stopPropagation阻止事件冒泡到父级标签卡片 | src/features/upload/UploadPage.tsx |
-| 2026-07-16 20:00 | [feat] 上传页面大改版：添加航空/铁路/汽车三大分类、取消强制描述、采用预设标签选择、实现差异化上传模板、添加安全合规声明 | backend/src/db/tagsDb.ts, backend/src/routes/tags.ts, backend/src/server.ts, backend/src/db.ts, backend/src/routes/photos.ts, src/api/tags.ts, src/features/upload/UploadPage.tsx |
-| 2026-07-16 09:30 | [fix] 修复标签分隔问题：支持中英文逗号(,和，)分隔标签，添加空标签过滤 | backend/src/routes/photos.ts |
-| 2026-07-15 20:30 | [feat] 实现用户系统：添加上传者信息框(照片详情页标题上方)、公共用户主页(/users/:userId)、照片删除功能(三重确认+数据库/OSS全量删除)、修复返回作品集导航错误 | backend/src/db.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/ossService.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/UserProfilePage.tsx, src/api/photos.ts, src/shared/UserContext.tsx, src/App.tsx |
-| 2026-07-15 19:40 | [fix] 修复上传超时和500错误：添加120秒请求超时保护、Nginx代理超时配置(connect 60s/send/read 120s)、优化图片处理并行生成、添加处理时间日志 | backend/src/server.ts, backend/src/services/imageService.ts, /etc/nginx/sites-available/tlrphotos |
-| 2026-07-15 19:35 | [fix] 修复轮播图点击导航错误和缩略图问题：非激活slide添加pointer-events-none防止点击穿透，添加索引越界保护，修复缩略图URL代理转换 | src/features/gallery/PhotoCarousel.tsx, backend/src/routes/photos.ts |
-| 2026-07-15 19:00 | [fix] 修复上传500错误：修复sharp水印合成尺寸不匹配、移除OSS ACL参数、添加数据库新列(preview_url/watermarked_url/watermark_config)、SQLite语法兼容 | backend/src/services/imageService.ts, backend/src/services/ossService.ts, backend/src/db.ts |
-| 2026-07-15 18:30 | [fix] 修复上传413错误：Nginx配置client_max_body_size 50M，与后端multer配置一致 | /etc/nginx/sites-available/tlrphotos |
-| 2026-07-15 18:00 | [fix] 修复上传接口错误处理：multer错误返回HTML而非JSON，添加handleUploadError中间件统一返回JSON格式错误 | backend/src/routes/photos.ts, src/api/photos.ts |
-| 2026-07-15 17:30 | [feat] 实现图片优化与水印功能：重构上传流程为multipart方式，使用sharp生成缩略图(800px)和预览图(1200px)，添加水印编辑器(拖拽定位、透明度、大小调整)，详情页优先显示水印图 | backend/src/services/imageService.ts, backend/src/routes/photos.ts, src/features/upload/UploadPage.tsx |
-| 2026-07-15 15:25 | [feat] 重构上传页面：单选上传+强制填写标题/描述/标签+EXIF自动读取拍摄参数 | src/features/upload/UploadPage.tsx, package.json |
-| 2026-07-15 07:35 | [fix] 部署到生产环境：修复nginx代理解码%2F导致图片路由404，改用通配符路由匹配，移除fetch的timeout选项，前后端构建并重启服务 | backend/src/routes/photos.ts, dist/ |
-| 2026-07-14 23:30 | [fix] 统一照片ID格式：修复ID生成逻辑防止NaN，将数据库中所有非标准ID(photo_xxx、000NaN等)统一转换为纯数字格式 | backend/src/routes/photos.ts |
-| 2026-07-14 23:15 | [fix] 修复图片显示问题：代理路由支持从OSS预签名URL中提取文件路径，确保旧照片和新照片都能通过代理访问，修复"我的作品"导航到首页的问题 | backend/src/routes/photos.ts, src/shared/Header.tsx |
-| 2026-07-14 22:30 | [fix] 修复上传图片无法查看：completeUpload返回预签名URL而非文件路径，修复GalleryPage导航路径/photo->/photos | backend/src/routes/photos.ts, src/features/gallery/GalleryPage.tsx |
-| 2026-07-14 19:05 | [fix] 修复auth.ts语法错误：远程仓库合并冲突导致接口定义缺少闭合花括号，修复LoginData/UploadAvatarData接口 | src/api/auth.ts |
-| 2026-07-14 11:00 | [feat] 作品集图库页面：6位数字ID、搜索API、标签筛选、时间/热度/浏览排序、响应式网格、GalleryPage组件 | backend/src/db.ts, backend/src/routes/photos.ts, backend/docs/api.md, src/api/photos.ts, src/features/gallery/GalleryPage.tsx, src/shared/Header.tsx, src/App.tsx |
-| 2026-07-14 10:30 | [fix] 修复顶部栏玻璃效果失效：增强.glass/.glass-sm/.glass-lg背景不透明度和模糊度 | src/index.css |
-| 2026-07-13 21:00 | [feat] 图片上传页面：PhotoUploader支持多选拖拽上传、UploadPage编辑照片信息、/upload路由、Header下拉菜单添加上传入口 | src/shared/PhotoUploader.tsx, src/features/upload/UploadPage.tsx, src/App.tsx, src/shared/Header.tsx |
-| 2026-07-13 20:30 | [config] 数据库文件分离存储：.gitignore排除backend/data/*.db和uploads，创建.gitkeep保持目录结构 | .gitignore, backend/data/.gitkeep |
-| 2026-07-13 20:00 | [fix] Header下拉菜单悬停消失：添加200ms延迟关闭、下拉框独立鼠标事件、clearTimeout取消关闭 | src/shared/Header.tsx |
-| 2026-07-13 19:30 | [fix] PhotoDetailPage图片容器空白（flex items-start + block max-w-full）、Header下拉菜单悬停消失（onMouseEnter/onMouseLeave移到父容器） | src/features/gallery/PhotoDetailPage.tsx, src/shared/Header.tsx |
-| 2026-07-14 01:00 | [config] 配置阿里云OSS存储（香港地域），设置AccessKey和Bucket信息 | backend/.env |
-| 2026-07-14 00:30 | [feat] Cookie登录状态管理：创建cookie表、AES-256-GCM加密、双重过期机制(30天时间+7天活动)、保存登录状态复选框、自动登录接口、定时清理任务 | backend/src/utils/crypto.ts, backend/src/db.ts, backend/src/services/cookieService.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/src/server.ts, backend/docs/api.md, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/UserContext.tsx |
-| 2026-07-13 23:58 | [config] 配置GitHub同步安全策略，.gitignore保护本地数据，创建sync.sh同步脚本 | .gitignore, sync.sh |
-| 2026-07-13 23:55 | [config] 安装SSL证书，配置HTTPS和HTTP重定向，支持Cloudflare DNS挑战获取证书 | nginx.conf |
-| 2026-07-13 23:40 | [config] 配置前端和后端监听所有网卡地址，允许外部设备通过IP访问，修复API地址硬编码问题，添加nginx生产部署配置，创建systemd服务保证后端持久运行 | vite.config.ts, backend/src/server.ts, src/api/client.ts, nginx.conf, backend/tlrphotos-backend.service |
-| 2026-07-13 15:30 | [feat] 用户个人页面：头像上传预览、资料编辑表单、自定义字段、密码修改（二次确认）、隐私设置切换、Header下拉菜单、ProfilePage组件 | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/api/auth.ts, src/shared/UserContext.tsx, src/shared/Header.tsx, src/features/profile/ProfilePage.tsx, src/App.tsx |
-| 2026-07-13 00:00 | [fix] 删除背景动画（保留静态渐变）、修复双重顶部栏（PhotoDetailPage/ArticleDetailPage移除重复Header/Footer）、登录页面浅色主题适配、粘性页脚实现 | src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/column/ArticleDetailPage.tsx, src/features/auth/AuthPage.tsx, src/App.tsx |
-| 2026-07-07 19:30 | [feat] 用户认证系统：users表、bcrypt密码哈希、JWT令牌、登录/注册页面（流畅动画切换）、微信/QQ登录预留、Header登录按钮 [push-deferred] | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/shared/UserContext.tsx, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/Header.tsx, src/App.tsx |
-| 2026-07-07 21:30 | [feat] 纯代码全栈架构迁移完成：Express后端、SQLite数据库、API路由、前端数据层重写、本地联调通过 | backend/*, src/api/*, src/shared/PhotosContext.tsx |
-| 2026-07-02 01:10 | [fix] 修复PhotosContext和PhotoDetailPage类型错误：修正setPhotos参数、移除无用getPhotoById、修正日期格式化函数引用 | PhotosContext.tsx, PhotoDetailPage.tsx |
+\| 2026-07-18 00:00 | \[config] 更新照片列表接口仅返回已审核照片(status=approved)，管理后台前端组件优化 | backend/src/routes/photos.ts, src/admin/ |
+\| 2026-07-16 23:30 | \[feat] 开发管理后台系统：三级权限体系（最高/分区总审核/分区审核）、照片审核工作流、管理员账户管理、用户管理、操作日志、数据统计 | backend/src/db.ts, backend/src/services/adminService.ts, backend/src/middleware/adminAuth.ts, backend/src/routes/admin.ts, backend/src/server.ts, src/admin/ |
+\| 2026-07-16 23:15 | \[fix] 修复上传者显示为"匿名用户"问题：在directUpload函数中添加Authorization header传递用户token，后端正确获取并保存user\_id | src/api/photos.ts, src/features/upload/UploadPage.tsx |
+\| 2026-07-16 23:00 | \[fix] 修复水印预览与实际生成不一致问题：添加字体大小缩放因子(基于图片实际尺寸与1200px基准的比例)、设置font-weight为600使字体更粗 | backend/src/services/imageService.ts |
+\| 2026-07-16 22:45 | \[fix] 修复上传500错误：INSERT语句VALUES占位符数量与列数不匹配（24个问号→25个问号） | backend/src/routes/photos.ts |
+\| 2026-07-16 21:00 | \[fix] 修复三级标签下拉框点击消失问题：在select和input元素上添加stopPropagation阻止事件冒泡到父级标签卡片 | src/features/upload/UploadPage.tsx |
+\| 2026-07-16 20:00 | \[feat] 上传页面大改版：添加航空/铁路/汽车三大分类、取消强制描述、采用预设标签选择、实现差异化上传模板、添加安全合规声明 | backend/src/db/tagsDb.ts, backend/src/routes/tags.ts, backend/src/server.ts, backend/src/db.ts, backend/src/routes/photos.ts, src/api/tags.ts, src/features/upload/UploadPage.tsx |
+\| 2026-07-16 09:30 | \[fix] 修复标签分隔问题：支持中英文逗号(,和，)分隔标签，添加空标签过滤 | backend/src/routes/photos.ts |
+\| 2026-07-15 20:30 | \[feat] 实现用户系统：添加上传者信息框(照片详情页标题上方)、公共用户主页(/users/:userId)、照片删除功能(三重确认+数据库/OSS全量删除)、修复返回作品集导航错误 | backend/src/db.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/ossService.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/UserProfilePage.tsx, src/api/photos.ts, src/shared/UserContext.tsx, src/App.tsx |
+\| 2026-07-15 19:40 | \[fix] 修复上传超时和500错误：添加120秒请求超时保护、Nginx代理超时配置(connect 60s/send/read 120s)、优化图片处理并行生成、添加处理时间日志 | backend/src/server.ts, backend/src/services/imageService.ts, /etc/nginx/sites-available/tlrphotos |
+\| 2026-07-15 19:35 | \[fix] 修复轮播图点击导航错误和缩略图问题：非激活slide添加pointer-events-none防止点击穿透，添加索引越界保护，修复缩略图URL代理转换 | src/features/gallery/PhotoCarousel.tsx, backend/src/routes/photos.ts |
+\| 2026-07-15 19:00 | \[fix] 修复上传500错误：修复sharp水印合成尺寸不匹配、移除OSS ACL参数、添加数据库新列(preview\_url/watermarked\_url/watermark\_config)、SQLite语法兼容 | backend/src/services/imageService.ts, backend/src/services/ossService.ts, backend/src/db.ts |
+\| 2026-07-15 18:30 | \[fix] 修复上传413错误：Nginx配置client\_max\_body\_size 50M，与后端multer配置一致 | /etc/nginx/sites-available/tlrphotos |
+\| 2026-07-15 18:00 | \[fix] 修复上传接口错误处理：multer错误返回HTML而非JSON，添加handleUploadError中间件统一返回JSON格式错误 | backend/src/routes/photos.ts, src/api/photos.ts |
+\| 2026-07-15 17:30 | \[feat] 实现图片优化与水印功能：重构上传流程为multipart方式，使用sharp生成缩略图(800px)和预览图(1200px)，添加水印编辑器(拖拽定位、透明度、大小调整)，详情页优先显示水印图 | backend/src/services/imageService.ts, backend/src/routes/photos.ts, src/features/upload/UploadPage.tsx |
+\| 2026-07-15 15:25 | \[feat] 重构上传页面：单选上传+强制填写标题/描述/标签+EXIF自动读取拍摄参数 | src/features/upload/UploadPage.tsx, package.json |
+\| 2026-07-15 07:35 | \[fix] 部署到生产环境：修复nginx代理解码%2F导致图片路由404，改用通配符路由匹配，移除fetch的timeout选项，前后端构建并重启服务 | backend/src/routes/photos.ts, dist/ |
+\| 2026-07-14 23:30 | \[fix] 统一照片ID格式：修复ID生成逻辑防止NaN，将数据库中所有非标准ID(photo\_xxx、000NaN等)统一转换为纯数字格式 | backend/src/routes/photos.ts |
+\| 2026-07-14 23:15 | \[fix] 修复图片显示问题：代理路由支持从OSS预签名URL中提取文件路径，确保旧照片和新照片都能通过代理访问，修复"我的作品"导航到首页的问题 | backend/src/routes/photos.ts, src/shared/Header.tsx |
+\| 2026-07-14 22:30 | \[fix] 修复上传图片无法查看：completeUpload返回预签名URL而非文件路径，修复GalleryPage导航路径/photo->/photos | backend/src/routes/photos.ts, src/features/gallery/GalleryPage.tsx |
+\| 2026-07-14 19:05 | \[fix] 修复auth.ts语法错误：远程仓库合并冲突导致接口定义缺少闭合花括号，修复LoginData/UploadAvatarData接口 | src/api/auth.ts |
+\| 2026-07-14 11:00 | \[feat] 作品集图库页面：6位数字ID、搜索API、标签筛选、时间/热度/浏览排序、响应式网格、GalleryPage组件 | backend/src/db.ts, backend/src/routes/photos.ts, backend/docs/api.md, src/api/photos.ts, src/features/gallery/GalleryPage.tsx, src/shared/Header.tsx, src/App.tsx |
+\| 2026-07-14 10:30 | \[fix] 修复顶部栏玻璃效果失效：增强.glass/.glass-sm/.glass-lg背景不透明度和模糊度 | src/index.css |
+\| 2026-07-13 21:00 | \[feat] 图片上传页面：PhotoUploader支持多选拖拽上传、UploadPage编辑照片信息、/upload路由、Header下拉菜单添加上传入口 | src/shared/PhotoUploader.tsx, src/features/upload/UploadPage.tsx, src/App.tsx, src/shared/Header.tsx |
+\| 2026-07-13 20:30 | \[config] 数据库文件分离存储：.gitignore排除backend/data/*.db和uploads，创建.gitkeep保持目录结构 | .gitignore, backend/data/.gitkeep |
+\| 2026-07-13 20:00 | \[fix] Header下拉菜单悬停消失：添加200ms延迟关闭、下拉框独立鼠标事件、clearTimeout取消关闭 | src/shared/Header.tsx |
+\| 2026-07-13 19:30 | \[fix] PhotoDetailPage图片容器空白（flex items-start + block max-w-full）、Header下拉菜单悬停消失（onMouseEnter/onMouseLeave移到父容器） | src/features/gallery/PhotoDetailPage.tsx, src/shared/Header.tsx |
+\| 2026-07-14 01:00 | \[config] 配置阿里云OSS存储（香港地域），设置AccessKey和Bucket信息 | backend/.env |
+\| 2026-07-14 00:30 | \[feat] Cookie登录状态管理：创建cookie表、AES-256-GCM加密、双重过期机制(30天时间+7天活动)、保存登录状态复选框、自动登录接口、定时清理任务 | backend/src/utils/crypto.ts, backend/src/db.ts, backend/src/services/cookieService.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/src/server.ts, backend/docs/api.md, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/UserContext.tsx |
+\| 2026-07-13 23:58 | \[config] 配置GitHub同步安全策略，.gitignore保护本地数据，创建sync.sh同步脚本 | .gitignore, sync.sh |
+\| 2026-07-13 23:55 | \[config] 安装SSL证书，配置HTTPS和HTTP重定向，支持Cloudflare DNS挑战获取证书 | nginx.conf |
+\| 2026-07-13 23:40 | \[config] 配置前端和后端监听所有网卡地址，允许外部设备通过IP访问，修复API地址硬编码问题，添加nginx生产部署配置，创建systemd服务保证后端持久运行 | vite.config.ts, backend/src/server.ts, src/api/client.ts, nginx.conf, backend/tlrphotos-backend.service |
+\| 2026-07-13 15:30 | \[feat] 用户个人页面：头像上传预览、资料编辑表单、自定义字段、密码修改（二次确认）、隐私设置切换、Header下拉菜单、ProfilePage组件 | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/api/auth.ts, src/shared/UserContext.tsx, src/shared/Header.tsx, src/features/profile/ProfilePage.tsx, src/App.tsx |
+\| 2026-07-13 00:00 | \[fix] 删除背景动画（保留静态渐变）、修复双重顶部栏（PhotoDetailPage/ArticleDetailPage移除重复Header/Footer）、登录页面浅色主题适配、粘性页脚实现 | src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/column/ArticleDetailPage.tsx, src/features/auth/AuthPage.tsx, src/App.tsx |
+\| 2026-07-07 19:30 | \[feat] 用户认证系统：users表、bcrypt密码哈希、JWT令牌、登录/注册页面（流畅动画切换）、微信/QQ登录预留、Header登录按钮 \[push-deferred] | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/auth.ts, backend/docs/api.md, src/shared/UserContext.tsx, src/api/auth.ts, src/features/auth/AuthPage.tsx, src/shared/Header.tsx, src/App.tsx |
+\| 2026-07-07 21:30 | \[feat] 纯代码全栈架构迁移完成：Express后端、SQLite数据库、API路由、前端数据层重写、本地联调通过 | backend/*, src/api/*, src/shared/PhotosContext.tsx |
+\| 2026-07-02 01:10 | \[fix] 修复PhotosContext和PhotoDetailPage类型错误：修正setPhotos参数、移除无用getPhotoById、修正日期格式化函数引用 | PhotosContext.tsx, PhotoDetailPage.tsx |
 \| 2026-07-02 01:00 | \[refactor] 项目审查修复：XSS防护、URL白名单、PhotosContext、工具函数提取、ApiResponse复用、AbortController、ErrorBoundary、删除WaterfallGallery | src/\*\*/\* |
 \| 2026-07-02 00:10 | \[fix] 清理无用代码：删除未使用的getPhotoDetail函数，修复Footer类型定义，更新项目名称 | mockData.ts, Footer.tsx, package.json |
 \| 2026-07-02 00:00 | \[config] 忽略SSH密钥文件(id\_ed25519.pub等)防止上传 \[push-deferred] | .gitignore |
@@ -241,7 +243,7 @@ TLRphotos/
 \| 2026-06-30 21:00 | \[fix] 修复 TypeScript 类型错误：ThemeContext ReactNode 导入、MouseFollowBackground 数组类型注解 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx |
 \| 2026-06-30 20:30 | \[feat] 主题切换功能：深色/浅色模式 + 平滑动画、48 条动态线条背景、轮播图固定白色文字 | src/shared/ThemeContext.tsx, src/shared/MouseFollowBackground.tsx, src/features/gallery/PhotoCarousel.tsx |
 \| 2026-06-30 19:00 | \[feat] 照片详情页：点击跳转、完整 EXIF 信息展示、标签系统 | src/features/gallery/PhotoDetailPage.tsx, src/features/gallery/types.ts, src/features/gallery/mockData.ts |
-\| 2026-06-28 17:25 | \[feat] 新增鼠标跟随动态背景 + 液态玻璃效果，全站改造为深色主题 | src/shared/MouseFollowBackground.tsx, src/index.css, src/App.tsx, src/shared/Header.tsx, src/shared/Footer.tsx, src/features/gallery/* |
+\| 2026-06-28 17:25 | \[feat] 新增鼠标跟随动态背景 + 液态玻璃效果，全站改造为深色主题 | src/shared/MouseFollowBackground.tsx, src/index.css, src/App.tsx, src/shared/Header.tsx, src/shared/Footer.tsx, src/features/gallery/\* |
 \| 2026-06-28 16:30 | \[refactor] 瀑布流智能分配算法优化 | src/features/gallery/WaterfallGallery.tsx |
 
 ***

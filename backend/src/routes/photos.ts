@@ -4,8 +4,11 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig } from '../services/imageService';
+import { getProxyUrl, escapeLikePattern } from '../utils/url';
 
 const router = express.Router();
+
+const JWT_SECRET = process.env.JWT_SECRET || '';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -39,13 +42,14 @@ router.get('/search', async (req, res) => {
   try {
     const { keyword, tag, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
-    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, created_at FROM photos';
+    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
     const conditions: string[] = [];
 
     if (keyword) {
+      const escapedKeyword = escapeLikePattern(String(keyword));
       conditions.push('(title LIKE ? OR description LIKE ?)');
-      params.push(`%${keyword}%`, `%${keyword}%`);
+      params.push(`%${escapedKeyword}%`, `%${escapedKeyword}%`);
     }
 
     if (tag) {
@@ -54,7 +58,7 @@ router.get('/search', async (req, res) => {
     }
 
     if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
+      query += ' AND ' + conditions.join(' AND ');
     }
 
     const validSortBy = ['created_at', 'likes', 'views', 'title'];
@@ -66,7 +70,7 @@ router.get('/search', async (req, res) => {
 
     const photos = await db.all(query, params);
 
-    const result = await Promise.all(photos.map(async (photo: any) => {
+    const result = photos.map((photo: any) => {
       let tags: string[] = [];
       if (photo.tags) {
         try {
@@ -75,20 +79,9 @@ router.get('/search', async (req, res) => {
           tags = photo.tags.split(' ').filter(Boolean);
         }
       }
-      const getProxyUrl = (key: string) => {
-        if (key.startsWith('http://') || key.startsWith('https://')) {
-          const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
-          if (key.startsWith(ossDomain)) {
-            const filePath = key.replace(ossDomain, '').split('?')[0];
-            return `/api/photos/image/${encodeURIComponent(filePath)}`;
-          }
-          return key;
-        }
-        return `/api/photos/image/${encodeURIComponent(key)}`;
-      };
       const thumbnailUrl = getProxyUrl(photo.thumbnail_path);
       return { ...photo, tags, thumbnail_path: thumbnailUrl };
-    }));
+    });
 
     res.json({ success: true, data: result });
   } catch (error) {
@@ -99,7 +92,7 @@ router.get('/search', async (req, res) => {
 
 router.get('/tags', async (req, res) => {
   try {
-    const photos = await db.all('SELECT tags FROM photos');
+    const photos = await db.all('SELECT tags FROM photos WHERE status = "approved"');
     const tagSet = new Set<string>();
 
     photos.forEach((photo: any) => {
@@ -128,7 +121,7 @@ router.get('/', async (req, res) => {
   try {
     const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved" ORDER BY created_at DESC');
 
-    const result = await Promise.all(photos.map(async (photo: any) => {
+    const result = photos.map((photo: any) => {
       let tags: string[] = [];
       if (photo.tags) {
         try {
@@ -137,20 +130,9 @@ router.get('/', async (req, res) => {
           tags = photo.tags.split(' ').filter(Boolean);
         }
       }
-      const getProxyUrl = (key: string) => {
-        if (key.startsWith('http://') || key.startsWith('https://')) {
-          const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
-          if (key.startsWith(ossDomain)) {
-            const filePath = key.replace(ossDomain, '').split('?')[0];
-            return `/api/photos/image/${encodeURIComponent(filePath)}`;
-          }
-          return key;
-        }
-        return `/api/photos/image/${encodeURIComponent(key)}`;
-      };
       const thumbnailUrl = getProxyUrl(photo.thumbnail_path);
       return { ...photo, tags, thumbnail_path: thumbnailUrl };
-    }));
+    });
 
     res.json({ success: true, data: result });
   } catch (error) {
@@ -163,7 +145,22 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const photo = await db.get('SELECT * FROM photos WHERE id = ?', id);
+    let currentUserId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+        currentUserId = decoded.userId;
+      } catch {}
+    }
+
+    let photo;
+    if (currentUserId) {
+      photo = await db.get('SELECT * FROM photos WHERE id = ? AND (status = "approved" OR user_id = ?)', id, currentUserId);
+    } else {
+      photo = await db.get('SELECT * FROM photos WHERE id = ? AND status = "approved"', id);
+    }
 
     if (!photo) {
       return res.status(404).json({ success: false, message: '照片不存在' });
@@ -182,18 +179,6 @@ router.get('/:id', async (req, res) => {
         };
       }
     }
-
-    const getProxyUrl = (key: string) => {
-      if (key.startsWith('http://') || key.startsWith('https://')) {
-        const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
-        if (key.startsWith(ossDomain)) {
-          const filePath = key.replace(ossDomain, '').split('?')[0];
-          return `/api/photos/image/${encodeURIComponent(filePath)}`;
-        }
-        return key;
-      }
-      return `/api/photos/image/${encodeURIComponent(key)}`;
-    };
 
     res.json({
       success: true,
@@ -281,6 +266,7 @@ router.get('/image/*', async (req: any, res) => {
     console.log('Proxy image request:', decodedKey);
     
     const presignedUrl = await getFileUrl(decodedKey);
+    
     const response = await fetch(presignedUrl);
     
     if (!response.ok) {
@@ -297,30 +283,34 @@ router.get('/image/*', async (req: any, res) => {
         }
         
         const contentType = originalResponse.headers.get('content-type') || 'image/jpeg';
-        const contentLength = originalResponse.headers.get('content-length');
         
         res.setHeader('Content-Type', contentType);
-        if (contentLength) {
-          res.setHeader('Content-Length', contentLength);
+        if (originalResponse.body) {
+          const reader = originalResponse.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+          res.end();
         }
-        
-        const arrayBuffer = await originalResponse.arrayBuffer();
-        res.send(Buffer.from(arrayBuffer));
         return;
       }
       return sendPlaceholderImage(res);
     }
     
     const contentType = response.headers.get('content-type') || 'image/jpeg';
-    const contentLength = response.headers.get('content-length');
     
     res.setHeader('Content-Type', contentType);
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
     }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
   } catch (error) {
     console.error('Error proxying image:', error);
     sendPlaceholderImage(res);
@@ -624,7 +614,7 @@ router.delete('/:id', async (req, res) => {
     const token = authHeader.substring(7);
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
+      decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
     } catch {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }

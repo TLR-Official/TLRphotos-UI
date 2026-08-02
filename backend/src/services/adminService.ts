@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { db } from '../db';
 
 export type AdminRole = 'super' | 'zone_master' | 'zone_auditor';
@@ -18,7 +19,7 @@ export interface AdminUser {
   updated_at: string;
 }
 
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'admin-secret-key-change-in-production';
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || '';
 
 export async function adminLogin(username: string, password: string): Promise<{ success: boolean; token?: string; admin?: AdminUser; message?: string }> {
   const admin = await db.get<AdminUser>('SELECT * FROM admin_users WHERE username = ? AND is_active = 1', [username]);
@@ -27,10 +28,7 @@ export async function adminLogin(username: string, password: string): Promise<{ 
     return { success: false, message: '用户名或密码错误' };
   }
 
-  const passwordMatch = crypto.timingSafeEqual(
-    Buffer.from(crypto.createHash('sha256').update(password).digest('hex')),
-    Buffer.from(admin.password_hash)
-  );
+  const passwordMatch = await bcrypt.compare(password, admin.password_hash);
 
   if (!passwordMatch) {
     return { success: false, message: '用户名或密码错误' };
@@ -70,7 +68,7 @@ export async function createAdminUser(data: {
   }
 
   const id = crypto.randomUUID();
-  const passwordHash = crypto.createHash('sha256').update(data.password).digest('hex');
+  const passwordHash = await bcrypt.hash(data.password, 10);
 
   await db.run(
     'INSERT INTO admin_users (id, username, password_hash, email, name, role, zone, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -157,11 +155,18 @@ export async function logAdminAction(admin: AdminUser, action: string, targetTyp
 }
 
 export async function initSuperAdmin(): Promise<void> {
-  const existing = await db.get('SELECT id FROM admin_users WHERE role = "super"');
-  if (existing) return;
+  const existing = await db.get('SELECT id, password_hash FROM admin_users WHERE role = "super"');
+  if (existing) {
+    if (existing.password_hash.length === 64) {
+      const newHash = await bcrypt.hash('TLRadmin2026!', 10);
+      await db.run('UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE id = ?', [newHash, new Date().toISOString(), existing.id]);
+      console.log('[Admin] 最高账户密码已升级为bcrypt格式');
+    }
+    return;
+  }
 
   const id = 'super_admin_initial';
-  const passwordHash = crypto.createHash('sha256').update('TLRadmin2026!').digest('hex');
+  const passwordHash = await bcrypt.hash('TLRadmin2026!', 10);
 
   await db.run(
     'INSERT INTO admin_users (id, username, password_hash, name, role, zone, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',

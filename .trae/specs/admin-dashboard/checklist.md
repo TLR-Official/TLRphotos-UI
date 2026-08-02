@@ -1,0 +1,13 @@
+- [ ] Checkpoint 1: 数据库表结构创建完成（admin_users, admin_logs, photos.status字段）
+- [ ] Checkpoint 2: 管理员认证API正常工作（登录、JWT验证、权限中间件）
+- [ ] Checkpoint 3: 管理员账户管理API正常工作（创建、编辑、禁用）
+- [ ] Checkpoint 4: 照片审核API正常工作（待审核列表、通过、拒绝）
+- [ ] Checkpoint 5: 用户管理与日志API正常工作
+- [ ] Checkpoint 6: 管理后台登录页面可正常访问
+- [ ] Checkpoint 7: 管理后台布局与导航正常工作
+- [ ] Checkpoint 8: 照片审核模块正常工作
+- [ ] Checkpoint 9: 管理员账户管理模块正常工作
+- [ ] Checkpoint 10: 用户管理、日志与统计模块正常工作
+- [ ] Checkpoint 11: Nginx配置完成，admin.tlrphotos.com可访问
+- [ ] Checkpoint 12: 权限控制验证通过（不同级别账户只能访问权限范围内的功能）
+- [ ] Checkpoint 13: 操作日志记录完整

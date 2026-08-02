@@ -12,7 +12,7 @@ import { AdminApp } from './admin/AdminApp';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
-import { ThemeProvider, useTheme } from './shared/ThemeContext';
+import { ThemeProvider } from './shared/ThemeContext';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { UserProvider } from './shared/UserContext';
 import { useNavigate } from 'react-router-dom';
@@ -31,12 +31,8 @@ function App() {
 }
 
 function AppContent() {
-  const { theme } = useTheme();
-
   return (
-    <div className={`relative min-h-screen theme-bg-transition ${
-      theme === 'dark' ? 'page-dark' : 'page-light'
-    }`}>
+    <div className="relative min-h-screen theme-bg-transition page-light">
       <MouseFollowBackground />
       
       <Router>
@@ -74,10 +70,8 @@ function AppRouterContent() {
 }
 
 function HomePageContent() {
-  const { theme } = useTheme();
   const navigate = useNavigate();
   const { photos } = usePhotos();
-  const isDark = theme === 'dark';
   const bottomPhotos = photos.slice(5, 9);
 
   const handlePhotoClick = (photoId: string) => {
@@ -100,17 +94,13 @@ function HomePageContent() {
         </div>
 
         <section className="mt-16">
-          <h2 className={`text-xl font-semibold mb-8 ${
-            isDark ? 'text-white' : 'text-gray-900'
-          }`}>精选作品</h2>
+          <h2 className="text-xl font-semibold mb-8 text-gray-900">精选作品</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {bottomPhotos.map((photo: PhotoListItem) => (
               <div
                 key={photo.id}
                 onClick={() => handlePhotoClick(photo.id)}
-                className={`group cursor-pointer rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl ${
-                  isDark ? 'glass' : 'bg-white'
-                }`}
+                className="group cursor-pointer rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl bg-white"
               >
                 <div className="aspect-[4/3] overflow-hidden">
                   <img
@@ -120,20 +110,14 @@ function HomePageContent() {
                   />
                 </div>
                 <div className="p-4">
-                  <h3 className={`text-sm font-medium mb-2 truncate ${
-                    isDark ? 'text-white' : 'text-gray-900'
-                  }`}>
+                  <h3 className="text-sm font-medium mb-2 truncate text-gray-900">
                     {photo.title}
                   </h3>
                   <div className="flex flex-wrap gap-1">
                     {photo.tags.slice(0, 2).map((tag: string) => (
                       <span
                         key={tag}
-                        className={`px-2 py-0.5 rounded-full text-xs ${
-                          isDark
-                            ? 'bg-blue-500/20 text-blue-300'
-                            : 'bg-blue-50 text-blue-700'
-                        }`}
+                        className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700"
                       >
                         #{tag}
                       </span>

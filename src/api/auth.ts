@@ -66,25 +66,75 @@ export interface RefreshResponse {
 }
 
 export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
-  const response = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password, remember }),
-  });
-  return response.json();
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password, remember }),
+    });
+
+    const text = await response.text();
+    
+    if (!text) {
+      return {
+        success: false,
+        message: '服务器未返回响应',
+      };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        message: `请求失败: ${response.status} ${response.statusText}`,
+      };
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    return {
+      success: false,
+      message: '网络请求失败，请稍后重试',
+    };
+  }
 }
 
 export async function refresh(sessionToken: string): Promise<RefreshResponse> {
-  const response = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ session_token: sessionToken }),
-  });
-  return response.json();
+  try {
+    const response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ session_token: sessionToken }),
+    });
+
+    const text = await response.text();
+    
+    if (!text) {
+      return {
+        success: false,
+        message: '服务器未返回响应',
+      };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        message: `请求失败: ${response.status} ${response.statusText}`,
+      };
+    }
+  } catch (error) {
+    console.error('Refresh error:', error);
+    return {
+      success: false,
+      message: '网络请求失败，请稍后重试',
+    };
+  }
 }
 
 export async function loginWithManager(email: string, password: string): Promise<ApiResponse<LoginData>> {
