@@ -13,6 +13,7 @@ import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider } from './shared/ThemeContext';
+import { CachedImage } from './components/CachedImage';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { UserProvider } from './shared/UserContext';
 import { useNavigate } from 'react-router-dom';
@@ -103,7 +104,7 @@ function HomePageContent() {
                 className="group cursor-pointer rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl bg-white"
               >
                 <div className="aspect-[4/3] overflow-hidden">
-                  <img
+                  <CachedImage
                     src={photo.thumbnail_path}
                     alt={photo.title}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"

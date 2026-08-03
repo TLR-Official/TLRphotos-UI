@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import type { PublicUser } from '../../api/photos';
 import type { PhotoListItem } from '../gallery/types';
 import { formatDate } from '../../shared/utils';
+import { CachedImage } from '../../components/CachedImage';
 
 export function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
@@ -205,7 +206,7 @@ export function UserProfilePage() {
                     theme === 'dark' ? 'bg-slate-800' : 'bg-white'
                   }`}
                 >
-                  <img
+                  <CachedImage
                     src={photo.thumbnail_path}
                     alt={photo.title}
                     className="w-full aspect-square object-cover group-hover:scale-105 transition-transform duration-300"

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
 import { usePhotos } from '../../shared/PhotosContext';
 import { useTheme } from '../../shared/ThemeContext';
+import { CachedImage } from '../../components/CachedImage';
 
 interface CarouselSlideProps {
   photo: PhotoListItem;
@@ -20,7 +21,7 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
       }`}
     >
       <div className="relative h-full w-full rounded-2xl overflow-hidden shadow-xl">
-        <img
+        <CachedImage
           src={photo.thumbnail_path}
           alt={photo.title}
           className="h-full w-full object-cover"

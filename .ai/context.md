@@ -189,6 +189,10 @@ TLRphotos/
 ## Changelog
 
 | 2026-07-18 01:30 | [fix] 项目安全审查修复：JWT_SECRET环境变量、bcrypt密码哈希、getProxyUrl工具函数提取、搜索接口LIKE转义、用户照片审核过滤、图片流式传输 | backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/services/adminService.ts, backend/src/utils/url.ts |
+| 2026-07-26 18:30 | [fix] 修复密码表单在非密码Tab上错误显示的安全问题：三元运算符else分支改为独立条件渲染 | src/features/profile/ProfilePage.tsx |
+| 2026-07-26 18:00 | [feat] 增强个人设置界面：新增偏好设置Tab（浏览偏好、画廊排序、数据加载）和账户安全Tab（账户信息、安全操作、退出登录） | src/features/profile/ProfilePage.tsx, src/utils/preferences.ts |
+| 2026-07-26 17:30 | [fix] 修复KaTeX quirks mode警告：doctype改为大写DOCTYPE，添加X-UA-Compatible meta标签 | index.html |
+| 2026-07-26 17:00 | [feat] 实现基于IndexedDB的LRU图片本地缓存系统：核心缓存服务、CachedImage组件、缓存管理UI、照片列表预加载 | src/utils/imageCache.ts, src/components/CachedImage.tsx, src/features/gallery/, src/features/profile/ProfilePage.tsx, src/shared/PhotosContext.tsx |
 | 2026-07-26 16:15 | [fix] 修复全局JSON解析错误：client.ts中request函数添加空响应和非JSON响应处理，覆盖所有API请求 | src/api/client.ts |
 | 2026-07-26 16:00 | [fix] 修复登录接口JSON解析错误：前端login和refresh函数添加空响应和非JSON响应处理，避免Unexpected end of JSON input错误 | src/api/auth.ts |
 | 2026-07-26 15:30 | [config] 重新构建前端项目：执行 npm run build 更新 dist/ 构建产物 | dist/ |

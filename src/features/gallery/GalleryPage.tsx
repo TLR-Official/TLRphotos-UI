@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 import { getPhotos, searchPhotos, getTags } from '../../api/photos';
 import type { PhotoListItem } from './types';
+import { CachedImage } from '../../components/CachedImage';
 
 type SortOption = 'created_at' | 'likes' | 'views';
 
@@ -267,7 +268,7 @@ export function GalleryPage() {
                 }`}
               >
                 <div className="relative aspect-auto">
-                  <img
+                  <CachedImage
                     src={photo.thumbnail_path}
                     alt={photo.title}
                     className="w-full h-auto object-cover"

@@ -5,6 +5,7 @@ import { useUser } from '../../shared/UserContext';
 import { useState, useEffect } from 'react';
 import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
+import { CachedImage } from '../../components/CachedImage';
 
 
 export function PhotoDetailPage() {
@@ -119,7 +120,7 @@ export function PhotoDetailPage() {
             <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'
             }`}>
-              <img
+              <CachedImage
                 src={photo.watermarked_url || photo.preview_url || photo.original_url}
                 alt={photo.title}
                 className="block max-w-full h-auto"
