@@ -1,3 +1,9 @@
+/**
+ * 管理后台类型定义
+ * 定义管理员、登录响应、审核照片、统计、操作日志与用户等数据结构，供后台页面与 API 共享。
+ */
+
+/** 管理员用户（含角色与所属分区） */
 export interface AdminUser {
   id: string;
   username: string;
@@ -11,6 +17,7 @@ export interface AdminUser {
   updated_at?: string;
 }
 
+/** 登录接口响应 */
 export interface LoginResponse {
   success: boolean;
   token?: string;
@@ -18,6 +25,7 @@ export interface LoginResponse {
   message?: string;
 }
 
+/** 后台审核列表中的照片项 */
 export interface AdminPhoto {
   id: string;
   title: string;
@@ -30,6 +38,7 @@ export interface AdminPhoto {
   created_at: string;
 }
 
+/** 照片审核统计 */
 export interface AuditStats {
   total: number;
   pending: number;
@@ -37,6 +46,7 @@ export interface AuditStats {
   rejected: number;
 }
 
+/** 系统总览统计（仪表盘使用） */
 export interface SystemStats {
   userCount: number;
   photoCount: number;
@@ -45,6 +55,7 @@ export interface SystemStats {
   pendingCount: number;
 }
 
+/** 管理员操作日志 */
 export interface AdminLog {
   id: string;
   admin_id: string;
@@ -57,6 +68,7 @@ export interface AdminLog {
   created_at: string;
 }
 
+/** 后台用户管理中的普通用户 */
 export interface User {
   id: string;
   email: string;

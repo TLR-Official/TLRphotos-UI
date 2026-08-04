@@ -1,3 +1,7 @@
+/**
+ * 鼠标跟随背景
+ * 作为页面底层固定背景，由渐变底色与网格纹理叠加而成，不拦截指针事件。
+ */
 export function MouseFollowBackground() {
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden theme-bg-transition" aria-hidden="true">
@@ -7,6 +11,7 @@ export function MouseFollowBackground() {
   );
 }
 
+/** 网格纹理：通过两层线性渐变绘制 60px 间距的网格线，低透明度作为底纹 */
 function GridTexture() {
   return (
     <div

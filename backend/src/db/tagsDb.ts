@@ -1,11 +1,20 @@
+/**
+ * @file 标签数据库
+ * @description 独立维护交通影像分类标签体系（航空/铁路/汽车三大类），
+ *              三级结构：分类(tag_categories) -> 对象(tag_objects) -> 属性(tag_attributes)。
+ *              模块首次加载时自动建表并写入预置种子数据。
+ */
+
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import path from 'path';
 
+// 标签库独立于主业务库，单独存放于 data/tags.db
 const dbPath = path.join(__dirname, '../../data/tags.db');
 
 export let tagsDb: Database;
 
+/** 标签分类实体（如"航空"、"铁路"、"汽车"） */
 interface TagCategory {
   id: string;
   name: string;
@@ -14,6 +23,7 @@ interface TagCategory {
   icon: string;
 }
 
+/** 标签对象实体（归属于某分类，如"飞行器"、"列车类型"） */
 interface TagObject {
   id: string;
   category_id: string;
@@ -22,6 +32,7 @@ interface TagObject {
   description: string;
 }
 
+/** 标签属性实体（归属于某对象，定义可填写字段，如"机型"、"注册号"） */
 interface TagAttribute {
   id: string;
   object_id: string;
@@ -32,6 +43,9 @@ interface TagAttribute {
   options?: string;
 }
 
+/**
+ * 初始化表结构：三张主表 + 索引 + 外键级联删除
+ */
 const initSchema = async () => {
   await tagsDb.exec(`
     CREATE TABLE IF NOT EXISTS tag_categories (
@@ -67,6 +81,10 @@ const initSchema = async () => {
   `);
 };
 
+/**
+ * 写入预置标签种子数据：仅当分类表为空时执行，保证幂等
+ * 数据涵盖航空/铁路/汽车三大类及其下属对象与属性
+ */
 const seedTags = async () => {
   const categoryCount = await tagsDb.get('SELECT COUNT(*) as count FROM tag_categories');
   if (categoryCount.count > 0) return;
@@ -178,12 +196,17 @@ const seedTags = async () => {
   }
 };
 
+/**
+ * 初始化标签数据库：打开连接 -> 启用 WAL 与外键 -> 建表 -> 写入种子数据
+ * 应在应用启动时调用一次
+ */
 export const initTagsDb = async () => {
   tagsDb = await open({
     filename: dbPath,
     driver: sqlite3.Database,
   });
 
+  // WAL 模式提升并发读写性能；启用外键保证级联删除生效
   await tagsDb.run('PRAGMA journal_mode = WAL');
   await tagsDb.run('PRAGMA foreign_keys = ON');
 

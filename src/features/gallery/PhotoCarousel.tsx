@@ -1,3 +1,8 @@
+/**
+ * 照片轮播图组件
+ * 从全局 PhotosContext 取前 5 张照片作为首页轮播图，支持自动播放、左右切换、指示点跳转，
+ * 点击单张幻灯片跳转至对应照片详情页。
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
@@ -5,6 +10,7 @@ import { usePhotos } from '../../shared/PhotosContext';
 import { useTheme } from '../../shared/ThemeContext';
 import { CachedImage } from '../../components/CachedImage';
 
+/** 轮播图单张幻灯片 props */
 interface CarouselSlideProps {
   photo: PhotoListItem;
   isActive: boolean;
@@ -12,6 +18,10 @@ interface CarouselSlideProps {
   theme: 'dark' | 'light';
 }
 
+/**
+ * 单张轮播幻灯片
+ * 通过 isActive 控制透明度与缩放实现淡入淡出过渡；底部叠加标题与标签。
+ */
 function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 'theme'>) {
   return (
     <div
@@ -45,22 +55,31 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
   );
 }
 
+/**
+ * 照片轮播图组件
+ * @returns 轮播图 JSX，加载中或无数据时显示占位
+ */
 export function PhotoCarousel() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { photos, isLoading } = usePhotos();
+  // currentIndex：当前激活的幻灯片索引
   const [currentIndex, setCurrentIndex] = useState(0);
+  // isAutoPlaying：是否处于自动播放状态，用户手动操作后暂停
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
   const isDark = theme === 'dark';
+  // 仅取前 5 张作为轮播图
   const carouselPhotos = photos.slice(0, 5);
 
+  // 照片数量减少时（如刷新数据）钳制当前索引到有效范围
   useEffect(() => {
     if (currentIndex >= carouselPhotos.length && carouselPhotos.length > 0) {
       setCurrentIndex(carouselPhotos.length - 1);
     }
   }, [carouselPhotos.length, currentIndex]);
 
+  // 自动播放定时器：每 4 秒切换下一张；卸载或暂停时清理
   useEffect(() => {
     if (!isAutoPlaying || carouselPhotos.length === 0) return;
 
@@ -71,21 +90,25 @@ export function PhotoCarousel() {
     return () => clearInterval(timer);
   }, [isAutoPlaying, carouselPhotos.length]);
 
+  /** 切换到上一张并暂停自动播放 */
   const goToPrev = useCallback(() => {
     setCurrentIndex((prev) => (prev - 1 + carouselPhotos.length) % carouselPhotos.length);
     setIsAutoPlaying(false);
   }, [carouselPhotos.length]);
 
+  /** 切换到下一张并暂停自动播放 */
   const goToNext = useCallback(() => {
     setCurrentIndex((prev) => (prev + 1) % carouselPhotos.length);
     setIsAutoPlaying(false);
   }, [carouselPhotos.length]);
 
+  /** 跳转到指定索引并暂停自动播放 */
   const goToSlide = useCallback((index: number) => {
     setCurrentIndex(index);
     setIsAutoPlaying(false);
   }, []);
 
+  /** 点击幻灯片跳转到对应照片详情页 */
   const handleSlideClick = useCallback((photo: PhotoListItem) => {
     navigate(`/photos/${photo.id}`);
   }, [navigate]);

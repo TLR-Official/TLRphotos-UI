@@ -1,13 +1,34 @@
-import { useState, useRef } from 'react';
+/**
+ * 顶部导航栏
+ * 提供站点 Logo、作品集入口、关于我们及用户菜单；登录用户显示头像下拉菜单（个人资料/上传/作品/退出），
+ * 未登录用户显示登录按钮。下拉菜单采用悬停延时关闭以避免误触。
+ */
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from './UserContext';
 
+/**
+ * 顶部导航栏组件
+ * @returns 导航栏 JSX
+ */
 export function Header() {
   const navigate = useNavigate();
   const { isAuthenticated, logout, user } = useUser();
+  // showDropdown：用户菜单下拉是否展开
   const [showDropdown, setShowDropdown] = useState(false);
+  // closeTimeoutRef：下拉关闭延时句柄，用于鼠标移出时延迟关闭
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 组件卸载时清除未完成的定时器
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  /** 鼠标移入：取消待关闭定时器并展开下拉 */
   const handleMouseEnter = () => {
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
@@ -16,6 +37,7 @@ export function Header() {
     setShowDropdown(true);
   };
 
+  /** 鼠标移出：延迟 200ms 关闭下拉，便于鼠标在间隙中移动 */
   const handleMouseLeave = () => {
     closeTimeoutRef.current = setTimeout(() => {
       setShowDropdown(false);

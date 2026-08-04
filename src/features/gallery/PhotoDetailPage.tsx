@@ -1,3 +1,8 @@
+/**
+ * 照片详情页
+ * 根据路由参数加载单张照片的完整信息，展示原图、上传者、拍摄参数、统计与描述等；
+ * 当访问者为上传者本人时，提供两步确认式删除入口。
+ */
 import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoById, deletePhoto } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
@@ -8,32 +13,47 @@ import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
 
 
+/**
+ * 照片详情页组件
+ * 从 URL 参数读取照片 id，请求详情数据并渲染；支持所有者删除照片。
+ * @returns 详情页 JSX，包含加载态、空态与详情主视图
+ */
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { user, token } = useUser();
+  // photo：详情数据，null 表示不存在或未加载
   const [photo, setPhoto] = useState<PhotoDetail | null>(null);
+  // isLoading：首次加载标识，控制全屏 loading 占位
   const [isLoading, setIsLoading] = useState(true);
+  // deleteConfirmStep：删除确认进度，0 未触发 / 1 第一次确认 / 2 第二次确认（执行删除）
   const [deleteConfirmStep, setDeleteConfirmStep] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState('');
 
+  // 根据 id 拉取照片详情；cancelled 标志防止组件卸载后异步回调写入 state
   useEffect(() => {
-    const abortController = new AbortController();
+    let cancelled = false;
 
     getPhotoById(id || '').then((result) => {
+      if (cancelled) return;
       if (result.success && result.data) {
         setPhoto(result.data);
       }
       setIsLoading(false);
     });
 
+    // 清理函数：标记已卸载，避免 setState 到已卸载组件
     return () => {
-      abortController.abort();
+      cancelled = true;
     };
   }, [id]);
 
+  /**
+   * 执行删除请求
+   * 成功后跳转回画廊列表；失败时显示错误信息并于 3 秒后重置确认状态。
+   */
   const handleDelete = async () => {
     if (!id || !token || isDeleting) return;
 
@@ -53,6 +73,10 @@ export function PhotoDetailPage() {
     setIsDeleting(false);
   };
 
+  /**
+   * 推进删除确认步骤
+   * 未达到第二次确认时累加步骤；达到后真正触发删除。
+   */
   const handleDeleteConfirm = () => {
     if (deleteConfirmStep < 2) {
       setDeleteConfirmStep(deleteConfirmStep + 1);
@@ -61,6 +85,7 @@ export function PhotoDetailPage() {
     }
   };
 
+  // 仅当当前登录用户与照片上传者 id 一致时，判定为所有者
   const isOwner = user && photo && photo.user_id === user.id;
 
   if (isLoading) {
@@ -330,6 +355,13 @@ export function PhotoDetailPage() {
   );
 }
 
+/**
+ * 详情信息行
+ * 用于在"照片信息""拍摄参数"等卡片中渲染单行键值对。
+ * @param label 行标签文本
+ * @param value 行值文本
+ * @param theme 当前主题，用于适配深浅色样式
+ */
 function DetailRow({ label, value, theme }: { label: string; value: string; theme: 'dark' | 'light' }) {
   return (
     <div className="flex justify-between items-center">

@@ -1,3 +1,8 @@
+/**
+ * 文章详情页
+ * 根据 id 加载文章元信息、Markdown 正文与评论列表；支持点赞/取消点赞、发表评论，
+ * 正文通过 react-markdown 渲染，并启用 KaTeX 数学公式与 HTML 消毒。
+ */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -10,6 +15,10 @@ import { useTheme } from '../../shared/ThemeContext';
 import type { Article, Comment } from '../../api/articles';
 import { formatDate, formatRelativeDate } from '../../shared/utils';
 
+/**
+ * 文章详情页组件
+ * @returns 详情页 JSX，含文章不存在态、加载态与完整视图
+ */
 export function ArticleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -24,6 +33,7 @@ export function ArticleDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [article, setArticle] = useState<Article | null>(null);
 
+  // 拉取文章元信息后，再并行拉取正文内容与评论列表
   useEffect(() => {
     getArticleById(id || '').then((result) => {
       if (result.success && result.data) {
@@ -51,6 +61,10 @@ export function ArticleDetailPage() {
     });
   }, [id]);
 
+  /**
+   * 点赞/取消点赞切换
+   * 优先使用接口返回的最新计数，接口失败时本地乐观增减。
+   */
   const handleLike = async () => {
     if (!article) return;
     if (isLiked) {
@@ -72,6 +86,11 @@ export function ArticleDetailPage() {
     }
   };
 
+  /**
+   * 提交新评论
+   * 成功后将新评论置顶加入列表并更新评论计数。
+   * @param e 表单提交事件
+   */
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || isSubmitting || !article) return;

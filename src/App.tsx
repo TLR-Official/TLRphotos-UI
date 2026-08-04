@@ -1,3 +1,14 @@
+/**
+ * @file 应用根组件
+ * @description
+ *  应用入口组件，负责全局 Provider 嵌套、路由配置与首页布局。
+ *  核心功能：
+ *   1. 嵌套 ThemeProvider / UserProvider / PhotosProvider，向全组件树注入全局上下文。
+ *   2. 通过 React Router 配置各页面路由。
+ *   3. 在 /admin 路径下隐藏 Header / Footer，避免与管理后台布局冲突。
+ *   4. 首页组合 PhotoCarousel、ColumnList 与精选作品网格。
+ */
+
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
@@ -19,6 +30,10 @@ import { UserProvider } from './shared/UserContext';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './features/gallery/types';
 
+/**
+ * 应用根组件：嵌套全局 Provider
+ * Provider 层级：ThemeProvider → UserProvider → PhotosProvider → AppContent
+ */
 function App() {
   return (
     <ThemeProvider>
@@ -31,11 +46,14 @@ function App() {
   );
 }
 
+/**
+ * 应用内容容器：包含背景效果与路由
+ */
 function AppContent() {
   return (
     <div className="relative min-h-screen theme-bg-transition page-light">
       <MouseFollowBackground />
-      
+
       <Router>
         <AppRouterContent />
       </Router>
@@ -43,14 +61,18 @@ function AppContent() {
   );
 }
 
+/**
+ * 路由内容容器：根据路径判断是否为管理后台，决定是否渲染 Header / Footer
+ */
 function AppRouterContent() {
   const location = useLocation();
+  // 管理后台路径不渲染公共 Header / Footer，避免与管理后台布局冲突
   const isAdminPage = location.pathname.startsWith('/admin');
 
   return (
     <div className="relative z-10 flex flex-col min-h-screen">
       {!isAdminPage && <Header />}
-      
+
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<HomePageContent />} />
@@ -64,17 +86,26 @@ function AppRouterContent() {
           <Route path="/admin/*" element={<AdminApp />} />
         </Routes>
       </main>
-      
+
       {!isAdminPage && <Footer />}
     </div>
   );
 }
 
+/**
+ * 首页内容组件
+ * @description 组合轮播图、专栏列表与精选作品网格；精选作品取照片列表第 6~9 张
+ */
 function HomePageContent() {
   const navigate = useNavigate();
   const { photos } = usePhotos();
+  // 取第 6~9 张作为首页精选作品（前 5 张用于轮播）
   const bottomPhotos = photos.slice(5, 9);
 
+  /**
+   * 点击精选照片跳转详情页
+   * @param photoId - 照片 ID
+   */
   const handlePhotoClick = (photoId: string) => {
     navigate(`/photos/${photoId}`);
   };

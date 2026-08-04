@@ -1,7 +1,14 @@
-import { useState, useCallback, useRef } from 'react';
+/**
+ * 照片上传组件
+ * 支持点击选择与拖拽多文件上传，采用 OSS 预签名 URL 直传：
+ * 获取预签名地址 → PUT 上传原图 → 调用完成接口保存照片信息。
+ * 提供进度展示、取消、重试、批量上传与清空列表等能力。
+ */
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { getPresignedUrl, completeUpload } from '../api/photos';
 import { useTheme } from './ThemeContext';
 
+/** 单个待上传文件的状态记录 */
 interface UploadFile {
   id: string;
   file: File;
@@ -11,19 +18,50 @@ interface UploadFile {
   message: string;
 }
 
+/** PhotoUploader 组件 props */
 interface PhotoUploaderProps {
+  /** 单文件上传成功回调 */
   onSuccess?: (photoId: string, url: string) => void;
+  /** 错误回调 */
   onError?: (error: string) => void;
 }
 
+/**
+ * 照片上传组件
+ * @param onSuccess 单文件上传成功回调
+ * @param onError 错误回调
+ * @returns 上传区域与文件列表 JSX
+ */
 export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
   const { theme } = useTheme();
   const [files, setFiles] = useState<UploadFile[]>([]);
+  // isDragging：标识当前是否处于拖拽悬停状态
   const [isDragging, setIsDragging] = useState(false);
+  // abortControllers：每个文件上传对应的 AbortController，用于取消上传
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
+  const filesRef = useRef<UploadFile[]>([]);
 
+  // 保持 filesRef 与 files 同步，供卸载时清理使用
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  // 组件卸载时释放所有 ObjectURL 并取消上传
+  useEffect(() => {
+    return () => {
+      abortControllers.current.forEach((controller) => controller.abort());
+      filesRef.current.forEach((f) => URL.revokeObjectURL(f.preview));
+    };
+  }, []);
+
+  /** 生成唯一上传 id（时间戳 + 随机串） */
   const generateId = () => `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+  /**
+   * 校验单个文件类型与大小
+   * @param file 待校验文件
+   * @returns 校验结果与错误信息
+   */
   const validateFile = (file: File): { valid: boolean; message?: string } => {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
     if (!validTypes.includes(file.type)) {
@@ -35,6 +73,11 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     return { valid: true };
   };
 
+  /**
+   * 处理选中的文件列表
+   * 逐个校验后生成预览并加入待上传列表，校验失败时通过 onError 回调上报。
+   * @param selectedFiles 选中的文件数组
+   */
   const handleFileSelect = useCallback((selectedFiles: File[]) => {
     const newFiles: UploadFile[] = [];
     let errorMessage = '';
@@ -63,6 +106,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     }
   }, [onError]);
 
+  /** 文件输入 change 处理：转交 handleFileSelect 后清空 input 值以便重复选择同文件 */
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (selectedFiles) {
@@ -71,18 +115,21 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     e.target.value = '';
   }, [handleFileSelect]);
 
+  /** 拖拽悬停：阻止默认行为并标记拖拽态 */
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
   }, []);
 
+  /** 拖拽离开：取消拖拽态 */
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
   }, []);
 
+  /** 拖拽释放：取出文件并交由 handleFileSelect 处理 */
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -94,6 +141,12 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     }
   }, [handleFileSelect]);
 
+  /**
+   * 上传单个文件
+   * 流程：获取预签名地址 → PUT 直传 OSS → 调用 completeUpload 保存元数据；
+   * 支持通过 AbortController 取消，并区分取消与普通错误。
+   * @param uploadFile 待上传文件记录
+   */
   const handleUploadFile = useCallback(async (uploadFile: UploadFile) => {
     const { id, file } = uploadFile;
 
@@ -116,6 +169,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
         prev.map((f) => (f.id === id ? { ...f, progress: 10, message: '正在上传图片...' } : f))
       );
 
+      // 创建 AbortController 以支持上传取消
       const controller = new AbortController();
       abortControllers.current.set(id, controller);
 
@@ -136,6 +190,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
         prev.map((f) => (f.id === id ? { ...f, progress: 80, message: '正在保存照片信息...' } : f))
       );
 
+      // 标题默认取文件名（去掉扩展名）
       const completeResult = await completeUpload(key, {
         title: file.name.replace(/\.[^/.]+$/, ''),
       });
@@ -154,6 +209,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
       onSuccess?.(completeResult.data.photoId, completeResult.data.url);
 
     } catch (error) {
+      // 用户主动取消时单独标记，不计入普通错误
       if (error instanceof DOMException && error.name === 'AbortError') {
         setFiles((prev) =>
           prev.map((f) => (f.id === id ? { ...f, status: 'error', progress: 0, message: '上传已取消' } : f))
@@ -170,10 +226,12 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     }
   }, [onSuccess, onError]);
 
+  /** 取消指定文件的上传 */
   const handleCancelUpload = useCallback((id: string) => {
     abortControllers.current.get(id)?.abort();
   }, []);
 
+  /** 从列表移除文件：先取消上传并释放预览 ObjectURL */
   const handleRemoveFile = useCallback((id: string) => {
     abortControllers.current.get(id)?.abort();
     setFiles((prev) => {
@@ -185,6 +243,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     });
   }, []);
 
+  /** 批量上传所有待上传（pending）文件 */
   const handleUploadAll = useCallback(() => {
     files.forEach((file) => {
       if (file.status === 'pending') {
@@ -193,6 +252,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     });
   }, [files, handleUploadFile]);
 
+  /** 清空列表：取消所有上传并释放预览 ObjectURL */
   const handleClearAll = useCallback(() => {
     files.forEach((file) => {
       abortControllers.current.get(file.id)?.abort();
@@ -201,6 +261,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
     setFiles([]);
   }, [files]);
 
+  // 各状态文件计数，用于列表头部统计展示
   const pendingCount = files.filter((f) => f.status === 'pending').length;
   const uploadingCount = files.filter((f) => f.status === 'uploading').length;
   const successCount = files.filter((f) => f.status === 'success').length;

@@ -1,28 +1,46 @@
+/**
+ * 登录注册页
+ * 通过顶部切换按钮在登录与注册两种模式间切换，支持邮箱密码登录、注册（含确认密码与用户名）、
+ * 记住登录状态，以及微信/QQ 第三方登录入口（占位）。
+ */
 import { useState, useEffect } from 'react';
 import { useUser } from '../../shared/UserContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 
+/**
+ * 登录注册页组件
+ * @returns 登录注册表单 JSX
+ */
 export function AuthPage() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  // isLogin：true 为登录模式，false 为注册模式
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  // remember：登录模式下是否保存登录状态（30 天）
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login, register, isAuthenticated } = useUser();
   const navigate = useNavigate();
 
+  // 已登录用户访问登录页时自动跳转首页
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
 
+  /**
+   * 表单提交处理
+   * 校验必填项与两次密码一致性后，调用 login 或 register；
+   * 注册成功后切回登录模式并清空表单。
+   * @param e 表单提交事件
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -50,6 +68,7 @@ export function AuthPage() {
         navigate('/');
       } else {
         await register(email, password, username);
+        // 注册成功后切回登录模式并清空表单
         setIsLogin(true);
         setEmail('');
         setPassword('');
@@ -63,6 +82,10 @@ export function AuthPage() {
     }
   };
 
+  /**
+   * 第三方登录占位处理
+   * @param provider 第三方提供方名称（如 微信 / QQ）
+   */
   const handleSocialLogin = (provider: string) => {
     setError(`${provider} 登录功能开发中`);
     setTimeout(() => setError(''), 3000);

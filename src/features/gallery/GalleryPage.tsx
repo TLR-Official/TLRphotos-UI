@@ -1,3 +1,8 @@
+/**
+ * 画廊列表页
+ * 展示全部照片的瀑布流网格，提供关键词搜索、标签筛选与按时间/热度/浏览量排序，
+ * 点击单张照片跳转至详情页。
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
@@ -5,32 +10,38 @@ import { getPhotos, searchPhotos, getTags } from '../../api/photos';
 import type { PhotoListItem } from './types';
 import { CachedImage } from '../../components/CachedImage';
 
+/** 排序字段：上传时间 / 点赞数 / 浏览量 */
 type SortOption = 'created_at' | 'likes' | 'views';
 
+/** 搜索图标 */
 const SearchIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
   </svg>
 );
 
+/** 筛选图标 */
 const FilterIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
   </svg>
 );
 
+/** 时钟图标（按时间排序） */
 const ClockIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
+/** 火焰图标（按热度排序） */
 const FlameIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
   </svg>
 );
 
+/** 眼睛图标（按浏览量排序） */
 const EyeIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -38,12 +49,18 @@ const EyeIcon = ({ className }: { className: string }) => (
   </svg>
 );
 
+/** 上下箭头图标（排序切换） */
 const ArrowUpDownIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
   </svg>
 );
 
+/**
+ * 画廊列表页组件
+ * 维护搜索关键词、选中标签、排序字段与方向等筛选状态，通过防抖触发列表请求。
+ * @returns 画廊页 JSX
+ */
 export function GalleryPage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
@@ -55,6 +72,10 @@ export function GalleryPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(true);
 
+  /**
+   * 拉取照片列表
+   * 当存在筛选/排序条件时调用搜索接口，否则调用默认列表接口。
+   */
   const fetchPhotos = async () => {
     setIsLoading(true);
     try {
@@ -78,6 +99,7 @@ export function GalleryPage() {
     setIsLoading(false);
   };
 
+  /** 拉取可用标签列表用于筛选栏展示 */
   const fetchTags = async () => {
     try {
       const response = await getTags();
@@ -89,10 +111,12 @@ export function GalleryPage() {
     }
   };
 
+  // 首次挂载拉取标签
   useEffect(() => {
     fetchTags();
   }, []);
 
+  // 筛选/排序条件变化时，延迟 300ms 再请求，避免频繁触发
   useEffect(() => {
     const debounce = setTimeout(() => {
       fetchPhotos();
@@ -100,6 +124,11 @@ export function GalleryPage() {
     return () => clearTimeout(debounce);
   }, [keyword, selectedTag, sortBy, sortOrder]);
 
+  /**
+   * 切换排序字段或方向
+   * 点击相同字段时翻转方向；点击不同字段时切换并重置为降序。
+   * @param newSortBy 新的排序字段
+   */
   const handleSortChange = (newSortBy: SortOption) => {
     if (sortBy === newSortBy) {
       setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
@@ -109,6 +138,7 @@ export function GalleryPage() {
     }
   };
 
+  /** 跳转到指定照片详情页 */
   const handlePhotoClick = (photoId: string) => {
     navigate(`/photos/${photoId}`);
   };

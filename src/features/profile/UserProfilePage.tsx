@@ -1,3 +1,8 @@
+/**
+ * 用户公开主页
+ * 根据 URL 中的 userId 并行拉取用户公开信息与其已发布作品，展示头像、简介、位置、网站与作品网格，
+ * 支持按 20 条/页分页浏览用户作品。
+ */
 import { useParams, useNavigate } from 'react-router-dom';
 import { getPublicUser, getUserPhotos } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
@@ -7,6 +12,10 @@ import type { PhotoListItem } from '../gallery/types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
 
+/**
+ * 用户公开主页组件
+ * @returns 主页 JSX，含加载态、用户不存在态与正常视图
+ */
 export function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
@@ -17,6 +26,7 @@ export function UserProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // 缺少 userId 时回退到画廊；否则并行拉取用户信息与作品列表
   useEffect(() => {
     if (!userId) {
       navigate('/gallery');
@@ -70,14 +80,17 @@ export function UserProfilePage() {
     );
   }
 
+  /** 跳转到指定照片的详情页 */
   const handlePhotoClick = (photoId: string) => {
     navigate(`/photos/${photoId}`);
   };
 
+  /** 切换分页页码（会触发 useEffect 重新拉取作品） */
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
 
+  // 总页数：每页固定 20 条
   const totalPages = Math.ceil(total / 20);
 
   return (

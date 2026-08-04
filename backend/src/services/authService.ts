@@ -1,3 +1,9 @@
+/**
+ * @file 认证服务
+ * @description 面向普通用户（非管理员）的认证与账户管理：注册、登录、令牌校验、
+ *              资料更新、密码修改与头像更新。密码采用 bcrypt 加盐哈希，会话凭证使用 JWT。
+ */
+
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { db } from '../db';
@@ -7,6 +13,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 const JWT_EXPIRES_IN = '24h';
 const SALT_ROUNDS = 10;
 
+/** 用户实体（对应 users 表结构） */
 export interface User {
   id: string;
   email: string;
@@ -22,12 +29,20 @@ export interface User {
   updated_at: string;
 }
 
+/** 登录结果：用户信息 + JWT + 可选的长期会话 token */
 export interface LoginResult {
   user: User;
   token: string;
   session_token?: string;
 }
 
+/**
+ * 用户注册：邮箱唯一性校验通过后写入新用户
+ * @param email 邮箱（用作登录账号）
+ * @param password 明文密码
+ * @param username 可选用户名
+ * @returns 新建用户信息（不含密码哈希）
+ */
 export async function register(email: string, password: string, username?: string): Promise<User> {
   const existingUser = await db.get('SELECT id FROM users WHERE email = ?', email);
   if (existingUser) {
@@ -35,6 +50,7 @@ export async function register(email: string, password: string, username?: strin
   }
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+  // 用户 ID 采用 user_ + 时间戳，保证可读性与唯一性
   const userId = `user_${Date.now()}`;
 
   await db.run(
@@ -51,9 +67,17 @@ export async function register(email: string, password: string, username?: strin
   return newUser as User;
 }
 
+/**
+ * 用户登录：校验账号密码并签发 JWT；勾选"记住我"时额外创建长期会话
+ * @param email 邮箱
+ * @param password 明文密码
+ * @param remember 是否创建长期会话
+ * @param ipAddress 客户端 IP（用于会话记录）
+ * @returns 用户信息、JWT 及可选会话 token
+ */
 export async function login(email: string, password: string, remember?: boolean, ipAddress?: string): Promise<LoginResult> {
   const user = await db.get('SELECT id, email, password_hash, username, avatar_url, is_active, created_at, updated_at FROM users WHERE email = ?', email);
-  
+
   if (!user) {
     throw new Error('邮箱或密码错误');
   }
@@ -67,8 +91,10 @@ export async function login(email: string, password: string, remember?: boolean,
     throw new Error('邮箱或密码错误');
   }
 
+  // JWT 载荷仅含 userId，有效期 24 小时
   const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
+  // 勾选"记住我"时创建独立的长期会话 token，便于跨设备保持登录
   let session_token: string | undefined;
   if (remember && ipAddress) {
     session_token = await createSession(user.id, ipAddress);
@@ -94,6 +120,11 @@ export async function login(email: string, password: string, remember?: boolean,
   };
 }
 
+/**
+ * 校验 JWT 签名与有效期
+ * @param token JWT 字符串
+ * @returns 有效返回 { userId }，无效返回 null
+ */
 export function verifyToken(token: string): { userId: string } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
@@ -103,14 +134,25 @@ export function verifyToken(token: string): { userId: string } | null {
   }
 }
 
+/**
+ * 按 ID 查询用户完整资料
+ * @param userId 用户 ID
+ * @returns 用户信息；不存在返回 null
+ */
 export async function getUserById(userId: string): Promise<User | null> {
   const user = await db.get('SELECT id, email, username, avatar_url, bio, phone, website, location, custom_fields, is_active, created_at, updated_at FROM users WHERE id = ?', userId);
   return user ? (user as User) : null;
 }
 
+/**
+ * 更新用户资料（不含密码与邮箱）
+ * @param userId 用户 ID
+ * @param data 待更新字段集合
+ * @returns 更新后的用户信息
+ */
 export async function updateUser(userId: string, data: Partial<User>): Promise<User> {
   const { username, avatar_url, bio, phone, website, location, custom_fields } = data;
-  
+
   await db.run(
     'UPDATE users SET username = ?, avatar_url = ?, bio = ?, phone = ?, website = ?, location = ?, custom_fields = ?, updated_at = ? WHERE id = ?',
     username || null,
@@ -131,9 +173,15 @@ export async function updateUser(userId: string, data: Partial<User>): Promise<U
   return updatedUser;
 }
 
+/**
+ * 修改密码：校验原密码后写入新哈希
+ * @param userId 用户 ID
+ * @param oldPassword 原密码
+ * @param newPassword 新密码（长度 ≥ 6）
+ */
 export async function changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
   const user = await db.get('SELECT password_hash FROM users WHERE id = ?', userId);
-  
+
   if (!user) {
     throw new Error('用户不存在');
   }
@@ -148,7 +196,7 @@ export async function changePassword(userId: string, oldPassword: string, newPas
   }
 
   const newPasswordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  
+
   await db.run(
     'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
     newPasswordHash,
@@ -157,6 +205,12 @@ export async function changePassword(userId: string, oldPassword: string, newPas
   );
 }
 
+/**
+ * 更新用户头像 URL
+ * @param userId 用户 ID
+ * @param avatarUrl 头像可访问 URL
+ * @returns 更新后的用户信息
+ */
 export async function updateAvatar(userId: string, avatarUrl: string): Promise<User> {
   await db.run(
     'UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?',

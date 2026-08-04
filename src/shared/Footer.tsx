@@ -1,6 +1,14 @@
+/**
+ * 底部栏
+ * 居中展示版权信息，根据主题切换玻璃质感样式。
+ */
 import type { ReactNode } from 'react';
 import { useTheme } from './ThemeContext';
 
+/**
+ * 底部栏组件
+ * @returns 底部栏 JSX
+ */
 export function Footer(): ReactNode {
   const { theme } = useTheme();
 

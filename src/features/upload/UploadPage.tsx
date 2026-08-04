@@ -1,3 +1,8 @@
+/**
+ * 上传页面
+ * 引导用户完成单张照片上传：选择文件 → 填写信息（分类/标题/描述/标签/水印/EXIF）→ 提交。
+ * 支持自动解析 EXIF、可拖动水印预览、安全声明校验，并通过进度条反馈上传过程。
+ */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTheme } from '../../shared/ThemeContext';
 import { useNavigate } from 'react-router-dom';
@@ -6,9 +11,12 @@ import { directUpload } from '../../api/photos';
 import { getTagCategories, getCategoryTags } from '../../api/tags';
 import exifr from 'exifr';
 
+/** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
 type Step = 'select' | 'fill' | 'uploading' | 'done';
+/** 照片分类：航空 / 铁路 / 汽车 */
 type Category = 'aviation' | 'railway' | 'automobile';
 
+/** 从 EXIF 解析得到的拍摄参数集合 */
 interface ExifData {
   camera_model?: string;
   focal_length?: string;
@@ -21,12 +29,14 @@ interface ExifData {
   height?: number;
 }
 
+/** 已选标签（含标签对象 id、名称及其属性键值对） */
 interface SelectedTag {
   objectId: string;
   objectName: string;
   attributes: Record<string, string>;
 }
 
+/** 标签分类（航空/铁路/汽车等顶层分类） */
 interface TagCategory {
   id: string;
   name: string;
@@ -35,6 +45,7 @@ interface TagCategory {
   icon: string;
 }
 
+/** 标签属性定义（描述某标签下可填写的字段，如机型、航班号等） */
 interface TagAttribute {
   id: string;
   object_id: string;
@@ -45,6 +56,7 @@ interface TagAttribute {
   options: string[];
 }
 
+/** 标签对象（隶属于某分类，可附带若干属性） */
 interface TagObject {
   id: string;
   category_id: string;
@@ -54,6 +66,11 @@ interface TagObject {
   attributes: TagAttribute[];
 }
 
+/**
+ * 上传页面组件
+ * 通过多步骤状态机管理上传流程，并维护文件、表单、EXIF、水印等局部状态。
+ * @returns 上传页 JSX，未登录时渲染登录引导
+ */
 export function UploadPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -64,6 +81,7 @@ export function UploadPage() {
 
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
+  // preview：本地 ObjectURL，用于即时预览未上传的图片
   const [preview, setPreview] = useState('');
   const [progress, setProgress] = useState(0);
   const [uploadMsg, setUploadMsg] = useState('');
@@ -79,12 +97,15 @@ export function UploadPage() {
   const [safetyAgreement, setSafetyAgreement] = useState(false);
 
   const watermarkText = 'TLRphotos';
+  // 水印位置/透明度/字号，初始居中
   const [watermarkX, setWatermarkX] = useState(50);
   const [watermarkY, setWatermarkY] = useState(50);
   const [watermarkOpacity, setWatermarkOpacity] = useState(60);
   const [watermarkSize, setWatermarkSize] = useState(32);
+  // isDragging：标识水印文字是否处于拖动中
   const [isDragging, setIsDragging] = useState(false);
 
+  // 首次挂载拉取标签分类列表（航空/铁路/汽车）
   useEffect(() => {
     getTagCategories().then((res) => {
       if (res.success && res.data) {
@@ -93,6 +114,7 @@ export function UploadPage() {
     });
   }, []);
 
+  // 切换分类时拉取该分类下的标签对象，并清空已选标签
   useEffect(() => {
     if (category) {
       getCategoryTags(category).then((res) => {
@@ -104,6 +126,13 @@ export function UploadPage() {
     }
   }, [category]);
 
+  // 组件卸载或 preview 变更时释放上一个 ObjectURL，避免内存泄漏
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
+
   const inputCls = `w-full px-4 py-2 rounded-lg border ${
     theme === 'dark'
       ? 'border-gray-600 bg-slate-700 text-white'
@@ -112,6 +141,11 @@ export function UploadPage() {
 
   const labelCls = `block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`;
 
+  /**
+   * 处理文件选择
+   * 校验类型与大小后生成预览，并尝试解析 EXIF 自动回填拍摄参数。
+   * @param e 文件输入 change 事件
+   */
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
@@ -132,6 +166,7 @@ export function UploadPage() {
     setStep('fill');
 
     try {
+      // 同时解析 TIFF/EXIF/GPS 三段信息以获取完整拍摄参数
       const exifData = await exifr.parse(selected, {
         tiff: true,
         exif: true,
@@ -141,6 +176,7 @@ export function UploadPage() {
       if (exifData) {
         const newExif: ExifData = {};
         if (exifData.Make || exifData.Model) {
+          // 厂商与型号合并为完整相机型号字符串
           newExif.camera_model = [exifData.Make, exifData.Model].filter(Boolean).join(' ').trim();
         }
         if (exifData.FocalLength) {
@@ -151,6 +187,7 @@ export function UploadPage() {
         }
         if (exifData.ExposureTime) {
           const et = exifData.ExposureTime;
+          // 快门速度：小于 1 秒时转换为分式表示（如 1/500s）
           newExif.shutter_speed = et < 1 ? `1/${Math.round(1 / et)}s` : `${et}s`;
         }
         if (exifData.FNumber) {
@@ -170,6 +207,7 @@ export function UploadPage() {
     }
   }, []);
 
+  /** 重置全部表单状态并回到文件选择步骤 */
   const handleReSelect = () => {
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
@@ -188,6 +226,12 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  /**
+   * 切换标签选中状态
+   * 已选则移除，未选则追加（初始属性为空对象）。
+   * @param objectId 标签对象 id
+   * @param objectName 标签对象名称
+   */
   const handleTagToggle = (objectId: string, objectName: string) => {
     setSelectedTags((prev) => {
       const existing = prev.find((t) => t.objectId === objectId);
@@ -198,6 +242,12 @@ export function UploadPage() {
     });
   };
 
+  /**
+   * 更新某标签下指定属性的值
+   * @param objectId 标签对象 id
+   * @param attrKey 属性键名
+   * @param value 属性值
+   */
   const handleAttributeChange = (objectId: string, attrKey: string, value: string) => {
     setSelectedTags((prev) =>
       prev.map((tag) =>
@@ -206,13 +256,19 @@ export function UploadPage() {
     );
   };
 
+  // 提交前置条件：标题非空、已选分类、已勾选安全声明
   const canSubmit = title.trim() && category && safetyAgreement;
 
+  /** 水印拖动开始：阻止默认行为并进入拖动状态 */
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
   };
 
+  /**
+   * 水印拖动中：根据鼠标位置换算为预览区百分比坐标，并钳制在 0~100 范围内
+   * @param e 鼠标移动事件
+   */
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !previewRef.current) return;
 
@@ -224,10 +280,16 @@ export function UploadPage() {
     setWatermarkY(Math.max(0, Math.min(100, y)));
   }, [isDragging]);
 
+  /** 水印拖动结束：退出拖动状态 */
   const handleMouseUp = () => {
     setIsDragging(false);
   };
 
+  /**
+   * 提交上传
+   * 组装标题/描述/标签/结构化属性/EXIF/水印等元数据后调用直传接口；
+   * 成功后延迟跳转到新照片详情页，失败回退到填写步骤并显示错误。
+   */
   const handleSubmit = async () => {
     if (!file || !canSubmit) return;
 
@@ -239,8 +301,10 @@ export function UploadPage() {
       setProgress(30);
       setUploadMsg('正在生成缩略图和水印...');
 
+      // 标签对象名列表，作为简单标签集合提交
       const tagsList = selectedTags.map((t) => t.objectName);
 
+      // 将所有已选标签的属性扁平化为单一对象（同 key 后写覆盖前写）
       const structuredTags: Record<string, any> = {};
       selectedTags.forEach((tag) => {
         Object.entries(tag.attributes).forEach(([key, value]) => {
@@ -259,6 +323,7 @@ export function UploadPage() {
         ...exif,
       };
 
+      // 存在水印文字时附加水印配置（透明度由百分比转为 0~1 小数）
       if (watermarkText) {
         uploadMeta.watermarkText = watermarkText;
         uploadMeta.watermarkX = watermarkX;
@@ -277,6 +342,7 @@ export function UploadPage() {
 
       setProgress(100);
       setUploadMsg('上传成功！');
+      // 延迟 1 秒跳转，让用户看到完成态
       setTimeout(() => {
         navigate(`/photos/${result.data!.photoId}`);
       }, 1000);

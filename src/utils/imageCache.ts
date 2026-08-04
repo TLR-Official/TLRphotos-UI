@@ -1,12 +1,14 @@
 /**
- * 基于 IndexedDB 的 LRU 图片缓存服务
- *
- * 特性：
- * - 使用 IndexedDB 存储 Blob 数据，支持大容量缓存
- * - LRU 淘汰算法，容量超限时自动清理最久未访问的条目
- * - 全异步操作，不阻塞主线程
- * - 缓存命中率、大小等指标统计
- * - 增量缓存，避免重复存储
+ * @file 基于 IndexedDB 的 LRU 图片缓存服务
+ * @description
+ *  用于缓存图片资源，减少网络请求并加速图片渲染。
+ *  核心功能：
+ *   1. 使用 IndexedDB 存储 Blob 数据，支持大容量缓存（默认 500MB）。
+ *   2. LRU（Least Recently Used）淘汰算法：容量超限时清理最久未访问的条目。
+ *   3. 全异步操作，不阻塞主线程。
+ *   4. 命中率、大小等指标统计，并持久化到 IndexedDB。
+ *   5. 增量缓存：仅在未命中时才写入，避免重复存储。
+ *   6. IndexedDB 不可用时自动降级为直接返回原始 URL。
  */
 
 const DB_NAME = 'TLRphotosImageCache';
@@ -53,7 +55,8 @@ let statsHits = 0;
 let statsMisses = 0;
 
 /**
- * 打开 / 获取 IndexedDB 连接
+ * 打开 / 获取 IndexedDB 连接（单例）
+ * @returns IDBDatabase 实例
  */
 function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return Promise.resolve(dbInstance);
@@ -87,6 +90,9 @@ function openDB(): Promise<IDBDatabase> {
 
 /**
  * 从 meta store 读取值
+ * @template T - 值的类型
+ * @param key - 元数据键名
+ * @returns 值（不存在时为 null）
  */
 async function getMeta<T>(key: string): Promise<T | null> {
   const db = await openDB();
@@ -101,6 +107,8 @@ async function getMeta<T>(key: string): Promise<T | null> {
 
 /**
  * 写入 meta store
+ * @param key - 元数据键名
+ * @param value - 元数据值
  */
 async function setMeta(key: string, value: unknown): Promise<void> {
   const db = await openDB();
@@ -114,7 +122,7 @@ async function setMeta(key: string, value: unknown): Promise<void> {
 }
 
 /**
- * 初始化：从 IndexedDB 恢复指标统计
+ * 初始化：从 IndexedDB 恢复 hits / misses 指标统计
  */
 async function initStats(): Promise<void> {
   const [hits, misses] = await Promise.all([
@@ -125,8 +133,11 @@ async function initStats(): Promise<void> {
   statsMisses = misses ?? 0;
 }
 
-// 延迟初始化
+// 延迟初始化 Promise（单例，避免重复初始化）
 let initPromise: Promise<void> | null = null;
+/**
+ * 确保指标统计已从 IndexedDB 恢复（仅初始化一次）
+ */
 function ensureInit(): Promise<void> {
   if (!initPromise) {
     initPromise = initStats().catch(() => {
@@ -137,7 +148,7 @@ function ensureInit(): Promise<void> {
 }
 
 /**
- * 持久化指标到 IndexedDB
+ * 持久化指标到 IndexedDB（节流：2s 内多次调用合并为一次写入）
  */
 let saveStatsTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleSaveStats(): void {
@@ -149,6 +160,7 @@ function scheduleSaveStats(): void {
 
 /**
  * 获取缓存总大小和条目数
+ * @returns { size: 字节总数; entries: 条目数 }
  */
 async function getCacheSize(): Promise<{ size: number; entries: number }> {
   const db = await openDB();
@@ -167,13 +179,17 @@ async function getCacheSize(): Promise<{ size: number; entries: number }> {
 
 /**
  * LRU 淘汰：清理最久未访问的条目，直到总大小低于阈值
+ * @description 通过 lastAccessedAt 索引升序遍历，按访问时间从旧到新逐条删除，
+ *  直至释放的空间达到 needToFree。目标大小额外下调 EVICT_EXTRA_RATIO，避免频繁触发清理。
  */
 async function evictIfNeeded(): Promise<void> {
   const { size } = await getCacheSize();
   if (size <= maxCacheSize) return;
 
   const db = await openDB();
+  // 目标大小：上限减去额外比例，留出缓冲空间
   const targetSize = maxCacheSize * (1 - EVICT_EXTRA_RATIO);
+  const needToFree = size - targetSize;
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -181,21 +197,19 @@ async function evictIfNeeded(): Promise<void> {
     const index = store.index('lastAccessedAt');
     const cursorReq = index.openCursor();
 
+    let freedSize = 0;
+
     cursorReq.onsuccess = () => {
       const cursor = cursorReq.result;
-      if (!cursor) {
-        // 遍历完毕
+      if (!cursor || freedSize >= needToFree) {
+        // 已清理足够空间或遍历完毕
         return;
       }
 
-      getCacheSize().then(({ size: currentSize }) => {
-        if (currentSize <= targetSize) {
-          resolve();
-          return;
-        }
-        cursor.delete();
-        cursor.continue();
-      });
+      const entry = cursor.value as CacheEntry;
+      freedSize += entry.size;
+      cursor.delete();
+      cursor.continue();
     };
 
     cursorReq.onerror = () => reject(cursorReq.error);
@@ -282,7 +296,8 @@ export async function getCachedImage(url: string): Promise<string> {
 }
 
 /**
- * 预加载图片到缓存（不返回 ObjectURL）
+ * 预加载图片到缓存（不返回 ObjectURL，仅写入缓存）
+ * @param url - 图片 URL
  */
 export async function preloadImage(url: string): Promise<void> {
   await ensureInit();
@@ -326,6 +341,8 @@ export async function preloadImage(url: string): Promise<void> {
 
 /**
  * 批量预加载
+ * @param urls - 图片 URL 列表
+ * @description 按 CONCURRENCY 大小分块并发执行，避免浏览器连接数耗尽
  */
 export async function preloadImages(urls: string[]): Promise<void> {
   // 限制并发数，避免浏览器连接数耗尽
@@ -341,7 +358,7 @@ export async function preloadImages(urls: string[]): Promise<void> {
 }
 
 /**
- * 清除全部缓存
+ * 清除全部缓存（含图片数据与指标统计）
  */
 export async function clearCache(): Promise<void> {
   await ensureInit();
@@ -362,6 +379,7 @@ export async function clearCache(): Promise<void> {
 
 /**
  * 获取缓存统计信息
+ * @returns CacheStats（含大小、条目数、命中率等）
  */
 export async function getCacheStats(): Promise<CacheStats> {
   await ensureInit();
@@ -391,6 +409,8 @@ export async function getCacheStats(): Promise<CacheStats> {
 
 /**
  * 设置最大缓存容量
+ * @param size - 最大容量（字节）
+ * @description 设置后异步触发一次 LRU 清理
  */
 export function setMaxCacheSize(size: number): void {
   maxCacheSize = size;
@@ -400,6 +420,8 @@ export function setMaxCacheSize(size: number): void {
 
 /**
  * 格式化字节数为可读字符串
+ * @param bytes - 字节数
+ * @returns 形如 "1.23 MB" 的字符串
  */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';

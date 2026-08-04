@@ -1,3 +1,7 @@
+/**
+ * 栏目列表组件
+ * 首页侧边栏使用，展示栏目信息与最新 5 篇文章，点击文章跳转至文章详情页。
+ */
 import { useNavigate } from 'react-router-dom';
 import { getArticles, getColumn } from '../../api/articles';
 import { useTheme } from '../../shared/ThemeContext';
@@ -5,6 +9,10 @@ import { useState, useEffect } from 'react';
 import type { Article, Column } from './types';
 import { formatShortDate } from '../../shared/utils';
 
+/**
+ * 栏目列表组件
+ * @returns 栏目卡片 JSX，包含栏目名称、描述与文章列表
+ */
 export function ColumnList() {
   const navigate = useNavigate();
   const { theme } = useTheme();
@@ -12,6 +20,7 @@ export function ColumnList() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [column, setColumn] = useState<Column | null>(null);
 
+  // 首次挂载并行拉取栏目信息与文章列表（仅取前 5 篇）
   useEffect(() => {
     getArticles().then((result) => {
       if (result.success && result.data) {
@@ -25,6 +34,7 @@ export function ColumnList() {
     });
   }, []);
 
+  /** 跳转到指定文章详情页 */
   const handleArticleClick = (articleId: string) => {
     navigate(`/articles/${articleId}`);
   };
