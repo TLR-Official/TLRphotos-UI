@@ -15,8 +15,8 @@ interface LayoutProps {
   children: React.ReactNode;
   /** 当前激活页面标识 */
   currentPage: string;
-  /** 切换页面回调 */
-  onPageChange: (page: string) => void;
+  /** URL 导航回调 */
+  onNavigate: (pageId: string) => void;
   /** 退出登录回调 */
   onLogout: () => void;
 }
@@ -35,11 +35,11 @@ const menuItems = [
  * @param admin 当前管理员
  * @param children 主内容
  * @param currentPage 当前页标识
- * @param onPageChange 切换页回调
+ * @param onNavigate URL 导航回调
  * @param onLogout 退出回调
  * @returns 后台布局 JSX
  */
-export function Layout({ admin, children, currentPage, onPageChange, onLogout }: LayoutProps) {
+export function Layout({ admin, children, currentPage, onNavigate, onLogout }: LayoutProps) {
   /** 退出登录：清除本地 token 后通知父组件 */
   const handleLogout = () => {
     setAdminToken(null);
@@ -72,7 +72,7 @@ export function Layout({ admin, children, currentPage, onPageChange, onLogout }:
           {menuItems.filter(item => canAccess(item.id)).map(item => (
             <button
               key={item.id}
-              onClick={() => onPageChange(item.id)}
+              onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 currentPage === item.id
                   ? 'bg-purple-100 text-purple-700 font-medium'
