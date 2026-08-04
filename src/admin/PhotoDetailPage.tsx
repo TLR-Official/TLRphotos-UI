@@ -4,7 +4,7 @@
  * 并在底部提供通过/拒绝审核的操作按钮。
  */
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
@@ -28,9 +28,8 @@ import type { AdminPhotoDetail } from './types';
  * 照片审核详情页组件
  * @returns 加载态 / 详情页 JSX
  */
-export function PhotoDetailPage() {
+export function PhotoDetailPage({ id }: { id: string }) {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
   const [photo, setPhoto] = useState<AdminPhotoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRejectModal, setShowRejectModal] = useState(false);

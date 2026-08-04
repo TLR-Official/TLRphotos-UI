@@ -132,7 +132,7 @@ export function AdminApp() {
   const renderPage = () => {
     // 照片详情页（有 photoId 时）
     if (pageId === 'photos' && photoId) {
-      return <PhotoDetailPage />;
+      return <PhotoDetailPage id={photoId} />;
     }
 
     switch (pageId) {
