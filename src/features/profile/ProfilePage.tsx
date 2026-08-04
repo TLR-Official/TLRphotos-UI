@@ -1,9 +1,14 @@
+/**
+ * 个人设置页
+ * 提供仪表盘（统计概览/快捷操作）与设置（个人资料/修改密码/偏好设置/缓存管理/账户安全）两大视图，
+ * 支持头像上传、自定义字段、本地偏好持久化、图片缓存清理与退出登录等操作。
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
-import { uploadAvatar, changePassword } from '../../api/auth';
-import type { User } from '../../api/auth';
+import { uploadAvatar, changePassword, getUserStats, getMyPhotos } from '../../api/auth';
+import type { User, UserStats, MyPhoto } from '../../api/auth';
 import { getCacheStats, clearCache, formatBytes, type CacheStats } from '../../utils/imageCache';
 import {
   getPreferences,
@@ -13,12 +18,24 @@ import {
   type UserPreferences,
 } from '../../utils/preferences';
 
+/**
+ * 个人设置页组件
+ * 通过 viewMode 在仪表盘与设置之间切换；设置区再以 activeTab 切分五个子模块。
+ * @returns 个人设置页 JSX；未登录时返回 null
+ */
 export function ProfilePage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { user, isAuthenticated, updateUserInfo } = useUser();
-  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'preferences' | 'cache' | 'account'>('profile');
+  // viewMode：仪表盘 / 设置 两种顶层视图
+  const [viewMode, setViewMode] = useState<'dashboard' | 'settings'>('dashboard');
+  // activeTab：设置视图下的子标签页
+  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'preferences' | 'cache' | 'account' | 'photos'>('profile');
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  // formData：个人资料表单数据（从 user 初始化）
   const [formData, setFormData] = useState<Partial<User>>({});
+  // avatarPreview：头像本地预览 DataURL
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
@@ -37,6 +54,7 @@ export function ProfilePage() {
   const [prefsMessage, setPrefsMessage] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // 未登录跳转至登录页；已登录则用用户信息初始化表单
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/auth');
@@ -54,10 +72,52 @@ export function ProfilePage() {
     }
   }, [isAuthenticated, user, navigate]);
 
+  // 加载用户统计数据
+  useEffect(() => {
+    if (user?.id) {
+      setStatsLoading(true);
+      getUserStats(user.id)
+        .then((res) => {
+          if (res.success && res.data) {
+            setStats(res.data);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setStatsLoading(false));
+    }
+  }, [user?.id]);
+
+  // 加载我的照片列表
+  const [myPhotos, setMyPhotos] = useState<MyPhoto[]>([]);
+  const [myPhotosLoading, setMyPhotosLoading] = useState(false);
+  const [photoFilter, setPhotoFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+
+  const loadMyPhotos = (filter: string = 'all') => {
+    if (!user?.id) return;
+    setMyPhotosLoading(true);
+    const statusParam = filter === 'all' ? undefined : filter;
+    getMyPhotos(statusParam, 1, 50)
+      .then((res) => {
+        if (res.success && res.data) {
+          setMyPhotos(res.data.photos);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setMyPhotosLoading(false));
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      loadMyPhotos(photoFilter);
+    }
+  }, [user?.id, photoFilter]);
+
+  /** 拉取本地图片缓存统计 */
   const refreshCacheStats = () => {
     getCacheStats().then(setCacheStats).catch(() => {});
   };
 
+  /** 清除本地图片缓存并刷新统计，3 秒后清除提示信息 */
   const handleClearCache = async () => {
     setIsClearingCache(true);
     try {
@@ -76,6 +136,11 @@ export function ProfilePage() {
   // 加载偏好设置
   const loadPrefs = () => setPrefs(getPreferences());
 
+  /**
+   * 修改单项偏好并即时持久化
+   * @param key 偏好字段名
+   * @param value 新值
+   */
   const handlePrefChange = (key: keyof UserPreferences, value: boolean | number | string) => {
     const updated = updatePrefs({ [key]: value } as Partial<UserPreferences>);
     setPrefs(updated);
@@ -83,6 +148,7 @@ export function ProfilePage() {
     setTimeout(() => setPrefsMessage(''), 2000);
   };
 
+  /** 恢复默认偏好设置 */
   const handleResetPrefs = () => {
     const defaults = resetPreferences();
     setPrefs(defaults);
@@ -90,6 +156,7 @@ export function ProfilePage() {
     setTimeout(() => setPrefsMessage(''), 2000);
   };
 
+  /** 退出登录：清除本地凭证并刷新页面回到首页 */
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('session_token');
@@ -97,6 +164,12 @@ export function ProfilePage() {
     window.location.reload();
   };
 
+  /**
+   * 通用字段输入处理
+   * 更新表单对应字段，并清除该字段已有的错误提示。
+   * @param field 字段名
+   * @param value 字段值
+   */
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -104,6 +177,12 @@ export function ProfilePage() {
     }
   };
 
+  /**
+   * 更新自定义字段值与隐私标记
+   * @param fieldName 字段名
+   * @param value 字段值
+   * @param isPrivate 是否私密
+   */
   const handleCustomFieldChange = (fieldName: string, value: string, isPrivate: boolean) => {
     setFormData((prev) => ({
       ...prev,
@@ -114,6 +193,7 @@ export function ProfilePage() {
     }));
   };
 
+  /** 新增一个空的自定义字段（字段名以时间戳生成避免冲突） */
   const addCustomField = () => {
     const newFieldName = `field_${Date.now()}`;
     setFormData((prev) => ({
@@ -125,6 +205,7 @@ export function ProfilePage() {
     }));
   };
 
+  /** 删除指定自定义字段 */
   const removeCustomField = (fieldName: string) => {
     setFormData((prev) => {
       const newCustomFields = { ...(prev.custom_fields || {}) };
@@ -133,6 +214,11 @@ export function ProfilePage() {
     });
   };
 
+  /**
+   * 头像选择处理
+   * 校验类型与大小后用 FileReader 生成 DataURL 用于即时预览。
+   * @param e 文件输入 change 事件
+   */
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -154,6 +240,11 @@ export function ProfilePage() {
     }
   };
 
+  /**
+   * 校验个人资料表单
+   * 对邮箱、手机号、网站做格式校验，返回是否通过。
+   * @returns 校验是否通过
+   */
   const validateProfileForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -169,6 +260,11 @@ export function ProfilePage() {
     return Object.keys(newErrors).length === 0;
   };
 
+  /**
+   * 提交个人资料
+   * 先上传头像（若有预览），再更新用户资料；失败时显示错误信息。
+   * @param e 表单提交事件
+   */
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateProfileForm()) return;
@@ -206,6 +302,12 @@ export function ProfilePage() {
     }
   };
 
+  /**
+   * 修改密码表单输入处理
+   * 更新对应字段并清除其错误提示。
+   * @param field 字段名
+   * @param value 字段值
+   */
   const handlePasswordInputChange = (field: string, value: string) => {
     setPasswordForm((prev) => ({ ...prev, [field]: value }));
     if (passwordErrors[field]) {
@@ -213,6 +315,11 @@ export function ProfilePage() {
     }
   };
 
+  /**
+   * 校验修改密码表单
+   * 检查原密码非空、新密码长度≥6、两次输入一致。
+   * @returns 校验是否通过
+   */
   const validatePasswordForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (!passwordForm.oldPassword) {
@@ -232,6 +339,10 @@ export function ProfilePage() {
     return Object.keys(newErrors).length === 0;
   };
 
+  /**
+   * 修改密码提交：校验通过后弹出二次确认弹窗
+   * @param e 表单提交事件
+   */
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validatePasswordForm()) return;
@@ -239,6 +350,7 @@ export function ProfilePage() {
     setShowPasswordConfirm(true);
   };
 
+  /** 二次确认后真正调用修改密码接口，成功后清空表单 */
   const confirmPasswordChange = async () => {
     setIsSubmitting(true);
     setMessage('');
@@ -259,6 +371,17 @@ export function ProfilePage() {
     }
   };
 
+  /**
+   * 表单字段行（内部展示组件）
+   * @param label 标签文本
+   * @param type 输入框类型，默认 text
+   * @param placeholder 占位文本
+   * @param value 当前值
+   * @param onChange 值变更回调
+   * @param error 错误提示文本
+   * @param isPrivate 是否私密
+   * @param onTogglePrivate 切换私密状态回调
+   */
   const FieldRow = ({
     label,
     type = 'text',
@@ -280,7 +403,7 @@ export function ProfilePage() {
   }) => (
     <div className="flex items-center gap-4">
       <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-        theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
+        'text-gray-700'
       }`}>
         {label}
       </label>
@@ -336,74 +459,202 @@ export function ProfilePage() {
   }
 
   return (
-    <div className={`min-h-screen theme-bg-transition ${
-      theme === 'dark' ? 'bg-slate-900' : 'bg-gradient-to-br from-gray-50 to-gray-100'
-    }`}>
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <div className={`rounded-2xl shadow-xl overflow-hidden ${
-          theme === 'dark' ? 'bg-slate-800' : 'bg-white'
-        }`}>
-          <div className={`p-6 border-b ${theme === 'dark' ? 'border-white/10' : 'border-gray-100'}`}>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className={`w-24 h-24 rounded-full overflow-hidden ${
-                  avatarPreview || user?.avatar_url
-                    ? ''
-                    : 'bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center'
-                }`}>
-                  {avatarPreview ? (
-                    <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
-                  ) : user?.avatar_url ? (
-                    <img
-                      src={user.avatar_url.startsWith('/') ? `/api${user.avatar_url}` : user.avatar_url}
-                      alt={user.username || '用户'}
-                      className="w-full h-full object-cover"
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* 头部：用户信息 */}
+        <div className="rounded-2xl shadow-xl overflow-hidden bg-white mb-6">
+          <div className="p-6 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
+                    ) : user?.avatar_url ? (
+                      <img
+                        src={user.avatar_url.startsWith('/') ? `/api${user.avatar_url}` : user.avatar_url}
+                        alt={user.username || '用户'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    )}
+                  </div>
+                  <label className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleAvatarChange}
+                      className="hidden"
                     />
-                  ) : (
-                    <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                  )}
+                  </label>
                 </div>
-                <label className={`absolute bottom-0 right-0 w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity ${
-                  theme === 'dark' ? 'text-white' : 'text-white'
-                }`}>
-                  <input
-                    id="avatar-input"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleAvatarChange}
-                    className="hidden"
-                  />
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </label>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-800">
+                    {user?.username || '用户'}
+                  </h1>
+                  <p className="text-sm text-gray-500">
+                    {user?.email}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>
-                  {user?.username || '用户'}
-                </h1>
-                <p className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>
-                  {user?.email}
-                </p>
-                {errors.avatar && (
-                  <p className="mt-2 text-sm text-red-500">{errors.avatar}</p>
+              <div className="flex gap-3">
+                {viewMode === 'settings' && (
+                  <button
+                    onClick={() => setViewMode('dashboard')}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                  >
+                    返回仪表盘
+                  </button>
                 )}
+                <button
+                  onClick={() => setViewMode('settings')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    viewMode === 'settings'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                  }`}
+                >
+                  设置
+                </button>
               </div>
             </div>
+            {errors.avatar && (
+              <p className="mt-2 text-sm text-red-500">{errors.avatar}</p>
+            )}
           </div>
+        </div>
 
+        {/* Dashboard 视图 */}
+        {viewMode === 'dashboard' && (
+          <div className="space-y-6">
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">总上传</p>
+                <p className="text-3xl font-bold text-gray-800">
+                  {statsLoading ? '-' : stats?.totalUploads || 0}
+                </p>
+              </div>
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">已过审</p>
+                <p className="text-3xl font-bold text-green-600">
+                  {statsLoading ? '-' : stats?.approved || 0}
+                </p>
+              </div>
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">待审核</p>
+                <p className="text-3xl font-bold text-yellow-600">
+                  {statsLoading ? '-' : stats?.pending || 0}
+                </p>
+              </div>
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">未通过</p>
+                <p className="text-3xl font-bold text-red-600">
+                  {statsLoading ? '-' : stats?.rejected || 0}
+                </p>
+              </div>
+            </div>
+
+            {/* 过审率 + 互动数据 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-gray-500">过审率</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {statsLoading ? '-' : `${stats?.approvalRate || 0}%`}
+                  </p>
+                </div>
+                <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500"
+                    style={{ width: statsLoading ? '0%' : `${stats?.approvalRate || 0}%` }}
+                  />
+                </div>
+              </div>
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">总浏览量</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {statsLoading ? '-' : stats?.totalViews?.toLocaleString() || 0}
+                </p>
+              </div>
+              <div className="rounded-xl p-5 bg-white shadow-sm">
+                <p className="text-sm text-gray-500 mb-1">总点赞数</p>
+                <p className="text-2xl font-bold text-pink-600">
+                  {statsLoading ? '-' : stats?.totalLikes?.toLocaleString() || 0}
+                </p>
+              </div>
+            </div>
+
+            {/* 快捷操作 */}
+            <div className="rounded-xl p-5 bg-white shadow-sm">
+              <h3 className="text-base font-semibold mb-4 text-gray-800">快捷操作</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button
+                  onClick={() => navigate('/upload')}
+                  className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-medium">上传照片</span>
+                </button>
+                <button
+                  onClick={() => navigate(`/users/${user?.id}`)}
+                  className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <span className="text-sm font-medium">我的作品</span>
+                </button>
+                <button
+                  onClick={() => { setViewMode('settings'); setActiveTab('profile'); }}
+                  className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="text-sm font-medium">编辑资料</span>
+                </button>
+                <button
+                  onClick={() => { setViewMode('settings'); setActiveTab('preferences'); loadPrefs(); }}
+                  className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="text-sm font-medium">偏好设置</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 最近动态 */}
+            {stats?.recentUploads !== undefined && stats.recentUploads > 0 && (
+              <div className="rounded-xl p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100">
+                <p className="text-sm text-purple-700">
+                  📸 最近 7 天上传了 <span className="font-semibold">{stats.recentUploads}</span> 张照片
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Settings 视图 */}
+        {viewMode === 'settings' && (
+          <div className="rounded-2xl shadow-xl overflow-hidden bg-white">
           <div className="flex border-b">
             <button
               onClick={() => setActiveTab('profile')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'profile'
-                  ? theme === 'dark'
-                    ? 'text-purple-400 border-b-2 border-purple-400'
-                    : 'text-purple-600 border-b-2 border-purple-600'
-                  : theme === 'dark'
-                  ? 'text-slate-400 hover:text-slate-300'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -413,11 +664,7 @@ export function ProfilePage() {
               onClick={() => setActiveTab('password')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'password'
-                  ? theme === 'dark'
-                    ? 'text-purple-400 border-b-2 border-purple-400'
-                    : 'text-purple-600 border-b-2 border-purple-600'
-                  : theme === 'dark'
-                  ? 'text-slate-400 hover:text-slate-300'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -458,6 +705,16 @@ export function ProfilePage() {
               }`}
             >
               账户安全
+            </button>
+            <button
+              onClick={() => setActiveTab('photos')}
+              className={`flex-1 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'photos'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              我的照片
             </button>
           </div>
 
@@ -517,7 +774,7 @@ export function ProfilePage() {
                 />
 
                 <div className="pt-4">
-                  <h3 className={`text-sm font-medium mb-4 ${theme === 'dark' ? 'text-slate-300' : 'text-gray-700'}`}>
+                  <h3 className={`text-sm font-medium mb-4 ${'text-gray-700'}`}>
                     自定义资料项
                   </h3>
                   {Object.keys(formData.custom_fields || {}).length > 0 && (
@@ -638,7 +895,7 @@ export function ProfilePage() {
               <form onSubmit={handlePasswordSubmit} className="space-y-6">
                 <div className="flex items-center gap-4">
                   <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
+                    'text-gray-700'
                   }`}>
                     原密码
                   </label>
@@ -664,7 +921,7 @@ export function ProfilePage() {
 
                 <div className="flex items-center gap-4">
                   <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
+                    'text-gray-700'
                   }`}>
                     新密码
                   </label>
@@ -690,7 +947,7 @@ export function ProfilePage() {
 
                 <div className="flex items-center gap-4">
                   <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
+                    'text-gray-700'
                   }`}>
                     确认密码
                   </label>
@@ -743,39 +1000,39 @@ export function ProfilePage() {
             {activeTab === 'cache' && (
               <div className="space-y-6">
                 <div className={`rounded-lg p-6 ${
-                  theme === 'dark' ? 'bg-white/5' : 'bg-gray-50'
+                  'bg-gray-50'
                 }`}>
                   <h3 className={`text-base font-semibold mb-4 ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-800'
+                    'text-gray-800'
                   }`}>
                     图片缓存统计
                   </h3>
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>当前缓存大小</p>
-                      <p className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      <p className={`text-xs ${'text-gray-500'}`}>当前缓存大小</p>
+                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
                         {cacheStats ? formatBytes(cacheStats.size) : '加载中...'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>最大容量</p>
-                      <p className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      <p className={`text-xs ${'text-gray-500'}`}>最大容量</p>
+                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
                         {cacheStats ? formatBytes(cacheStats.maxSize) : '-'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>缓存条目数</p>
-                      <p className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      <p className={`text-xs ${'text-gray-500'}`}>缓存条目数</p>
+                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
                         {cacheStats ? cacheStats.entries : '-'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>缓存命中率</p>
+                      <p className={`text-xs ${'text-gray-500'}`}>缓存命中率</p>
                       <p className={`text-xl font-bold ${
                         cacheStats && cacheStats.hitRate > 0.5
                           ? 'text-green-500'
-                          : theme === 'dark' ? 'text-white' : 'text-gray-900'
+                          : 'text-gray-900'
                       }`}>
                         {cacheStats ? `${(cacheStats.hitRate * 100).toFixed(1)}%` : '-'}
                       </p>
@@ -785,13 +1042,13 @@ export function ProfilePage() {
                   {cacheStats && (
                     <div className="mb-4">
                       <div className={`flex justify-between text-xs mb-1 ${
-                        theme === 'dark' ? 'text-slate-400' : 'text-gray-500'
+                        'text-gray-500'
                       }`}>
                         <span>已用 {formatBytes(cacheStats.size)}</span>
                         <span>{formatBytes(cacheStats.maxSize)}</span>
                       </div>
                       <div className={`h-2 rounded-full overflow-hidden ${
-                        theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'
+                        'bg-gray-200'
                       }`}>
                         <div
                           className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500"
@@ -803,16 +1060,16 @@ export function ProfilePage() {
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div className={`rounded-lg p-3 text-center ${
-                      theme === 'dark' ? 'bg-green-500/10' : 'bg-green-50'
+                      'bg-green-50'
                     }`}>
                       <p className="text-2xl font-bold text-green-500">{cacheStats?.hits ?? 0}</p>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>缓存命中</p>
+                      <p className={`text-xs ${'text-gray-500'}`}>缓存命中</p>
                     </div>
                     <div className={`rounded-lg p-3 text-center ${
-                      theme === 'dark' ? 'bg-orange-500/10' : 'bg-orange-50'
+                      'bg-orange-50'
                     }`}>
                       <p className="text-2xl font-bold text-orange-500">{cacheStats?.misses ?? 0}</p>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>缓存未命中</p>
+                      <p className={`text-xs ${'text-gray-500'}`}>缓存未命中</p>
                     </div>
                   </div>
 
@@ -851,7 +1108,7 @@ export function ProfilePage() {
                 </div>
 
                 <div className={`rounded-lg p-4 text-sm ${
-                  theme === 'dark' ? 'bg-blue-500/10 text-blue-300' : 'bg-blue-50 text-blue-700'
+                  'bg-blue-50 text-blue-700'
                 }`}>
                   <p className="font-medium mb-1">缓存说明</p>
                   <ul className="space-y-1 text-xs opacity-80">
@@ -1132,6 +1389,118 @@ export function ProfilePage() {
               </div>
             )}
 
+            {activeTab === 'photos' && (
+              <div className="space-y-6">
+                {/* 状态筛选标签 */}
+                <div className="flex gap-2 flex-wrap">
+                  {([
+                    { key: 'all', label: '全部' },
+                    { key: 'pending', label: '待审核' },
+                    { key: 'approved', label: '已通过' },
+                    { key: 'rejected', label: '未通过' },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setPhotoFilter(key)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        photoFilter === key
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 加载状态 */}
+                {myPhotosLoading && (
+                  <div className="text-center py-12 text-gray-500">加载中...</div>
+                )}
+
+                {/* 照片列表 */}
+                {!myPhotosLoading && myPhotos.length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    {photoFilter === 'all' ? '暂无照片，快去上传一些吧！' : '此状态下没有照片'}
+                  </div>
+                )}
+
+                {!myPhotosLoading && myPhotos.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {myPhotos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        className={`rounded-xl overflow-hidden border transition-all ${
+                          photo.status === 'pending'
+                            ? 'border-yellow-300 bg-yellow-50'
+                            : photo.status === 'rejected'
+                            ? 'border-red-300 bg-red-50'
+                            : 'border-green-200 bg-white'
+                        }`}
+                      >
+                        {/* 缩略图 */}
+                        <div className="relative aspect-video bg-gray-100">
+                          <img
+                            src={photo.thumbnail_path}
+                            alt={photo.title}
+                            className="w-full h-full object-cover"
+                          />
+                          {/* 状态徽章 */}
+                          <span
+                            className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-medium text-white ${
+                              photo.status === 'pending'
+                                ? 'bg-yellow-500'
+                                : photo.status === 'rejected'
+                                ? 'bg-red-500'
+                                : 'bg-green-500'
+                            }`}
+                          >
+                            {photo.status === 'pending'
+                              ? '待审核'
+                              : photo.status === 'rejected'
+                              ? '未通过'
+                              : '已通过'}
+                          </span>
+                        </div>
+
+                        {/* 照片信息 */}
+                        <div className="p-3">
+                          <h4 className="font-medium text-sm text-gray-800 truncate">
+                            {photo.title}
+                          </h4>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(photo.created_at).toLocaleDateString('zh-CN')}
+                          </p>
+
+                          {/* 驳回理由 */}
+                          {photo.status === 'rejected' && photo.rejection_reason && (
+                            <div className="mt-2 p-2 rounded-lg bg-red-100 border border-red-200">
+                              <p className="text-xs font-medium text-red-700 mb-0.5">驳回理由：</p>
+                              <p className="text-xs text-red-600">{photo.rejection_reason}</p>
+                            </div>
+                          )}
+
+                          {/* 标签 */}
+                          {photo.tags && photo.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {photo.tags.slice(0, 3).map((tag, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {showLogoutConfirm && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                 <div className="rounded-xl p-6 max-w-md w-full mx-4 bg-white">
@@ -1159,15 +1528,15 @@ export function ProfilePage() {
 
             {showPasswordConfirm && (
               <div className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
-                theme === 'dark' ? 'bg-slate-900/80' : 'bg-black/50'
+                'bg-black/50'
               }`}>
                 <div className={`rounded-xl p-6 max-w-md w-full mx-4 ${
-                  theme === 'dark' ? 'bg-slate-800' : 'bg-white'
+                  'bg-white'
                 }`}>
-                  <h3 className={`text-lg font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>
+                  <h3 className={`text-lg font-bold mb-4 ${'text-gray-800'}`}>
                     确认修改密码
                   </h3>
-                  <p className={`mb-6 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-600'}`}>
+                  <p className={`mb-6 ${'text-gray-600'}`}>
                     确定要修改密码吗？此操作无法撤销。
                   </p>
                   <div className="flex gap-4">
@@ -1200,6 +1569,33 @@ export function ProfilePage() {
             )}
           </div>
         </div>
+        )}
+
+        {/* 退出登录确认弹窗 */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="rounded-xl p-6 max-w-md w-full mx-4 bg-white">
+              <h3 className="text-lg font-bold mb-4 text-gray-800">确认退出登录</h3>
+              <p className="mb-6 text-gray-600">
+                确定要退出当前账户吗？退出后需要重新登录。
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 py-2 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex-1 py-2 rounded-lg font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  确认退出
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,13 +1,29 @@
+/**
+ * @file db.ts
+ * @description 数据库初始化与表结构定义模块。
+ *              负责创建 SQLite 数据库连接、初始化所有业务表结构、
+ *              执行增量字段迁移并填充 Mock 演示数据。
+ *              作为后端唯一的数据访问入口，被 server.ts 在启动时调用。
+ */
+
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import path from 'path';
 
+// 数据库文件存放路径：backend/data/database.db
 const dbPath = path.join(__dirname, '../data/database.db');
 
+// 全局共享的数据库实例，由 initDb 初始化后供各路由模块使用
 export let db: Database;
 
+/**
+ * 初始化数据库表结构。
+ * 使用 CREATE TABLE IF NOT EXISTS 保证幂等执行，
+ * 同时为 admin_logs 创建常用查询字段索引以提升审计日志检索性能。
+ */
 const initSchema = async () => {
   await db.exec(`
+    -- 用户主表：存储注册用户基本信息与第三方登录绑定状态
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -26,6 +42,7 @@ const initSchema = async () => {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 照片主表：thumbnail_path 为缩略图、original_url 指向 OSS 原图
     CREATE TABLE IF NOT EXISTS photos (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -51,6 +68,7 @@ const initSchema = async () => {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 文章表：content_path 指向 Markdown 文件相对路径
     CREATE TABLE IF NOT EXISTS articles (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -65,6 +83,7 @@ const initSchema = async () => {
       tags TEXT
     );
 
+    -- 文章评论表：随文章删除级联清理
     CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
       article_id TEXT NOT NULL,
@@ -74,6 +93,7 @@ const initSchema = async () => {
       FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
     );
 
+    -- 照片点赞表：(photo_id, user_id) 联合主键确保同一用户对同一照片仅能点赞一次
     CREATE TABLE IF NOT EXISTS photo_likes (
       photo_id TEXT NOT NULL,
       user_id TEXT DEFAULT 'anonymous',
@@ -82,6 +102,7 @@ const initSchema = async () => {
       FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
     );
 
+    -- 文章点赞表：与 photo_likes 结构对称
     CREATE TABLE IF NOT EXISTS article_likes (
       article_id TEXT NOT NULL,
       user_id TEXT DEFAULT 'anonymous',
@@ -90,6 +111,7 @@ const initSchema = async () => {
       FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
     );
 
+    -- 专栏信息表：单条记录，默认 id 为 column_001
     CREATE TABLE IF NOT EXISTS column_info (
       id TEXT PRIMARY KEY DEFAULT 'column_001',
       name TEXT NOT NULL,
@@ -97,6 +119,7 @@ const initSchema = async () => {
       cover_image TEXT
     );
 
+    -- 会话 Cookie 表：session_token 唯一、encrypted_ip 加密存储访问 IP
     CREATE TABLE IF NOT EXISTS cookie (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -108,6 +131,7 @@ const initSchema = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- 管理员用户表：role 区分角色，zone 用于分区审核权限隔离
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -122,6 +146,7 @@ const initSchema = async () => {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 管理员操作审计日志表：记录所有后台关键操作
     CREATE TABLE IF NOT EXISTS admin_logs (
       id TEXT PRIMARY KEY,
       admin_id TEXT NOT NULL,
@@ -135,11 +160,14 @@ const initSchema = async () => {
       FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
     );
 
+    -- 审计日志索引：覆盖按管理员、时间、动作类型三种典型查询场景
     CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id ON admin_logs(admin_id);
     CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_admin_logs_action ON admin_logs(action);
   `);
 
+  // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，
+  // try/catch 捕获字段已存在的异常，保证幂等执行
   try {
     await db.run('ALTER TABLE photos ADD COLUMN preview_url TEXT');
   } catch {}
@@ -158,9 +186,18 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN status TEXT DEFAULT "pending"');
   } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN rejection_reason TEXT');
+  } catch {}
 };
 
+/**
+ * 填充 Mock 演示数据。
+ * 仅在各业务表为空时执行，避免覆盖已存在的真实数据。
+ * 包含照片、文章、评论、专栏四类基础演示数据，便于前端联调与本地开发。
+ */
 const seedMockData = async () => {
+  // 照片表为空时插入 12 张演示照片（含 EXIF 信息、标签、点赞数等）
   const photoCount = await db.get('SELECT COUNT(*) as count FROM photos');
   if (photoCount.count === 0) {
     const photos = [
@@ -418,6 +455,7 @@ const seedMockData = async () => {
       },
     ];
 
+    // 批量插入演示照片，使用参数化查询防止 SQL 注入
     for (const photo of photos) {
       await db.run(
         'INSERT INTO photos (id, title, thumbnail_path, original_url, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -444,6 +482,7 @@ const seedMockData = async () => {
     }
   }
 
+  // 文章表为空时插入 5 篇演示文章
   const articleCount = await db.get('SELECT COUNT(*) as count FROM articles');
   if (articleCount.count === 0) {
     const articles = [
@@ -532,6 +571,7 @@ const seedMockData = async () => {
     }
   }
 
+  // 评论表为空时插入演示评论，created_at 使用时间偏移模拟递减发布时间
   const commentCount = await db.get('SELECT COUNT(*) as count FROM comments');
   if (commentCount.count === 0) {
     const comments = [
@@ -553,6 +593,7 @@ const seedMockData = async () => {
     }
   }
 
+  // 专栏表为空时插入默认专栏记录
   const columnCount = await db.get('SELECT COUNT(*) as count FROM column_info');
   if (columnCount.count === 0) {
     await db.run(
@@ -565,12 +606,18 @@ const seedMockData = async () => {
   }
 };
 
+/**
+ * 数据库初始化入口。
+ * 创建连接后启用 WAL 模式提升并发读写性能，并开启外键约束保证数据完整性。
+ * 依次执行表结构初始化与 Mock 数据填充。
+ */
 export const initDb = async () => {
   db = await open({
     filename: dbPath,
     driver: sqlite3.Database,
   });
 
+  // WAL 模式：读写不互斥，提升并发性能；外键约束：保证级联删除生效
   await db.run('PRAGMA journal_mode = WAL');
   await db.run('PRAGMA foreign_keys = ON');
 

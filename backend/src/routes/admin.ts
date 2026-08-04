@@ -1,3 +1,10 @@
+/**
+ * @file admin.ts
+ * @description 管理后台路由模块。
+ *              提供管理员登录、账户管理（增删改查）、照片审核（通过/拒绝）、
+ *              站点用户管理（启用/禁用）、审计日志查询、仪表盘统计等接口。
+ *              权限模型基于角色（super/zone_master/zone_auditor）与分区（zone）双重隔离。
+ */
 import express from 'express';
 import { adminAuthMiddleware, requireRole } from '../middleware/adminAuth';
 import {
@@ -15,6 +22,13 @@ import { db } from '../db';
 
 const router = express.Router();
 
+/**
+ * 管理员登录。
+ * 校验账号密码后签发管理员专属 JWT，并记录登录审计日志。
+ * @body username 用户名
+ * @body password 密码
+ * @returns JWT + 管理员基础信息
+ */
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   
@@ -28,6 +42,7 @@ router.post('/login', async (req, res) => {
     return res.status(401).json(result);
   }
 
+  // 记录登录审计日志（包含 IP 用于追踪异常登录）
   await logAdminAction(result.admin!, 'login', 'admin', result.admin!.id, undefined, req.ip);
   
   res.json({
@@ -43,6 +58,10 @@ router.post('/login', async (req, res) => {
   });
 });
 
+/**
+ * 获取当前登录管理员信息。
+ * 由 adminAuthMiddleware 解析 Token 后直接返回 req.admin 数据。
+ */
 router.get('/me', adminAuthMiddleware, (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -60,6 +79,16 @@ router.get('/me', adminAuthMiddleware, (req, res) => {
   });
 });
 
+/**
+ * 创建管理员账户。
+ * 仅 super 与 zone_master 角色可调用；zone_master 仅能创建本分区内的 zone_auditor 账户。
+ * @body username 用户名
+ * @body password 密码
+ * @body email 邮箱
+ * @body name 姓名
+ * @body role 角色
+ * @body zone 分区
+ */
 router.post('/users', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   const { username, password, email, name, role, zone } = req.body;
   
@@ -71,10 +100,12 @@ router.post('/users', adminAuthMiddleware, requireRole(['super', 'zone_master'])
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
+  // 权限隔离：zone_master 只能创建 zone_auditor 角色
   if (req.admin.role === 'zone_master' && role !== 'zone_auditor') {
     return res.status(403).json({ success: false, message: '分区总审核只能创建分区审核账户' });
   }
 
+  // 权限隔离：zone_master 只能在自己分区内创建账户
   if (req.admin.role === 'zone_master' && zone !== req.admin.zone) {
     return res.status(403).json({ success: false, message: '只能在自己的分区内创建账户' });
   }
@@ -107,6 +138,10 @@ router.post('/users', adminAuthMiddleware, requireRole(['super', 'zone_master'])
   });
 });
 
+/**
+ * 查询管理员账户列表。
+ * super 角色可查询全部并支持按 role/zone 过滤；zone_master 仅能查询本分区的 zone_auditor。
+ */
 router.get('/users', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -115,6 +150,7 @@ router.get('/users', adminAuthMiddleware, requireRole(['super', 'zone_master']),
   let role = req.query.role as AdminRole | undefined;
   let zone = req.query.zone as string | undefined;
 
+  // zone_master 强制限定为本分区 + zone_auditor 角色，忽略前端传入的过滤参数
   if (req.admin.role === 'zone_master') {
     zone = req.admin.zone;
     role = 'zone_auditor';
@@ -138,6 +174,11 @@ router.get('/users', adminAuthMiddleware, requireRole(['super', 'zone_master']),
   });
 });
 
+/**
+ * 获取指定管理员账户详情。
+ * zone_master 仅可查看本分区的 zone_auditor 账户。
+ * @param id 管理员 ID
+ */
 router.get('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -149,6 +190,7 @@ router.get('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master
     return res.status(404).json({ success: false, message: '管理员不存在' });
   }
 
+  // 权限隔离：zone_master 仅能查看本分区 zone_auditor
   if (req.admin.role === 'zone_master' && admin.role !== 'zone_auditor') {
     return res.status(403).json({ success: false, message: '只能查看分区审核账户' });
   }
@@ -174,6 +216,11 @@ router.get('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master
   });
 });
 
+/**
+ * 更新管理员账户信息。
+ * zone_master 仅可编辑本分区 zone_auditor，且不能变更角色与分区。
+ * @param id 管理员 ID
+ */
 router.put('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -186,6 +233,7 @@ router.put('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master
     return res.status(404).json({ success: false, message: '管理员不存在' });
   }
 
+  // zone_master 编辑权限的多重校验：仅本分区 zone_auditor、角色不可变更、分区不可变更
   if (req.admin.role === 'zone_master') {
     if (targetAdmin.role !== 'zone_auditor') {
       return res.status(403).json({ success: false, message: '只能编辑分区审核账户' });
@@ -229,6 +277,11 @@ router.put('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master
   });
 });
 
+/**
+ * 删除管理员账户。
+ * super 账户不可删除；zone_master 仅可删除本分区 zone_auditor。
+ * @param id 管理员 ID
+ */
 router.delete('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -240,6 +293,7 @@ router.delete('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_mas
     return res.status(404).json({ success: false, message: '管理员不存在' });
   }
 
+  // 保护超级管理员账户不可删除
   if (targetAdmin.role === 'super') {
     return res.status(403).json({ success: false, message: '无法删除最高账户' });
   }
@@ -259,6 +313,12 @@ router.delete('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_mas
   res.json({ success: true, message: '删除成功' });
 });
 
+/**
+ * 获取待审核照片列表（分页）。
+ * zone_auditor 仅可见本分区（category）的待审核照片，其他角色可查看全部。
+ * @query page 页码
+ * @query pageSize 每页数量
+ */
 router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -268,9 +328,11 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   const pageSize = parseInt(req.query.pageSize as string) || 20;
   const offset = (page - 1) * pageSize;
 
+  // LEFT JOIN users 携带上传者信息，便于审核时核对来源
   let query = 'SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar FROM photos p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = "pending"';
   const params: (string | number)[] = [];
 
+  // 分区审核员仅可见本分区照片
   if (req.admin.role === 'zone_auditor') {
     query += ' AND p.category = ?';
     params.push(req.admin.zone);
@@ -293,6 +355,11 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   });
 });
 
+/**
+ * 审核通过照片。
+ * 仅对 pending 状态的照片生效，更新为 approved 并清除驳回理由，记录审计日志。
+ * @param id 照片 ID
+ */
 router.put('/photos/:id/approve', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -304,22 +371,35 @@ router.put('/photos/:id/approve', adminAuthMiddleware, async (req, res) => {
     return res.status(404).json({ success: false, message: '照片不存在' });
   }
 
+  // 状态校验：仅待审核照片可执行通过操作，避免重复审核
   if (photo.status !== 'pending') {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
   }
 
-  await db.run('UPDATE photos SET status = "approved" WHERE id = ?', [req.params.id]);
+  // 通过审核时清除之前的驳回理由
+  await db.run('UPDATE photos SET status = "approved", rejection_reason = NULL WHERE id = ?', [req.params.id]);
   await logAdminAction(req.admin, 'approve_photo', 'photo', req.params.id, { title: photo.title });
   
   res.json({ success: true, message: '审核通过' });
 });
 
+/**
+ * 审核拒绝照片。
+ * 仅对 pending 状态的照片生效，更新为 rejected 并记录拒绝原因。
+ * @param id 照片 ID
+ * @body reason 拒绝原因
+ */
 router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
   const { reason } = req.body;
+
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, message: '请填写驳回理由' });
+  }
+
   const photo = await db.get('SELECT * FROM photos WHERE id = ?', [req.params.id]);
   
   if (!photo) {
@@ -330,12 +410,17 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
   }
 
-  await db.run('UPDATE photos SET status = "rejected" WHERE id = ?', [req.params.id]);
+  // 存储驳回理由，供上传者查看
+  await db.run('UPDATE photos SET status = "rejected", rejection_reason = ? WHERE id = ?', [reason.trim(), req.params.id]);
   await logAdminAction(req.admin, 'reject_photo', 'photo', req.params.id, { title: photo.title, reason });
   
   res.json({ success: true, message: '审核拒绝' });
 });
 
+/**
+ * 获取照片审核状态统计。
+ * 按状态分组聚合计数，返回总数、待审核、已通过、已拒绝数量。
+ */
 router.get('/photos/stats', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -349,6 +434,7 @@ router.get('/photos/stats', adminAuthMiddleware, async (req, res) => {
     GROUP BY status
   `);
 
+  // 转换为以状态为键的对象便于前端读取
   const statsMap: Record<string, number> = {};
   stats.forEach(s => {
     statsMap[s.status] = s.count;
@@ -365,6 +451,13 @@ router.get('/photos/stats', adminAuthMiddleware, async (req, res) => {
   });
 });
 
+/**
+ * 获取站点用户列表（分页，仅 super 可访问）。
+ * 支持按用户名或邮箱关键词模糊搜索。
+ * @query page 页码
+ * @query pageSize 每页数量
+ * @query keyword 用户名或邮箱关键词
+ */
 router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
   const page = parseInt(req.query.page as string) || 1;
   const pageSize = parseInt(req.query.pageSize as string) || 20;
@@ -374,6 +467,7 @@ router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (re
   let query = 'SELECT * FROM users';
   const params: (string | number)[] = [];
 
+  // 关键词搜索：同时匹配用户名与邮箱
   if (keyword) {
     query += ' WHERE username LIKE ? OR email LIKE ?';
     params.push(`%${keyword}%`, `%${keyword}%`);
@@ -384,6 +478,7 @@ router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (re
 
   const users = await db.all(query, params);
   
+  // 计数查询需与列表查询保持相同的 WHERE 条件
   let countQuery = 'SELECT COUNT(*) as count FROM users';
   if (keyword) {
     countQuery += ' WHERE username LIKE ? OR email LIKE ?';
@@ -401,6 +496,11 @@ router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (re
   });
 });
 
+/**
+ * 切换站点用户启用/禁用状态（仅 super 可访问）。
+ * 取当前 is_active 反值并写入，同时记录审计日志。
+ * @param id 用户 ID
+ */
 router.put('/users/:id/toggle', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -412,6 +512,7 @@ router.put('/users/:id/toggle', adminAuthMiddleware, requireRole(['super']), asy
     return res.status(404).json({ success: false, message: '用户不存在' });
   }
 
+  // 取当前状态的反值：1 → 0 禁用，0 → 1 启用
   const newStatus = user.is_active ? 0 : 1;
   await db.run('UPDATE users SET is_active = ? WHERE id = ?', [newStatus, req.params.id]);
   await logAdminAction(req.admin, newStatus ? 'activate_user' : 'deactivate_user', 'user', req.params.id, { username: user.username });
@@ -423,6 +524,12 @@ router.put('/users/:id/toggle', adminAuthMiddleware, requireRole(['super']), asy
   });
 });
 
+/**
+ * 查询审计日志（分页）。
+ * super 可查看全部日志；zone_master 仅能查看自己的操作日志。
+ * @query page 页码
+ * @query pageSize 每页数量（默认 50）
+ */
 router.get('/logs', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -436,6 +543,7 @@ router.get('/logs', adminAuthMiddleware, requireRole(['super', 'zone_master']), 
   let countQuery = 'SELECT COUNT(*) as total FROM admin_logs';
   const params: (string | number)[] = [];
 
+  // zone_master 权限隔离：仅能查看本人的操作日志
   if (req.admin.role === 'zone_master') {
     query += ' WHERE admin_id = ?';
     countQuery += ' WHERE admin_id = ?';
@@ -445,6 +553,7 @@ router.get('/logs', adminAuthMiddleware, requireRole(['super', 'zone_master']), 
   query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
   params.push(pageSize, offset);
 
+  // 列表查询与计数查询并行执行，提升响应速度
   const [logs, count] = await Promise.all([
     db.all(query, params),
     db.get(countQuery, req.admin.role === 'zone_master' ? [req.admin.id] : [])
@@ -461,11 +570,17 @@ router.get('/logs', adminAuthMiddleware, requireRole(['super', 'zone_master']), 
   });
 });
 
+/**
+ * 获取后台仪表盘统计数据。
+ * 并行查询用户数、照片数、管理员数、今日上传数、待审核数，
+ * 用于后台首页关键指标展示。
+ */
 router.get('/stats', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
+  // 五个独立统计查询并行执行，减少总响应耗时
   const [userCount, photoCount, adminCount, todayUploads, pendingCount] = await Promise.all([
     db.get('SELECT COUNT(*) as count FROM users WHERE is_active = 1'),
     db.get('SELECT COUNT(*) as count FROM photos'),
