@@ -83,7 +83,6 @@ export function AdminApp() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setAdmin(null);
-    navigate('/admin/login');
   };
 
   if (loading) {
