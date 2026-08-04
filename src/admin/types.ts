@@ -38,6 +38,45 @@ export interface AdminPhoto {
   created_at: string;
 }
 
+/** 管理员照片详情（包含完整元数据） */
+export interface AdminPhotoDetail {
+  id: string;
+  title: string;
+  thumbnail_path: string;
+  original_url: string;
+  preview_url?: string;
+  watermarked_url?: string;
+  watermark_config?: {
+    text: string;
+    x: number;
+    y: number;
+    opacity: number;
+    size: number;
+  } | null;
+  tags: string[];
+  structured_tags?: Record<string, any>;
+  width: number;
+  height: number;
+  description: string;
+  camera_model: string;
+  vehicle: string;
+  location: string;
+  altitude: number;
+  focal_length: string;
+  iso: number;
+  shutter_speed: string;
+  aperture: string;
+  category?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string | null;
+  user_id?: string;
+  uploader_name?: string;
+  uploader_avatar?: string;
+  likes: number;
+  views: number;
+  created_at: string;
+}
+
 /** 照片审核统计 */
 export interface AuditStats {
   total: number;

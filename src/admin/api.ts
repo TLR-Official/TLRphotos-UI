@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, AdminUser, AdminPhoto, AuditStats, SystemStats, AdminLog, User } from './types';
+import type { LoginResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -130,6 +130,18 @@ export async function deleteAdmin(id: string): Promise<{ success: boolean; messa
  */
 export async function getPendingPhotos(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminPhoto[]; pagination?: { page: number; pageSize: number; total: number } }> {
   const response = await fetch(`${API_BASE}/photos/pending?page=${page}&pageSize=${pageSize}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 获取照片详情（管理员专用）
+ * 返回完整照片信息：EXIF元数据、用户填写的数据、水印配置等
+ * @param id 照片 id
+ */
+export async function getPhotoDetail(id: string): Promise<{ success: boolean; data?: AdminPhotoDetail; message?: string }> {
+  const response = await fetch(`${API_BASE}/photos/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.json();

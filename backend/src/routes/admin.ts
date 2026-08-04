@@ -19,6 +19,7 @@ import {
   type AdminRole,
 } from '../services/adminService';
 import { db } from '../db';
+import { getProxyUrl } from '../utils/url';
 
 const router = express.Router();
 
@@ -351,6 +352,81 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
       page,
       pageSize,
       total: total?.count || 0,
+    },
+  });
+});
+
+/**
+ * 获取照片详情（管理员专用）。
+ * 返回完整照片信息：EXIF元数据、用户填写的标题/描述/标签、水印配置、
+ * 上传者信息、以及所有图片的代理 URL。
+ * @param id 照片 ID
+ */
+router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const { id } = req.params;
+
+  // 查询完整照片记录 + 上传者信息
+  const photo = await db.get(`
+    SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar
+    FROM photos p
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.id = ?
+  `, id);
+
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+
+  // 分区审核员仅能查看本分区照片
+  if (req.admin.role === 'zone_auditor' && photo.category !== req.admin.zone) {
+    return res.status(403).json({ success: false, message: '无权查看该分区照片' });
+  }
+
+  // 解析标签 JSON
+  let tags: string[] = [];
+  if (photo.tags) {
+    try {
+      tags = JSON.parse(photo.tags);
+    } catch {
+      tags = photo.tags.split(' ').filter(Boolean);
+    }
+  }
+
+  // 解析结构化标签 JSON
+  let structuredTags: Record<string, any> = {};
+  if (photo.structured_tags) {
+    try {
+      structuredTags = JSON.parse(photo.structured_tags);
+    } catch {}
+  }
+
+  // 解析水印配置
+  let watermarkConfig: any = null;
+  if (photo.watermark_config) {
+    try {
+      watermarkConfig = JSON.parse(photo.watermark_config);
+    } catch {}
+  }
+
+  res.json({
+    success: true,
+    data: {
+      ...photo,
+      // 转换图片 URL 为代理 URL
+      thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
+      original_url: getProxyUrl(photo.original_url, photo.id),
+      preview_url: photo.preview_url ? getProxyUrl(photo.preview_url, photo.id) : '',
+      watermarked_url: photo.watermarked_url ? getProxyUrl(photo.watermarked_url, photo.id) : '',
+      // 解析后的结构化数据
+      tags,
+      structured_tags: structuredTags,
+      watermark_config: watermarkConfig,
+      // 审核信息
+      rejection_reason: photo.rejection_reason || null,
     },
   });
 });
