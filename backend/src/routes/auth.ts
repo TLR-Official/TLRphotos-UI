@@ -12,6 +12,7 @@ import { getSession, updateLastActive, deleteSession } from '../services/cookieS
 import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { getProxyUrl } from '../utils/url';
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
@@ -46,6 +47,18 @@ const upload = multer({
     }
   },
 });
+
+/**
+ * 清理 multer 保存到磁盘的临时文件。
+ * 头像上传成功路径会保留文件作为正式头像，仅在错误路径或 early return 时调用本函数清理残留临时文件。
+ */
+const cleanupTempFile = (req: any) => {
+  if (req.file?.path) {
+    fs.unlink(req.file.path, (err: any) => {
+      if (err) console.error('Failed to cleanup temp file:', err);
+    });
+  }
+};
 
 const router = express.Router();
 
@@ -266,6 +279,8 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // 鉴权失败时 multer 已将文件落盘，需清理临时文件
+      cleanupTempFile(req);
       return res.status(401).json({ success: false, message: '未授权' });
     }
 
@@ -273,6 +288,8 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
     const decoded = verifyToken(token);
 
     if (!decoded) {
+      // 令牌无效时 multer 已将文件落盘，需清理临时文件
+      cleanupTempFile(req);
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
@@ -292,6 +309,8 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
       },
     });
   } catch (error) {
+    // 异常路径下文件未被正式使用，清理临时文件
+    cleanupTempFile(req);
     console.error('Upload avatar error:', error);
     res.status(500).json({ success: false, message: error instanceof Error ? error.message : '头像上传失败' });
   }

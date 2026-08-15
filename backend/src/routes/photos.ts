@@ -367,11 +367,19 @@ router.post('/:id/view', async (req, res) => {
  * @param key OSS 对象 Key（URL 编码）
  */
 router.get('/image/*', async (req: any, res) => {
+  // 客户端提前断开连接时，通过 AbortController 取消上游 fetch，避免 response.body 残留占用
+  const controller = new AbortController();
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      controller.abort();
+    }
+  });
+
   try {
     // 通配符参数 [0] 携带完整的 OSS Key
     const key: string = req.params[0];
     let decodedKey = decodeURIComponent(key);
-    
+
     console.log('Proxy image request:', decodedKey);
 
     // 安全检查：查找该图片所属的照片记录
@@ -382,7 +390,7 @@ router.get('/image/*', async (req: any, res) => {
       // 快速路径：通过 URL 参数传入 photoId，直接查询
       photo = await db.get('SELECT id, status, user_id FROM photos WHERE id = ?', photoId);
     }
-    
+
     if (!photo) {
       // 兜底路径：通过 OSS Key 反查照片记录
       photo = await findPhotoByOssKey(decodedKey);
@@ -397,27 +405,27 @@ router.get('/image/*', async (req: any, res) => {
         return sendForbiddenImage(res);
       }
     }
-    
+
     const presignedUrl = await getFileUrl(decodedKey);
-    
-    const response = await fetch(presignedUrl);
-    
+
+    const response = await fetch(presignedUrl, { signal: controller.signal });
+
     if (!response.ok) {
       // 缩略图不存在时尝试回退到原图：将 _thumb 后缀还原为原始扩展名
       if (response.status === 404 && decodedKey.includes('_thumb')) {
         const originalKey = decodedKey.replace('_thumb.webp', '.jpg').replace('_thumb.jpg', '.jpg').replace('_thumb.png', '.png');
         console.log('Thumbnail not found, falling back to original:', originalKey);
-        
+
         const originalPresignedUrl = await getFileUrl(originalKey);
-        const originalResponse = await fetch(originalPresignedUrl);
-        
+        const originalResponse = await fetch(originalPresignedUrl, { signal: controller.signal });
+
         if (!originalResponse.ok) {
           console.error('Original image also not found:', originalKey);
           return sendPlaceholderImage(res);
         }
-        
+
         const contentType = originalResponse.headers.get('content-type') || 'image/jpeg';
-        
+
         res.setHeader('Content-Type', contentType);
         if (originalResponse.body) {
           // 使用 pipe 自动处理背压和流清理，避免 reader 泄漏
@@ -434,9 +442,9 @@ router.get('/image/*', async (req: any, res) => {
       }
       return sendPlaceholderImage(res);
     }
-    
+
     const contentType = response.headers.get('content-type') || 'image/jpeg';
-    
+
     res.setHeader('Content-Type', contentType);
     if (response.body) {
       // 使用 pipeline 自动处理背压和流清理，避免 reader 泄漏
@@ -449,7 +457,12 @@ router.get('/image/*', async (req: any, res) => {
         }
       });
     }
-  } catch (error) {
+  } catch (error: any) {
+    // 客户端主动断开导致的 abort 不视为错误
+    if (error?.name === 'AbortError') {
+      console.log('Proxy image request aborted by client:', req.params[0]);
+      return;
+    }
     console.error('Error proxying image:', error);
     sendPlaceholderImage(res);
   }
@@ -534,20 +547,8 @@ router.post('/upload/complete', async (req, res) => {
     // 确认 OSS 上传结果，返回原图与缩略图 URL
     const uploadResult = await completeUpload(key);
 
-    // 生成自增 ID：查询当前最大数值 ID 并 +1，补齐 6 位前导零
-    const maxIdResult = await db.get("SELECT id FROM photos ORDER BY CAST(id AS INTEGER) DESC LIMIT 1");
-    let currentMaxId = 0;
-    if (maxIdResult?.id) {
-      const parsed = parseInt(maxIdResult.id, 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        currentMaxId = parsed;
-      }
-    }
-    const newId = String(currentMaxId + 1).padStart(6, '0');
-
     // tags 字段支持数组或中英文逗号分隔字符串，统一序列化为 JSON 数组字符串存储
     const newPhoto = {
-      id: newId,
       title: title || '未命名照片',
       thumbnail_path: uploadResult.thumbnailUrl,
       original_url: uploadResult.url,
@@ -568,33 +569,60 @@ router.post('/upload/complete', async (req, res) => {
       created_at: new Date().toISOString(),
     };
 
-    await db.run(
-      'INSERT INTO photos (id, title, thumbnail_path, original_url, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      newPhoto.id,
-      newPhoto.title,
-      newPhoto.thumbnail_path,
-      newPhoto.original_url,
-      newPhoto.tags,
-      newPhoto.width,
-      newPhoto.height,
-      newPhoto.description,
-      newPhoto.camera_model,
-      newPhoto.vehicle,
-      newPhoto.location,
-      newPhoto.altitude,
-      newPhoto.focal_length,
-      newPhoto.iso,
-      newPhoto.shutter_speed,
-      newPhoto.aperture,
-      newPhoto.likes,
-      newPhoto.views,
-      newPhoto.created_at
-    );
+    // 使用事务包装 ID 生成与插入，防止并发上传导致 ID 冲突
+    // BEGIN IMMEDIATE 立即获取写锁，串行化并发写入请求
+    await db.exec('BEGIN IMMEDIATE TRANSACTION');
+    let newId: string;
+    try {
+      // 生成自增 ID：查询当前最大数值 ID 并 +1，补齐 6 位前导零
+      const maxIdResult = await db.get("SELECT id FROM photos ORDER BY CAST(id AS INTEGER) DESC LIMIT 1");
+      let currentMaxId = 0;
+      if (maxIdResult?.id) {
+        const parsed = parseInt(maxIdResult.id, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          currentMaxId = parsed;
+        }
+      }
+      newId = String(currentMaxId + 1).padStart(6, '0');
+
+      await db.run(
+        'INSERT INTO photos (id, title, thumbnail_path, original_url, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        newId,
+        newPhoto.title,
+        newPhoto.thumbnail_path,
+        newPhoto.original_url,
+        newPhoto.tags,
+        newPhoto.width,
+        newPhoto.height,
+        newPhoto.description,
+        newPhoto.camera_model,
+        newPhoto.vehicle,
+        newPhoto.location,
+        newPhoto.altitude,
+        newPhoto.focal_length,
+        newPhoto.iso,
+        newPhoto.shutter_speed,
+        newPhoto.aperture,
+        newPhoto.likes,
+        newPhoto.views,
+        newPhoto.created_at
+      );
+
+      await db.exec('COMMIT');
+    } catch (txError) {
+      // 事务失败时回滚，避免锁残留
+      try {
+        await db.exec('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Failed to rollback transaction:', rollbackErr);
+      }
+      throw txError;
+    }
 
     res.json({
       success: true,
       data: {
-        photoId: newPhoto.id,
+        photoId: newId,
         key: uploadResult.key,
         // 返回代理 URL 而非 OSS 直链
         url: `/api/photos/image/${encodeURIComponent(uploadResult.url)}`,

@@ -58,6 +58,10 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'TLRphotos API is running', timestamp: new Date().toISOString() });
 });
 
+// 定时清理任务句柄：保存以便进程退出时清理，避免句柄泄漏阻止优雅退出
+let cleanupTimer: NodeJS.Timeout | null = null;
+let cleanupInterval: NodeJS.Timeout | null = null;
+
 /**
  * 调度过期会话清理任务。
  * 启动时立即执行一次，之后对齐到下一个午夜 0 点，
@@ -83,11 +87,31 @@ function scheduleCleanup() {
   const delay = midnight.getTime() - now.getTime();
 
   // 延迟对齐到午夜后，再以 24 小时为周期循环执行
-  setTimeout(() => {
+  cleanupTimer = setTimeout(() => {
     runCleanup();
-    setInterval(runCleanup, 24 * 60 * 60 * 1000);
+    cleanupInterval = setInterval(runCleanup, 24 * 60 * 60 * 1000);
   }, delay);
 }
+
+/**
+ * 优雅退出：清理定时任务句柄后退出进程。
+ * 避免句柄残留导致 process.exit 无法正常退出。
+ */
+function gracefulShutdown(signal: string) {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+  if (cleanupTimer) {
+    clearTimeout(cleanupTimer);
+    cleanupTimer = null;
+  }
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 /**
  * 启动服务器主流程。

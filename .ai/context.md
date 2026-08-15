@@ -188,6 +188,9 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-15 14:50 | [config] 服务器配置8GB Swap分区，swappiness=10，vfs_cache_pressure=50，开机自动挂载 | /swapfile, /etc/fstab, /etc/sysctl.conf |
+| 2026-08-15 14:34 | [release] 版本号升级至 V1.0.1 — 修复后端内存泄漏与资源未释放问题 | 全项目 |
+| 2026-08-15 14:34 | [fix] 修复头像上传临时文件未清理、图片代理fetch未abort、上传ID并发冲突、定时器句柄未释放 (V1.0.1) | backend/src/routes/auth.ts, backend/src/routes/photos.ts, backend/src/server.ts |
 | 2026-08-15 11:00 | [release] 版本号升级至 V1.0.0 — 项目首个正式发布版本，包含用户系统、管理后台、照片审核工作流、图片缓存、个人设置等核心功能 | 全项目 |
 | 2026-08-15 10:30 | [config] 新增版本管理规则文件，规范主/次/修订版本号更新流程 | .trae/rules/版本管理规则.md, package.json |
 | 2026-08-15 10:30 | [fix] 恢复context.md被误删的263行内容：从git历史还原项目概述/技术架构/存储策略/API契约/协作原则/已知约束/目录结构/里程碑/历史Changelog等全部章节 | .ai/context.md |

@@ -1,6 +1,6 @@
 {
   "name": "tlrphotos-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TLRphotos backend API",
   "main": "dist/server.js",
   "scripts": {
