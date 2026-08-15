@@ -188,6 +188,9 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-15 15:00 | [release] 版本号升级至 V1.0.2 — 建立完整测试套件，修复分页和加密边界缺陷 | 全项目 |
+| 2026-08-15 15:00 | [fix] 修复照片列表API缺少分页、crypto.ts空明文解密失败 (V1.0.2) | backend/src/routes/photos.ts, backend/src/utils/crypto.ts |
+| 2026-08-15 15:00 | [feat] 建立完整测试方案：单元测试(url/crypto/tags)、集成测试(auth/photos/admin)、压力测试脚本，共99个测试用例全部通过 | backend/tests/**, backend/package.json |
 | 2026-08-15 14:50 | [config] 服务器配置8GB Swap分区，swappiness=10，vfs_cache_pressure=50，开机自动挂载 | /swapfile, /etc/fstab, /etc/sysctl.conf |
 | 2026-08-15 14:34 | [release] 版本号升级至 V1.0.1 — 修复后端内存泄漏与资源未释放问题 | 全项目 |
 | 2026-08-15 14:34 | [fix] 修复头像上传临时文件未清理、图片代理fetch未abort、上传ID并发冲突、定时器句柄未释放 (V1.0.1) | backend/src/routes/auth.ts, backend/src/routes/photos.ts, backend/src/server.ts |

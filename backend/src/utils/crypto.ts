@@ -48,9 +48,13 @@ export function encrypt(text: string): string {
  * @throws 当格式非法或认证标签校验失败时抛出错误
  */
 export function decrypt(encryptedText: string): string {
-  const [ivBase64, encryptedBase64, authTagBase64] = encryptedText.split(':');
+  const parts = encryptedText.split(':');
+  const ivBase64 = parts[0];
+  const encryptedBase64 = parts[1];
+  const authTagBase64 = parts[2];
 
-  if (!ivBase64 || !encryptedBase64 || !authTagBase64) {
+  // 允许空明文（encryptedBase64 为空字符串），但 IV 和 authTag 必须存在
+  if (parts.length !== 3 || !ivBase64 || !authTagBase64) {
     throw new Error('Invalid encrypted data format');
   }
 

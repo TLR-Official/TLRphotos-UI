@@ -1,12 +1,17 @@
 {
   "name": "tlrphotos-backend",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "TLRphotos backend API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:stress": "ts-node tests/stress/stress-test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
@@ -30,7 +35,10 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^24.0.0",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.10"
   }
 }

@@ -184,11 +184,20 @@ router.get('/tags', async (req, res) => {
 
 /**
  * 获取已审核通过的照片列表（按创建时间倒序）。
+ * 支持分页参数 page（页码，从 1 开始）和 limit（每页条数，默认 50）。
  * 仅返回列表展示所需的最小字段集，并转换代理 URL。
  */
 router.get('/', async (req, res) => {
   try {
-    const photos = await db.all('SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved" ORDER BY created_at DESC');
+    // 解析分页参数：page 从 1 开始，limit 默认 50，上限 100 防止滥用
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 50));
+    const offset = (page - 1) * limit;
+
+    const photos = await db.all(
+      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved" ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      limit, offset
+    );
 
     const result = photos.map((photo: any) => {
       let tags: string[] = [];
