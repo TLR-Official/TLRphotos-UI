@@ -188,6 +188,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-15 11:00 | [release] 版本号升级至 V1.0.0 — 项目首个正式发布版本，包含用户系统、管理后台、照片审核工作流、图片缓存、个人设置等核心功能 | 全项目 |
+| 2026-08-15 10:30 | [config] 新增版本管理规则文件，规范主/次/修订版本号更新流程 | .trae/rules/版本管理规则.md, package.json |
 | 2026-08-15 10:30 | [fix] 恢复context.md被误删的263行内容：从git历史还原项目概述/技术架构/存储策略/API契约/协作原则/已知约束/目录结构/里程碑/历史Changelog等全部章节 | .ai/context.md |
 | 2026-08-05 10:20 | [fix] 移除退出登录时多余的navigate调用，改为状态切换即可自动渲染登录页 | src/admin/AdminApp.tsx |
 | 2026-08-05 10:15 | [fix] PhotoDetailPage改用props接收照片ID，彻底移除useParams | src/admin/PhotoDetailPage.tsx, src/admin/AdminApp.tsx |
