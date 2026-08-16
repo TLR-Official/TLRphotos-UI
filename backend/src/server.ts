@@ -22,6 +22,7 @@ import { initDb } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 import { initSuperAdmin } from './services/adminService';
+import { memoryManager } from './services/memoryManager';
 
 const app = express();
 // 服务端口：优先读取环境变量，默认 3001
@@ -56,6 +57,39 @@ app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 // 健康检查端点：用于负载均衡与监控探活
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'TLRphotos API is running', timestamp: new Date().toISOString() });
+});
+
+// 内存状态快照：仅管理员可访问，用于管理后台展示
+app.get('/api/admin/memory/snapshot', async (req: any, res) => {
+  // 直接复用管理员鉴权
+  try {
+    const { verifyAdminToken } = require('./services/adminService');
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const admin = await verifyAdminToken(token);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    res.json({ success: true, data: memoryManager.takeSnapshot() });
+  } catch (err) {
+    res.status(500).json({ success: false, message: (err as Error).message });
+  }
+});
+
+// 手动触发内存释放：仅管理员可访问
+app.post('/api/admin/memory/release', express.json(), async (req: any, res) => {
+  try {
+    const { verifyAdminToken } = require('./services/adminService');
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const admin = await verifyAdminToken(token);
+    if (!admin) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const forced = (req.body?.level as 'soft' | 'medium' | 'hard') || undefined;
+    const level = memoryManager.triggerRelease(forced);
+    res.json({ success: true, data: { triggered: level, snapshot: memoryManager.takeSnapshot() } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: (err as Error).message });
+  }
 });
 
 // 定时清理任务句柄：保存以便进程退出时清理，避免句柄泄漏阻止优雅退出
@@ -125,6 +159,8 @@ const startServer = async () => {
     await initTagsDb();
     await initSuperAdmin();
     scheduleCleanup();
+    // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
+    memoryManager.start();
     // 监听 0.0.0.0 以接受所有网卡请求，便于容器与外网访问
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`TLRphotos backend server running on http://0.0.0.0:${PORT}`);

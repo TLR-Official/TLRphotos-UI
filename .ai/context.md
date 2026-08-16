@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-16 14:45 | [feat] 服务器内存自动释放机制：新增MemoryManager单例，30s采样RSS，60%/75%/90%触发soft/medium/hard分级清理（registerBuffer+disposeProcessedBuffers、sharp缓存重置+vips.shutdown、5min3次medium或90%触发SIGTERM自重启）；上传路由接入registerBuffer+finally；processImage内部finally destroy所有sharp实例+disposeProcessedBuffers；暴露/api/admin/memory/snapshot与POST /release（管理员鉴权）；启动方式需--expose-gc (V1.2.3) | backend/src/services/memoryManager.ts, backend/src/server.ts, backend/src/routes/photos.ts, backend/src/services/imageService.ts |
 | 2026-08-16 13:45 | [fix] 修复管理后台无法查看未审核图片：CachedImage在传入authToken时因useCache=false绕过fetch路径，导致Authorization头未传递；改用shouldFetch=cacheEnabled||!!authToken强制fetch；用户前台PhotoDetailPage和ProfilePage传入用户token使所有者可查看自己的未审核照片 (V1.2.2) | src/components/CachedImage.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/ProfilePage.tsx |
 | 2026-08-16 13:30 | [fix] 移除所有页面中的飞行高度/海拔(altitude)标签：PhotoDetailPage(用户/管理)、types(PhotoDetail/AdminPhotoDetail)、UploadPage(ExifData海拔输入框/解析)、CachedImage、mockData、api.md文档；后端photo返回对象显式delete altitude (V1.2.1) | src/features/gallery/PhotoDetailPage.tsx, src/features/gallery/types.ts, src/features/gallery/mockData.ts, src/features/upload/UploadPage.tsx, src/api/photos.ts, src/admin/PhotoDetailPage.tsx, src/admin/types.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/routes/admin.ts, backend/docs/api.md |
 | 2026-08-16 13:24 | [release] 版本号升级至 V1.2.0 — 分区化作品集与审核权限控制 | 全项目 |

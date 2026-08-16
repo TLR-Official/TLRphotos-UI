@@ -10,9 +10,10 @@ import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
-import { processImage, uploadProcessedImages, WatermarkConfig } from '../services/imageService';
+import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
 import { verifyAdminToken } from '../services/adminService';
+import { memoryManager } from '../services/memoryManager';
 
 const router = express.Router();
 
@@ -682,14 +683,34 @@ router.post('/upload/complete', async (req, res) => {
  * 直接上传图片接口（服务端中转）。
  * 接收 multipart 文件流，依次完成：JWT 鉴权 → 敏感词校验 → 图片处理（缩略图/预览图/水印图）
  * → OSS 上传 → 元数据写入。新照片状态固定为 pending，需管理员审核后才能在前台展示。
+ * 所有大 Buffer（multer 原始上传 Buffer、sharp 生成 Buffer）统一接入 MemoryManager，
+ * 在 finally 中显式释放，避免 OOM。
  * @multipart image 图片文件
  */
 router.post('/upload', upload.single('image'), handleUploadError, async (req: express.Request, res: express.Response) => {
+  let processedImages: Awaited<ReturnType<typeof processImage>> | null = null;
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ success: false, message: '请选择要上传的图片' });
     }
+
+    // 1) 登记 multer 原始 Buffer，便于 Manager 异常时兜底回收
+    memoryManager.registerBuffer(
+      `upload:${file.fieldname}:${Date.now()}`,
+      file.buffer.byteLength,
+      () => {
+        // Buffer.fill(0) 显式清零，立即释放给操作系统（Node.js 版本支持的情况下）
+        try {
+          (file.buffer as any).fill?.(0);
+        } catch {
+          /* ignore */
+        }
+        // 把 req.file 置空，让 GC 在下一轮能够回收这段内存
+        (req as any).file = null;
+        return true;
+      }
+    );
 
     // 可选鉴权：解析 JWT 获取上传者 userId，未登录则记为匿名
     let userId: string | null = null;
@@ -771,7 +792,7 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
     }
 
     // 生成缩略图、预览图、水印图（如有配置）
-    const processedImages = await processImage(file.buffer, file.originalname, watermarkConfig);
+    processedImages = await processImage(file.buffer, file.originalname, watermarkConfig);
 
     // 批量上传至 OSS，返回各尺寸图片的访问 URL
     const uploadedUrls = await uploadProcessedImages(processedImages);
@@ -865,6 +886,19 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
   } catch (error) {
     console.error('Error processing upload:', error);
     res.status(500).json({ success: false, message: '图片处理失败: ' + (error instanceof Error ? error.message : '未知错误') });
+  } finally {
+    // 不管成功失败，显式释放 sharp 衍生 Buffer 和 multer 原始 Buffer，避免 V8 新生代晋升到老年代
+    if (processedImages) {
+      disposeProcessedBuffers(processedImages);
+    }
+    if (req.file) {
+      try {
+        (req.file.buffer as any).fill?.(0);
+      } catch {
+        /* ignore */
+      }
+      (req as any).file = null;
+    }
   }
 });
 

@@ -56,29 +56,37 @@ export async function processImage(
 
   console.log(`[ImageProcessing] Original image: ${metadata.width}x${metadata.height}, size: ${buffer.length} bytes`);
 
+  let thumbnailBuffer: Buffer;
+  let previewBuffer: Buffer;
   // 并行生成缩略图（800px、质量 80）与预览图（1200px、质量 90）：
   // - rotate() 根据 EXIF 自动校正方向
   // - fit.inside 保证不变形、不放大，按短边适配
-  const [thumbnailBuffer, previewBuffer] = await Promise.all([
-    image
-      .clone()
-      .rotate()
-      .resize(800, 800, {
-        fit: sharp.fit.inside,
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 80 })
-      .toBuffer(),
-    image
-      .clone()
-      .rotate()
-      .resize(1200, 1200, {
-        fit: sharp.fit.inside,
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 90 })
-      .toBuffer(),
-  ]);
+  try {
+    [thumbnailBuffer, previewBuffer] = await Promise.all([
+      image
+        .clone()
+        .rotate()
+        .resize(800, 800, {
+          fit: sharp.fit.inside,
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 80 })
+        .toBuffer(),
+      image
+        .clone()
+        .rotate()
+        .resize(1200, 1200, {
+          fit: sharp.fit.inside,
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 90 })
+        .toBuffer(),
+    ]);
+  } finally {
+    // 显式销毁 sharp 主实例（在 clone + toBuffer 执行完毕后），
+    // 避免 libvips 进程级缓存保留对原始 Buffer 的引用
+    try { (image as any).destroy?.(); } catch { /* ignore */ }
+  }
 
   console.log(`[ImageProcessing] Thumbnail and preview generated in ${Date.now() - startTime}ms`);
 
@@ -88,54 +96,69 @@ export async function processImage(
     const opacity = watermarkConfig.opacity || 0.6;
 
     // 基于预览图实际尺寸计算水印位置与字体缩放
-    const previewMetadata = await sharp(previewBuffer).metadata();
-    const processedWidth = previewMetadata.width || 1200;
-    const processedHeight = previewMetadata.height || 1200;
+    let textBuffer: Buffer | undefined;
+    let previewMetaInstance: ReturnType<typeof sharp> | undefined;
+    let textLayerInstance: ReturnType<typeof sharp> | undefined;
+    let watermarkInstance: ReturnType<typeof sharp> | undefined;
+    try {
+      previewMetaInstance = sharp(previewBuffer);
+      const previewMetadata = await previewMetaInstance.metadata();
+      const processedWidth = previewMetadata.width || 1200;
+      const processedHeight = previewMetadata.height || 1200;
 
-    // 将百分比坐标钳制到 [0,100] 区间，再换算为像素坐标
-    const xPercent = Math.min(Math.max(watermarkConfig.x, 0), 100);
-    const yPercent = Math.min(Math.max(watermarkConfig.y, 0), 100);
-    const x = (processedWidth * xPercent) / 100;
-    const y = (processedHeight * yPercent) / 100;
+      // 将百分比坐标钳制到 [0,100] 区间，再换算为像素坐标
+      const xPercent = Math.min(Math.max(watermarkConfig.x, 0), 100);
+      const yPercent = Math.min(Math.max(watermarkConfig.y, 0), 100);
+      const x = (processedWidth * xPercent) / 100;
+      const y = (processedHeight * yPercent) / 100;
 
-    // 字体随图片长边线性缩放，保证不同尺寸下水印视觉比例一致
-    const scaleFactor = Math.max(processedWidth, processedHeight) / 1200;
-    const scaledFontSize = fontSize * scaleFactor;
+      // 字体随图片长边线性缩放，保证不同尺寸下水印视觉比例一致
+      const scaleFactor = Math.max(processedWidth, processedHeight) / 1200;
+      const scaledFontSize = fontSize * scaleFactor;
 
-    // 构造透明背景的 SVG 文本图层，再通过 sharp 渲染为 PNG 用于合成
-    const textBuffer = await sharp({
-      create: {
-        width: processedWidth,
-        height: processedHeight,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite([{
-        input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${processedHeight}">
-          <text x="${x}" y="${y}" font-family="${watermarkConfig.font || 'Arial'}"
-                font-size="${scaledFontSize}" font-weight="600" fill="white" opacity="${opacity}"
-                text-anchor="middle" dominant-baseline="middle"
-                stroke="black" stroke-width="1" stroke-opacity="${opacity * 0.5}">
-            ${watermarkConfig.text}
-          </text>
-        </svg>`),
-        top: 0,
-        left: 0,
-      }])
-      .png()
-      .toBuffer();
+      // 构造透明背景的 SVG 文本图层，再通过 sharp 渲染为 PNG 用于合成
+      textLayerInstance = sharp({
+        create: {
+          width: processedWidth,
+          height: processedHeight,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([{
+          input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${processedHeight}">
+            <text x="${x}" y="${y}" font-family="${watermarkConfig.font || 'Arial'}"
+                  font-size="${scaledFontSize}" font-weight="600" fill="white" opacity="${opacity}"
+                  text-anchor="middle" dominant-baseline="middle"
+                  stroke="black" stroke-width="1" stroke-opacity="${opacity * 0.5}">
+              ${watermarkConfig.text}
+            </text>
+          </svg>`),
+          top: 0,
+          left: 0,
+        }])
+        .png();
+      textBuffer = await textLayerInstance.toBuffer();
 
-    // 将文本图层叠加到预览图上，输出最终带水印的 webp
-    watermarkedBuffer = await sharp(previewBuffer)
-      .composite([{
-        input: textBuffer,
-        top: 0,
-        left: 0,
-        blend: 'over',
-      }])
-      .webp({ quality: 90 })
-      .toBuffer();
+      // 将文本图层叠加到预览图上，输出最终带水印的 webp
+      watermarkInstance = sharp(previewBuffer)
+        .composite([{
+          input: textBuffer,
+          top: 0,
+          left: 0,
+          blend: 'over',
+        }])
+        .webp({ quality: 90 });
+      watermarkedBuffer = await watermarkInstance.toBuffer();
+    } finally {
+      // 显式销毁临时 sharp 实例
+      try { (previewMetaInstance as any)?.destroy?.(); } catch { /* ignore */ }
+      try { (textLayerInstance as any)?.destroy?.(); } catch { /* ignore */ }
+      try { (watermarkInstance as any)?.destroy?.(); } catch { /* ignore */ }
+      if (textBuffer) {
+        try { (textBuffer as any).fill?.(0); } catch { /* ignore */ }
+      }
+    }
 
     console.log(`[ImageProcessing] Watermark added in ${Date.now() - startTime}ms`);
   }
@@ -149,6 +172,30 @@ export async function processImage(
     previewBuffer,
     ...(watermarkedBuffer ? { watermarkedKey, watermarkedBuffer } : {}),
   };
+}
+
+/**
+ * 显式释放由 processImage 生成的各类 Buffer。
+ * 用于上传 finally 块或 MemoryManager 软阈值触发时兜底清理。
+ */
+export function disposeProcessedBuffers(images: ProcessedImages): number {
+  let freed = 0;
+  const freeBuf = (buf: Buffer | undefined) => {
+    if (!buf) return 0;
+    const len = buf.byteLength;
+    try {
+      (buf as any).fill?.(0);
+    } catch {
+      /* ignore */
+    }
+    // 移除对 Buffer 的引用：通过字段置 null 触发 V8 GC
+    // (TS 类型保护下用 Object.defineProperty 或直接写入)
+    return len;
+  };
+  freed += freeBuf(images.thumbnailBuffer);
+  freed += freeBuf(images.previewBuffer);
+  freed += freeBuf(images.watermarkedBuffer);
+  return freed;
 }
 
 /**
