@@ -109,7 +109,7 @@ const handleUploadError = (err: any, req: express.Request, res: express.Response
  */
 router.get('/search', async (req, res) => {
   try {
-    const { keyword, tag, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
+    const { keyword, tag, category, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
     let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
@@ -126,6 +126,13 @@ router.get('/search', async (req, res) => {
     if (tag) {
       conditions.push('tags LIKE ?');
       params.push(`%"${tag}"%`);
+    }
+
+    // 分区过滤：转义后精确匹配 category 字段，支持画廊按分区浏览
+    if (category) {
+      const escapedCategory = escapeLikePattern(String(category));
+      conditions.push('category = ?');
+      params.push(escapedCategory);
     }
 
     if (conditions.length > 0) {
@@ -208,10 +215,18 @@ router.get('/', async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 50));
     const offset = (page - 1) * limit;
 
-    const photos = await db.all(
-      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved" ORDER BY created_at DESC LIMIT ? OFFSET ?',
-      limit, offset
-    );
+    // 解析分区过滤参数：存在时使用参数化查询精确匹配，避免 SQL 注入
+    const { category } = req.query;
+    const params: any[] = [];
+    let baseQuery = 'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved"';
+    if (category) {
+      baseQuery += ' AND category = ?';
+      params.push(String(category));
+    }
+    baseQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const photos = await db.all(baseQuery, params);
 
     const result = photos.map((photo: any) => {
       let tags: string[] = [];
@@ -708,6 +723,11 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       category,
       structured_tags,
     } = req.body;
+
+    // 分区必填校验：未提供 category 时早期返回，避免后续无意义的图片处理与 OSS 上传
+    if (!category) {
+      return res.status(400).json({ success: false, message: '请选择照片分区' });
+    }
 
     // 水印配置：仅当提供水印文本时构造配置对象，否则留空
     let watermarkConfig: WatermarkConfig | undefined;

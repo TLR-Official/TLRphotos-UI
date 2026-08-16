@@ -8,7 +8,10 @@ import { useTheme } from '../../shared/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
-import { getTagCategories, getCategoryTags } from '../../api/tags';
+import { getTagCategories } from '../../api/tags';
+import type { TagCategory } from '../../api/tags';
+import { TagSelector } from '../../components/TagSelector';
+import type { SelectedTag } from '../../components/TagSelector';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
@@ -27,43 +30,6 @@ interface ExifData {
   location?: string;
   width?: number;
   height?: number;
-}
-
-/** 已选标签（含标签对象 id、名称及其属性键值对） */
-interface SelectedTag {
-  objectId: string;
-  objectName: string;
-  attributes: Record<string, string>;
-}
-
-/** 标签分类（航空/铁路/汽车等顶层分类） */
-interface TagCategory {
-  id: string;
-  name: string;
-  name_en: string;
-  description: string;
-  icon: string;
-}
-
-/** 标签属性定义（描述某标签下可填写的字段，如机型、航班号等） */
-interface TagAttribute {
-  id: string;
-  object_id: string;
-  key: string;
-  key_en: string;
-  label: string;
-  type: 'text' | 'select' | 'number';
-  options: string[];
-}
-
-/** 标签对象（隶属于某分类，可附带若干属性） */
-interface TagObject {
-  id: string;
-  category_id: string;
-  name: string;
-  name_en: string;
-  description: string;
-  attributes: TagAttribute[];
 }
 
 /**
@@ -93,7 +59,6 @@ export function UploadPage() {
   const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([]);
   const [exif, setExif] = useState<ExifData>({});
   const [categories, setCategories] = useState<TagCategory[]>([]);
-  const [categoryTags, setCategoryTags] = useState<TagObject[]>([]);
   const [safetyAgreement, setSafetyAgreement] = useState(false);
 
   const watermarkText = 'TLRphotos';
@@ -114,14 +79,9 @@ export function UploadPage() {
     });
   }, []);
 
-  // 切换分类时拉取该分类下的标签对象，并清空已选标签
+  // 切换分类时清空已选标签，标签对象列表由 TagSelector 组件自行加载
   useEffect(() => {
     if (category) {
-      getCategoryTags(category).then((res) => {
-        if (res.success && res.data) {
-          setCategoryTags(res.data.objects);
-        }
-      });
       setSelectedTags([]);
     }
   }, [category]);
@@ -224,36 +184,6 @@ export function UploadPage() {
     setSafetyAgreement(false);
     setStep('select');
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  /**
-   * 切换标签选中状态
-   * 已选则移除，未选则追加（初始属性为空对象）。
-   * @param objectId 标签对象 id
-   * @param objectName 标签对象名称
-   */
-  const handleTagToggle = (objectId: string, objectName: string) => {
-    setSelectedTags((prev) => {
-      const existing = prev.find((t) => t.objectId === objectId);
-      if (existing) {
-        return prev.filter((t) => t.objectId !== objectId);
-      }
-      return [...prev, { objectId, objectName, attributes: {} }];
-    });
-  };
-
-  /**
-   * 更新某标签下指定属性的值
-   * @param objectId 标签对象 id
-   * @param attrKey 属性键名
-   * @param value 属性值
-   */
-  const handleAttributeChange = (objectId: string, attrKey: string, value: string) => {
-    setSelectedTags((prev) =>
-      prev.map((tag) =>
-        tag.objectId === objectId ? { ...tag, attributes: { ...tag.attributes, [attrKey]: value } } : tag
-      )
-    );
   };
 
   // 提交前置条件：标题非空、已选分类、已勾选安全声明
@@ -477,78 +407,12 @@ export function UploadPage() {
               {category && (
                 <div>
                   <label className={labelCls}>选择标签</label>
-                  <div className="mt-2 space-y-3">
-                    {categoryTags.map((obj) => {
-                      const isSelected = selectedTags.some((t) => t.objectId === obj.id);
-                      return (
-                        <div
-                          key={obj.id}
-                          className={`rounded-lg border p-3 cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
-                              : theme === 'dark'
-                              ? 'border-gray-600 bg-slate-700/50 hover:border-gray-500'
-                              : 'border-gray-200 bg-gray-50 hover:border-gray-300'
-                          }`}
-                          onClick={() => handleTagToggle(obj.id, obj.name)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className={`font-medium ${isSelected ? 'text-blue-600 dark:text-blue-400' : theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                              {obj.name}
-                            </span>
-                            <span className={`text-sm px-2 py-1 rounded ${
-                              isSelected
-                                ? 'bg-blue-500 text-white'
-                                : theme === 'dark'
-                                ? 'bg-slate-600 text-gray-400'
-                                : 'bg-gray-200 text-gray-600'
-                            }`}>
-                              {isSelected ? '已选择' : '点击选择'}
-                            </span>
-                          </div>
-                          {obj.description && (
-                            <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-                              {obj.description}
-                            </p>
-                          )}
-                          {isSelected && obj.attributes.length > 0 && (
-                            <div className="mt-3 space-y-2">
-                              {obj.attributes.map((attr) => {
-                                const currentValue = selectedTags.find((t) => t.objectId === obj.id)?.attributes[attr.key] || '';
-                                return (
-                                  <div key={attr.id}>
-                                    <span className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{attr.label}</span>
-                                    {attr.type === 'select' ? (
-                                      <select
-                                        value={currentValue}
-                                        onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className={`${inputCls} mt-1`}
-                                      >
-                                        <option value="">请选择</option>
-                                        {attr.options.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <input
-                                        type={attr.type}
-                                        value={currentValue}
-                                        onChange={(e) => handleAttributeChange(obj.id, attr.key, e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        placeholder={`请输入${attr.label}`}
-                                        className={`${inputCls} mt-1`}
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <TagSelector
+                    categoryId={category}
+                    selectedTags={selectedTags}
+                    onTagsChange={setSelectedTags}
+                    disabled={step === 'uploading'}
+                  />
                 </div>
               )}
 

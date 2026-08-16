@@ -4,7 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, ShieldAlert } from 'lucide-react';
 import { getPendingPhotos, getAdminToken } from './api';
 import type { AdminPhoto } from './types';
 import { CachedImage } from '../components/CachedImage';
@@ -20,6 +20,8 @@ export function PhotosPage() {
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // 是否因分区权限被拒（zone_master / zone_auditor 访问非负责分区时为 true）
+  const [forbidden, setForbidden] = useState(false);
   // 管理员 Token：用于加载需要鉴权的未审核照片缩略图
   const adminToken = getAdminToken();
 
@@ -31,10 +33,16 @@ export function PhotosPage() {
   /** 拉取当前页待审核照片列表 */
   const fetchPhotos = async () => {
     setLoading(true);
+    setForbidden(false);
     const result = await getPendingPhotos(page, pageSize);
     if (result.success && result.data) {
       setPhotos(result.data);
       setTotal(result.pagination?.total || 0);
+    } else if (!result.success && result.message && result.message.includes('分区')) {
+      // 后端返回 403：当前管理员无权访问该分区
+      setForbidden(true);
+      setPhotos([]);
+      setTotal(0);
     }
     setLoading(false);
   };
@@ -66,6 +74,11 @@ export function PhotosPage() {
 
       {loading ? (
         <div className="text-gray-800 text-center py-10">加载中...</div>
+      ) : forbidden ? (
+        <div className="bg-white rounded-lg border border-gray-200 py-20 flex flex-col items-center justify-center text-center">
+          <ShieldAlert className="w-16 h-16 text-gray-800 mb-4" />
+          <p className="text-lg font-medium text-black">该图片不是你所负责的分区</p>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">

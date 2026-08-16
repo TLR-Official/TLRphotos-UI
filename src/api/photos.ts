@@ -20,6 +20,7 @@ import type { PhotoListItem, PhotoDetail } from '../features/gallery/types';
 export interface SearchParams {
   keyword?: string;                                  // 关键词
   tag?: string;                                       // 标签
+  category?: string;                                  // 分区 ID（aviation/railway/automobile）
   sortBy?: 'created_at' | 'likes' | 'views' | 'title'; // 排序字段
   sortOrder?: 'asc' | 'desc';                         // 排序方向
 }
@@ -62,10 +63,14 @@ export interface UploadCompleteResponse {
 
 /**
  * 获取全部照片列表
+ * @param category - 可选分区 ID，传入时仅返回该分区照片
  * @returns ApiResponse<PhotoListItem[]>
  */
-export async function getPhotos(): Promise<ApiResponse<PhotoListItem[]>> {
-  return request<PhotoListItem[]>('/photos');
+export async function getPhotos(category?: string): Promise<ApiResponse<PhotoListItem[]>> {
+  const query = new URLSearchParams();
+  if (category) query.set('category', category);
+  const qs = query.toString();
+  return request<PhotoListItem[]>(qs ? `/photos?${qs}` : '/photos');
 }
 
 /**
@@ -78,6 +83,7 @@ export async function searchPhotos(params: SearchParams): Promise<ApiResponse<Ph
   const query = new URLSearchParams();
   if (params.keyword) query.set('keyword', params.keyword);
   if (params.tag) query.set('tag', params.tag);
+  if (params.category) query.set('category', params.category);
   if (params.sortBy) query.set('sortBy', params.sortBy);
   if (params.sortOrder) query.set('sortOrder', params.sortOrder);
   return request<PhotoListItem[]>(`/photos/search?${query.toString()}`);

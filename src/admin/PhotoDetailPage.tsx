@@ -20,6 +20,7 @@ import {
   Hash,
   Eye,
   ThumbsUp,
+  ShieldAlert,
 } from 'lucide-react';
 import { getPhotoDetail, approvePhoto, rejectPhoto, getAdminToken } from './api';
 import type { AdminPhotoDetail } from './types';
@@ -54,6 +55,9 @@ export function PhotoDetailPage({ id }: { id: string }) {
     const result = await getPhotoDetail(id);
     if (result.success && result.data) {
       setPhoto(result.data);
+    } else if (!result.success && result.message && result.message.includes('分区')) {
+      // 后端返回 403：当前管理员无权访问该照片所属分区
+      setError('forbidden_zone');
     } else {
       setError(result.message || '加载失败');
     }
@@ -91,6 +95,22 @@ export function PhotoDetailPage({ id }: { id: string }) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-gray-500">加载中...</div>
+      </div>
+    );
+  }
+
+  // 分区权限被拒：展示专门的占位提示，不显示任何照片内容
+  if (error === 'forbidden_zone') {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 py-20 flex flex-col items-center justify-center text-center">
+        <ShieldAlert className="w-20 h-20 text-gray-800 mb-6" />
+        <p className="text-2xl font-bold text-black mb-8">该图片不是你所负责的分区</p>
+        <button
+          onClick={() => navigate('/admin/photos')}
+          className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-medium transition-colors"
+        >
+          返回列表
+        </button>
       </div>
     );
   }

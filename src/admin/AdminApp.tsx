@@ -140,7 +140,7 @@ export function AdminApp() {
       case 'photos':
         return <PhotosPage />;
       case 'admins':
-        return <AdminsPage />;
+        return <AdminsPage currentAdmin={admin} />;
       case 'users':
         return <UsersPage />;
       case 'logs':

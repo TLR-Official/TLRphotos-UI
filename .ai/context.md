@@ -188,6 +188,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-16 13:24 | [release] 版本号升级至 V1.2.0 — 分区化作品集与审核权限控制 | 全项目 |
+| 2026-08-16 13:24 | [feat] 实现分区化作品集与审核权限控制：上传接口校验category必填；admin路由对zone_master增加分区过滤；新增GET /api/admin/zones分区列表接口；AdminsPage分区下拉选择与zone_master创建zone_auditor权限继承；管理后台非负责分区显示占位提示；画廊页重构为分区标签页+标签选择侧边栏（提取TagSelector可复用组件）；后端搜索/列表接口支持category过滤 (V1.2.0) | backend/src/routes/photos.ts, backend/src/routes/admin.ts, backend/docs/api.md, src/admin/api.ts, src/admin/AdminsPage.tsx, src/admin/AdminApp.tsx, src/admin/PhotosPage.tsx, src/admin/PhotoDetailPage.tsx, src/components/TagSelector.tsx, src/features/upload/UploadPage.tsx, src/features/gallery/GalleryPage.tsx, src/api/photos.ts |
 | 2026-08-16 12:31 | [release] 版本号升级至 V1.1.0 — 新增基于用户角色的图片差异化访问控制 | 全项目 |
 | 2026-08-16 12:31 | [feat] 图片代理路由识别管理员JWT并绕过审核状态检查；前端CachedImage支持authToken/status属性；用户前台未审核图片显示"审核中"占位符；管理后台图片加载携带管理员token；修复admin待审核列表返回原始OSS URL的Bug (V1.1.0) | backend/src/routes/photos.ts, backend/src/routes/admin.ts, src/components/CachedImage.tsx, src/utils/imageCache.ts, src/features/gallery/types.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/ProfilePage.tsx, src/admin/PhotoDetailPage.tsx, src/admin/PhotosPage.tsx |
 | 2026-08-16 12:15 | [release] 版本号升级至 V1.0.3 — 修复管理后台登录卡死问题 | 全项目 |

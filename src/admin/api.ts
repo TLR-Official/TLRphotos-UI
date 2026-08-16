@@ -96,6 +96,26 @@ export async function getAdminUsers(role?: string, zone?: string): Promise<{ suc
   return response.json();
 }
 
+/** 分区（标签分类）信息 */
+export interface Zone {
+  id: string;
+  name: string;
+  name_en: string;
+  description: string;
+  icon: string;
+}
+
+/**
+ * 获取分区列表（tag_categories）
+ * 用于管理后台创建/编辑管理员时的分区下拉选择
+ */
+export async function getZones(): Promise<{ success: boolean; data?: Zone[] }> {
+  const response = await fetch(`${API_BASE}/zones`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
 /**
  * 更新管理员信息
  * 仅支持修改邮箱、姓名、角色、分区、启用状态等字段。
@@ -128,7 +148,7 @@ export async function deleteAdmin(id: string): Promise<{ success: boolean; messa
  * @param page 页码（默认 1）
  * @param pageSize 每页数量（默认 20）
  */
-export async function getPendingPhotos(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminPhoto[]; pagination?: { page: number; pageSize: number; total: number } }> {
+export async function getPendingPhotos(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminPhoto[]; pagination?: { page: number; pageSize: number; total: number }; message?: string }> {
   const response = await fetch(`${API_BASE}/photos/pending?page=${page}&pageSize=${pageSize}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

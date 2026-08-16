@@ -19,6 +19,7 @@ import {
   type AdminRole,
 } from '../services/adminService';
 import { db } from '../db';
+import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
 
 const router = express.Router();
@@ -83,6 +84,21 @@ router.get('/me', adminAuthMiddleware, (req, res) => {
       zone: req.admin.zone,
     },
   });
+});
+
+/**
+ * 获取分区列表。
+ * 查询 tagsDb 的 tag_categories 表，返回全部分区（航空/铁路/汽车），
+ * 用于管理后台下拉选择框（如创建账户、过滤照片时的分区选择）。
+ */
+router.get('/zones', adminAuthMiddleware, async (req, res) => {
+  try {
+    const zones = await tagsDb.all('SELECT * FROM tag_categories');
+    res.json({ success: true, data: zones });
+  } catch (error) {
+    console.error('Error fetching zones:', error);
+    res.status(500).json({ success: false, message: '获取分区列表失败' });
+  }
 });
 
 /**
@@ -321,7 +337,7 @@ router.delete('/users/:id', adminAuthMiddleware, requireRole(['super', 'zone_mas
 
 /**
  * 获取待审核照片列表（分页）。
- * zone_auditor 仅可见本分区（category）的待审核照片，其他角色可查看全部。
+ * zone_auditor 与 zone_master 仅可见本分区（category）的待审核照片，super 可查看全部。
  * @query page 页码
  * @query pageSize 每页数量
  */
@@ -338,8 +354,8 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   let query = 'SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar FROM photos p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = "pending"';
   const params: (string | number)[] = [];
 
-  // 分区审核员仅可见本分区照片
-  if (req.admin.role === 'zone_auditor') {
+  // 分区审核员与分区总审核仅可见本分区照片
+  if (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') {
     query += ' AND p.category = ?';
     params.push(req.admin.zone);
   }
@@ -392,9 +408,9 @@ router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
     return res.status(404).json({ success: false, message: '照片不存在' });
   }
 
-  // 分区审核员仅能查看本分区照片
-  if (req.admin.role === 'zone_auditor' && photo.category !== req.admin.zone) {
-    return res.status(403).json({ success: false, message: '无权查看该分区照片' });
+  // 分区审核员与分区总审核仅能查看本分区照片
+  if ((req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') && photo.category !== req.admin.zone) {
+    return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
   }
 
   // 解析标签 JSON
@@ -458,6 +474,11 @@ router.put('/photos/:id/approve', adminAuthMiddleware, async (req, res) => {
     return res.status(404).json({ success: false, message: '照片不存在' });
   }
 
+  // 分区权限校验：分区审核员与分区总审核仅能操作本分区照片
+  if ((req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') && photo.category !== req.admin.zone) {
+    return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
+  }
+
   // 状态校验：仅待审核照片可执行通过操作，避免重复审核
   if (photo.status !== 'pending') {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
@@ -493,6 +514,11 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
     return res.status(404).json({ success: false, message: '照片不存在' });
   }
 
+  // 分区权限校验：分区审核员与分区总审核仅能操作本分区照片
+  if ((req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') && photo.category !== req.admin.zone) {
+    return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
+  }
+
   if (photo.status !== 'pending') {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
   }
@@ -507,19 +533,30 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
 /**
  * 获取照片审核状态统计。
  * 按状态分组聚合计数，返回总数、待审核、已通过、已拒绝数量。
+ * zone_auditor 与 zone_master 仅统计本分区照片，super 统计全部分区。
  */
 router.get('/photos/stats', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
-  const stats = await db.all(`
-    SELECT 
-      status, 
-      COUNT(*) as count 
-    FROM photos 
-    GROUP BY status
-  `);
+  let statsQuery = `
+    SELECT
+      status,
+      COUNT(*) as count
+    FROM photos
+  `;
+  const statsParams: (string | number)[] = [];
+
+  // 分区审核员与分区总审核仅统计本分区照片
+  if (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') {
+    statsQuery += ' WHERE category = ?';
+    statsParams.push(req.admin.zone);
+  }
+
+  statsQuery += ' GROUP BY status';
+
+  const stats = await db.all(statsQuery, statsParams);
 
   // 转换为以状态为键的对象便于前端读取
   const statsMap: Record<string, number> = {};

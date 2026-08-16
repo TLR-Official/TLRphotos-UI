@@ -2,18 +2,27 @@
  * 管理员管理页
  * 列表展示所有管理员账户，支持创建新管理员（zone_master / zone_auditor）、
  * 编辑非 super 账户的角色与分区、删除非 super 账户。super 账户不可编辑或删除。
+ * - super：可创建 zone_auditor / zone_master，可选任意分区，可编辑/删除所有非 super 账户
+ * - zone_master：仅可创建本分区的 zone_auditor，分区不可改，不可编辑/删除任何账户
  */
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, User } from 'lucide-react';
-import { getAdminUsers, createAdmin, updateAdmin, deleteAdmin } from './api';
+import { getAdminUsers, createAdmin, updateAdmin, deleteAdmin, getZones } from './api';
+import type { Zone } from './api';
 import type { AdminUser } from './types';
+
+interface AdminsPageProps {
+  /** 当前登录管理员，用于按角色控制创建/编辑/删除权限与分区过滤 */
+  currentAdmin: AdminUser;
+}
 
 /**
  * 管理员管理页组件
  * @returns 加载态 / 管理员表格 + 创建/编辑弹窗 JSX
  */
-export function AdminsPage() {
+export function AdminsPage({ currentAdmin }: AdminsPageProps) {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -30,19 +39,48 @@ export function AdminsPage() {
   });
   const [error, setError] = useState('');
 
-  // 首次挂载拉取管理员列表
+  // 角色权限标志：super 拥有完整权限；zone_master 仅可创建本分区审核员
+  const isSuper = currentAdmin.role === 'super';
+  const isZoneMaster = currentAdmin.role === 'zone_master';
+  // 创建表单中可选的角色选项：super 可选两种，zone_master 仅可选分区审核
+  const roleOptions: { value: 'zone_master' | 'zone_auditor'; label: string }[] = isSuper
+    ? [
+        { value: 'zone_auditor', label: '分区审核' },
+        { value: 'zone_master', label: '分区总审核' },
+      ]
+    : [{ value: 'zone_auditor', label: '分区审核' }];
+  // zone_master 创建时分区锁定为本分区，不可修改
+  const zoneLocked = isZoneMaster;
+
+  // 首次挂载拉取管理员列表与分区列表
   useEffect(() => {
     fetchAdmins();
+    fetchZones();
   }, []);
 
-  /** 拉取所有管理员账户 */
+  /** 拉取管理员列表：zone_master 仅拉取本分区，super 拉取全部 */
   const fetchAdmins = async () => {
     setLoading(true);
-    const result = await getAdminUsers();
+    const zoneFilter = isZoneMaster ? currentAdmin.zone : undefined;
+    const result = await getAdminUsers(undefined, zoneFilter);
     if (result.success && result.data) {
       setAdmins(result.data);
     }
     setLoading(false);
+  };
+
+  /** 拉取分区列表（用于下拉选择与表格分区名展示） */
+  const fetchZones = async () => {
+    const result = await getZones();
+    if (result.success && result.data) {
+      setZones(result.data);
+    }
+  };
+
+  /** 根据分区 id 查询分区名（找不到时回退为原始 id） */
+  const getZoneName = (zoneId: string) => {
+    const z = zones.find(item => item.id === zoneId);
+    return z ? z.name : zoneId;
   };
 
   /**
@@ -59,10 +97,33 @@ export function AdminsPage() {
     if (result.success) {
       fetchAdmins();
       setShowCreateModal(false);
-      setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' });
+      resetCreateForm();
     } else {
       setError(result.message || '创建失败');
     }
+  };
+
+  /** 重置创建表单为初始默认值（zone_master 锁定本分区） */
+  const resetCreateForm = () => {
+    setFormData({
+      username: '',
+      password: '',
+      email: '',
+      name: '',
+      role: 'zone_auditor',
+      zone: isZoneMaster ? currentAdmin.zone : (zones[0]?.id || 'default'),
+    });
+  };
+
+  /**
+   * 打开创建弹窗
+   * 初始化表单：zone_master 默认角色为分区审核、分区锁定为本分区；
+   * super 默认角色为分区审核、分区为列表首项。
+   */
+  const openCreateModal = () => {
+    setError('');
+    resetCreateForm();
+    setShowCreateModal(true);
   };
 
   /**
@@ -129,7 +190,7 @@ export function AdminsPage() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">管理员管理</h2>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={openCreateModal}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
         >
           <Plus className="w-5 h-5" />
@@ -174,10 +235,10 @@ export function AdminsPage() {
                       {roleLabel[admin.role]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{admin.zone}</td>
+                  <td className="px-4 py-3 text-gray-600">{getZoneName(admin.zone)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      {admin.role !== 'super' && (
+                      {isSuper && admin.role !== 'super' && (
                         <>
                           <button
                             onClick={() => openEditModal(admin)}
@@ -234,16 +295,25 @@ export function AdminsPage() {
               <div>
                 <label className="block text-gray-600 text-sm mb-1">角色</label>
                 <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as 'zone_master' | 'zone_auditor'})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800">
-                  <option value="zone_auditor">分区审核</option>
-                  <option value="zone_master">分区总审核</option>
+                  {roleOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="block text-gray-600 text-sm mb-1">分区</label>
-                <input type="text" value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800" />
+                <label className="block text-gray-600 text-sm mb-1">分区{zoneLocked ? ' (本分区，不可修改)' : ''}</label>
+                <select value={formData.zone} disabled={zoneLocked} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800 disabled:bg-gray-50 disabled:text-gray-400">
+                  {zones.length === 0 ? (
+                    <option value={formData.zone}>{formData.zone}</option>
+                  ) : (
+                    zones.map(zone => (
+                      <option key={zone.id} value={zone.id}>{zone.name}</option>
+                    ))
+                  )}
+                </select>
               </div>
               <div className="flex gap-3 mt-6">
-                <button onClick={() => { setShowCreateModal(false); setFormData({ username: '', password: '', email: '', name: '', role: 'zone_auditor', zone: 'default' }); }} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg">取消</button>
+                <button onClick={() => { setShowCreateModal(false); resetCreateForm(); }} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg">取消</button>
                 <button onClick={handleCreate} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">创建</button>
               </div>
             </div>
@@ -274,13 +344,22 @@ export function AdminsPage() {
               <div>
                 <label className="block text-gray-600 text-sm mb-1">角色</label>
                 <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as 'zone_master' | 'zone_auditor'})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800">
-                  <option value="zone_auditor">分区审核</option>
-                  <option value="zone_master">分区总审核</option>
+                  {roleOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-gray-600 text-sm mb-1">分区</label>
-                <input type="text" value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800" />
+                <select value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full p-2 bg-white border border-gray-300 rounded text-gray-800">
+                  {zones.length === 0 ? (
+                    <option value={formData.zone}>{formData.zone}</option>
+                  ) : (
+                    zones.map(zone => (
+                      <option key={zone.id} value={zone.id}>{zone.name}</option>
+                    ))
+                  )}
+                </select>
               </div>
               <div className="flex gap-3 mt-6">
                 <button onClick={() => { setShowEditModal(false); setEditingAdmin(null); }} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg">取消</button>

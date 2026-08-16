@@ -1,12 +1,15 @@
 /**
  * 画廊列表页
- * 展示全部照片的瀑布流网格，提供关键词搜索、标签筛选与按时间/热度/浏览量排序，
- * 点击单张照片跳转至详情页。
+ * 顶部渲染分区标签页导航（航空/铁路/汽车），左侧侧边栏提供关键词搜索 + 标签选择器，
+ * 右侧为照片瀑布流网格与排序栏。点击单张照片跳转至详情页。
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTheme } from '../../shared/ThemeContext';
-import { getPhotos, searchPhotos, getTags } from '../../api/photos';
+import { getPhotos, searchPhotos } from '../../api/photos';
+import { getTagCategories } from '../../api/tags';
+import type { TagCategory } from '../../api/tags';
+import { TagSelector } from '../../components/TagSelector';
+import type { SelectedTag } from '../../components/TagSelector';
 import type { PhotoListItem } from './types';
 import { CachedImage } from '../../components/CachedImage';
 
@@ -17,13 +20,6 @@ type SortOption = 'created_at' | 'likes' | 'views';
 const SearchIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
-/** 筛选图标 */
-const FilterIcon = ({ className }: { className: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
   </svg>
 );
 
@@ -58,76 +54,79 @@ const ArrowUpDownIcon = ({ className }: { className: string }) => (
 
 /**
  * 画廊列表页组件
- * 维护搜索关键词、选中标签、排序字段与方向等筛选状态，通过防抖触发列表请求。
+ * 维护分区、已选标签、搜索关键词、排序字段与方向等筛选状态，
+ * 通过防抖触发列表请求，分区切换时清空标签并重新加载。
  * @returns 画廊页 JSX
  */
 export function GalleryPage() {
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const [photos, setPhotos] = useState<PhotoListItem[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
+  const [categories, setCategories] = useState<TagCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([]);
   const [keyword, setKeyword] = useState('');
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(true);
 
+  /** 拉取分区列表，首次加载自动选中第一个分区 */
+  useEffect(() => {
+    getTagCategories().then((res) => {
+      if (res.success && res.data && res.data.length > 0) {
+        setCategories(res.data);
+        setSelectedCategory(res.data[0].id);
+      }
+    });
+  }, []);
+
   /**
    * 拉取照片列表
-   * 当存在筛选/排序条件时调用搜索接口，否则调用默认列表接口。
+   * 当存在分区/搜索/标签/排序条件时调用搜索接口，否则调用默认列表接口。
    */
   const fetchPhotos = async () => {
     setIsLoading(true);
     try {
+      // 已选标签的 objectName 列表，用逗号拼接传给 search 接口的 tag 参数
+      const tagNames = selectedTags.map((t) => t.objectName).join(',');
+      const hasAdvancedConditions =
+        keyword || tagNames || sortBy !== 'created_at' || sortOrder !== 'desc';
       let response;
-      if (keyword || selectedTag || sortBy !== 'created_at' || sortOrder !== 'desc') {
+      if (hasAdvancedConditions) {
         response = await searchPhotos({
           keyword,
-          tag: selectedTag || undefined,
+          tag: tagNames || undefined,
+          category: selectedCategory || undefined,
           sortBy,
           sortOrder,
         });
       } else {
-        response = await getPhotos();
+        response = await getPhotos(selectedCategory || undefined);
       }
       if (response.success && response.data) {
         setPhotos(response.data);
+      } else {
+        setPhotos([]);
       }
     } catch (error) {
       console.error('Failed to fetch photos:', error);
+      setPhotos([]);
     }
     setIsLoading(false);
   };
 
-  /** 拉取可用标签列表用于筛选栏展示 */
-  const fetchTags = async () => {
-    try {
-      const response = await getTags();
-      if (response.success && response.data) {
-        setTags(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch tags:', error);
-    }
-  };
-
-  // 首次挂载拉取标签
+  // 分区/筛选/排序条件变化时，延迟 300ms 再请求，避免频繁触发
   useEffect(() => {
-    fetchTags();
-  }, []);
-
-  // 筛选/排序条件变化时，延迟 300ms 再请求，避免频繁触发
-  useEffect(() => {
+    if (!selectedCategory) return;
     const debounce = setTimeout(() => {
       fetchPhotos();
     }, 300);
     return () => clearTimeout(debounce);
-  }, [keyword, selectedTag, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword, selectedTags, sortBy, sortOrder, selectedCategory]);
 
   /**
    * 切换排序字段或方向
    * 点击相同字段时翻转方向；点击不同字段时切换并重置为降序。
-   * @param newSortBy 新的排序字段
    */
   const handleSortChange = (newSortBy: SortOption) => {
     if (sortBy === newSortBy) {
@@ -144,184 +143,167 @@ export function GalleryPage() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className={`mb-8 rounded-2xl p-6 ${theme === 'dark' ? 'glass-lg' : 'bg-white/80 backdrop-blur-md'} shadow-xl`}>
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className={`flex-1 relative ${theme === 'dark' ? 'bg-slate-800/50' : 'bg-gray-100'} rounded-xl`}>
-              <SearchIcon className={`absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-400'}`} />
-              <input
-                type="text"
-                placeholder="搜索照片标题或描述..."
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                className={`w-full rounded-xl border-none py-3 pl-12 pr-4 outline-none transition-all ${
-                  theme === 'dark'
-                    ? 'bg-slate-800/50 text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500/50'
-                    : 'bg-gray-100 text-gray-800 placeholder-gray-500 focus:ring-2 focus:ring-purple-500/50'
-                }`}
-              />
-            </div>
-            <div className={`flex items-center gap-2 rounded-xl p-1 ${theme === 'dark' ? 'bg-slate-800/50' : 'bg-gray-100'}`}>
-              <FilterIcon className={`mr-2 h-4 w-4 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-400'}`} />
-              <button
-                onClick={() => {
-                  setSelectedTag(null);
-                  setKeyword('');
-                }}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
-                  !selectedTag && !keyword
-                    ? theme === 'dark'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-purple-600 text-white'
-                    : theme === 'dark'
-                    ? 'text-slate-300 hover:bg-white/10'
-                    : 'text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                全部
-              </button>
-              {tags.slice(0, 5).map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
-                    selectedTag === tag
-                      ? theme === 'dark'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-purple-600 text-white'
-                      : theme === 'dark'
-                      ? 'text-slate-300 hover:bg-white/10'
-                      : 'text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {tag}
-                </button>
-              ))}
-              {tags.length > 5 && (
-                <span className={`px-3 py-1.5 text-sm ${theme === 'dark' ? 'text-slate-500' : 'text-gray-500'}`}>
-                  +{tags.length - 5}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className={`flex items-center justify-between mb-6 ${theme === 'dark' ? 'text-slate-300' : 'text-gray-700'}`}>
-          <div className="flex items-center gap-2">
-            <span className="text-lg font-medium">
-              共 {photos.length} 张照片
-            </span>
-            {selectedTag && (
-              <span className={`px-2 py-0.5 text-sm rounded-full ${theme === 'dark' ? 'bg-purple-600/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>
-                #{selectedTag}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <ArrowUpDownIcon className="h-4 w-4 mr-2" />
-            <button
-              onClick={() => handleSortChange('created_at')}
-              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
-                sortBy === 'created_at'
-                  ? theme === 'dark'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-600 text-white'
-                  : theme === 'dark'
-                  ? 'text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              <ClockIcon className="h-4 w-4" />
-              时间
-              {sortBy === 'created_at' && (
-                <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
-              )}
-            </button>
-            <button
-              onClick={() => handleSortChange('likes')}
-              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
-                sortBy === 'likes'
-                  ? theme === 'dark'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-600 text-white'
-                  : theme === 'dark'
-                  ? 'text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              <FlameIcon className="h-4 w-4" />
-              热度
-              {sortBy === 'likes' && (
-                <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
-              )}
-            </button>
-            <button
-              onClick={() => handleSortChange('views')}
-              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
-                sortBy === 'views'
-                  ? theme === 'dark'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-600 text-white'
-                  : theme === 'dark'
-                  ? 'text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              <EyeIcon className="h-4 w-4" />
-              浏览
-              {sortBy === 'views' && (
-                <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className={`animate-spin rounded-full h-12 w-12 border-4 ${theme === 'dark' ? 'border-purple-600 border-t-transparent' : 'border-purple-600 border-t-transparent'}`} />
-          </div>
-        ) : photos.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center py-16 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>
+        {/* 分区标签页导航栏 */}
+        {categories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-500">
             <SearchIcon className="h-16 w-16 mb-4 opacity-50" />
-            <p className="text-lg">没有找到相关照片</p>
-            <p className="text-sm mt-2">尝试调整搜索关键词或标签筛选</p>
+            <p className="text-lg">暂无分区数据</p>
+            <p className="text-sm mt-2">请稍后再试</p>
           </div>
         ) : (
-          <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
-            {photos.map((photo) => (
-              <div
-                key={photo.id}
-                onClick={() => handlePhotoClick(photo.id)}
-                className={`break-inside-avoid rounded-xl overflow-hidden cursor-pointer group transition-all duration-300 hover:scale-[1.02] ${
-                  theme === 'dark' ? 'glass-sm' : 'bg-white shadow-lg'
-                }`}
-              >
-                <div className="relative aspect-auto">
-                  <CachedImage
-                    src={photo.thumbnail_path}
-                    alt={photo.title}
-                    className="w-full h-auto object-cover"
-                    loading="lazy"
+          <>
+            <div className="flex gap-2 mb-6 border-b border-gray-200">
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => {
+                    setSelectedCategory(cat.id);
+                    setSelectedTags([]);
+                  }}
+                  className={`px-6 py-3 font-medium transition-all border-b-2 ${
+                    selectedCategory === cat.id
+                      ? 'border-purple-600 text-purple-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <span className="mr-2">{cat.icon}</span>
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-6">
+              {/* 左侧侧边栏：搜索框 + 标签选择器 */}
+              <div className="w-72 flex-shrink-0">
+                <div className="relative mb-4">
+                  <SearchIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索标题或描述..."
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                   />
-                  <div className={`absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-                  <div className={`absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-300`}>
-                    <h3 className="text-white font-medium text-sm truncate mb-2">{photo.title}</h3>
-                    <div className="flex flex-wrap gap-1">
-                      {photo.tags.slice(0, 3).map((tag) => (
-                        <span key={tag} className="px-2 py-0.5 text-xs bg-white/20 text-white rounded-full">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
+                </div>
+                {selectedCategory && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2 px-1">标签筛选</h3>
+                    <TagSelector
+                      categoryId={selectedCategory}
+                      selectedTags={selectedTags}
+                      onTagsChange={setSelectedTags}
+                    />
                   </div>
-                  <div className={`absolute top-3 right-3 text-xs font-medium text-white bg-black/50 rounded-full px-2 py-1`}>
-                    #{photo.id}
+                )}
+              </div>
+
+              {/* 右侧：排序栏 + 照片网格 */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-6 text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-medium">共 {photos.length} 张照片</span>
+                    {selectedTags.length > 0 && (
+                      <span className="px-2 py-0.5 text-sm rounded-full bg-purple-100 text-purple-700">
+                        {selectedTags.length} 个标签
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <ArrowUpDownIcon className="h-4 w-4 mr-2" />
+                    <button
+                      onClick={() => handleSortChange('created_at')}
+                      className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
+                        sortBy === 'created_at'
+                          ? 'bg-purple-600 text-white'
+                          : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                      }`}
+                    >
+                      <ClockIcon className="h-4 w-4" />
+                      时间
+                      {sortBy === 'created_at' && (
+                        <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSortChange('likes')}
+                      className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
+                        sortBy === 'likes'
+                          ? 'bg-purple-600 text-white'
+                          : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                      }`}
+                    >
+                      <FlameIcon className="h-4 w-4" />
+                      热度
+                      {sortBy === 'likes' && (
+                        <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSortChange('views')}
+                      className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
+                        sortBy === 'views'
+                          ? 'bg-purple-600 text-white'
+                          : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                      }`}
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                      浏览
+                      {sortBy === 'views' && (
+                        <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                      )}
+                    </button>
                   </div>
                 </div>
+
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent" />
+                  </div>
+                ) : photos.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                    <SearchIcon className="h-16 w-16 mb-4 opacity-50" />
+                    <p className="text-lg">没有找到相关照片</p>
+                    <p className="text-sm mt-2">尝试调整搜索关键词或标签筛选</p>
+                  </div>
+                ) : (
+                  <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
+                    {photos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        onClick={() => handlePhotoClick(photo.id)}
+                        className="break-inside-avoid rounded-xl overflow-hidden cursor-pointer group transition-all duration-300 hover:scale-[1.02] bg-white shadow-lg"
+                      >
+                        <div className="relative aspect-auto">
+                          <CachedImage
+                            src={photo.thumbnail_path}
+                            alt={photo.title}
+                            className="w-full h-auto object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                            <h3 className="text-white font-medium text-sm truncate mb-2">{photo.title}</h3>
+                            <div className="flex flex-wrap gap-1">
+                              {photo.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="px-2 py-0.5 text-xs bg-white/20 text-white rounded-full">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="absolute top-3 right-3 text-xs font-medium text-white bg-black/50 rounded-full px-2 py-1">
+                            #{photo.id}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>

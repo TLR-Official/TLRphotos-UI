@@ -236,6 +236,59 @@
 }
 ```
 
+### 直接上传图片
+
+**POST** `/api/photos/upload`
+
+**请求头**:
+```
+Authorization: Bearer <token>（可选，未登录记为匿名上传）
+Content-Type: multipart/form-data
+```
+
+**请求体**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| image | file | 是 | 图片文件（JPG/PNG/WebP/HEIC，最大50MB） |
+| category | string | 是 | 照片分区，未提供时返回 400 `请选择照片分区` |
+| title | string | 否 | 照片标题，默认"未命名照片" |
+| tags | string/array | 否 | 标签，支持数组或中英文逗号分隔字符串 |
+| description | string | 否 | 照片描述 |
+| camera_model | string | 否 | 相机型号 |
+| vehicle | string | 否 | 拍摄设备 |
+| location | string | 否 | 拍摄地点 |
+| altitude | number | 否 | 海拔 |
+| focal_length | string | 否 | 焦距 |
+| iso | number | 否 | ISO |
+| shutter_speed | string | 否 | 快门速度 |
+| aperture | string | 否 | 光圈 |
+| width | number | 否 | 图片宽度 |
+| height | number | 否 | 图片高度 |
+| watermarkText | string | 否 | 水印文本 |
+| watermarkX | number | 否 | 水印 X 坐标 |
+| watermarkY | number | 否 | 水印 Y 坐标 |
+| watermarkOpacity | number | 否 | 水印不透明度 |
+| watermarkSize | number | 否 | 水印字号 |
+| structured_tags | string | 否 | 结构化标签 JSON |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "photoId": "000014",
+    "thumbnailUrl": "/api/photos/image/photos%2Fthumbnails%2F000014_thumb.webp",
+    "previewUrl": "/api/photos/image/photos%2Fpreview%2F000014_preview.webp",
+    "watermarkedUrl": "/api/photos/image/photos%2Fwatermarked%2F000014_watermarked.webp"
+  }
+}
+```
+
+**说明**:
+- 新照片状态固定为 `pending`，需管理员审核后才会在前台展示
+- 标题、描述、标签、结构化标签会进行敏感词校验，包含敏感词时返回 400
+- 缺少 `category` 字段时返回 400 `{ success: false, message: "请选择照片分区" }`
+
 ---
 
 ## 文章接口 (Articles)
@@ -666,6 +719,53 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
     "description": "探索航拍世界，分享专业技巧，记录精彩瞬间",
     "cover_image": "https://picsum.photos/seed/column/600/400"
   }
+}
+```
+
+---
+
+## 管理后台接口 (Admin)
+
+**统一请求头**: `Authorization: Bearer <admin_token>`（除登录接口外均需管理员鉴权）
+
+### 获取分区列表
+
+**GET** `/api/admin/zones`
+
+**说明**: 返回全部分区（航空/铁路/汽车），用于管理后台下拉选择框（如创建账户、过滤照片时的分区选择）。
+
+**请求头**:
+```
+Authorization: Bearer <admin_token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "aviation",
+      "name": "航空",
+      "name_en": "Aviation",
+      "description": "民用航空相关影像，包括飞行器、机场、地勤等",
+      "icon": "✈️"
+    },
+    {
+      "id": "railway",
+      "name": "铁路",
+      "name_en": "Railway",
+      "description": "铁路相关影像，包括列车、车站、线路设施等",
+      "icon": "🚆"
+    },
+    {
+      "id": "automobile",
+      "name": "汽车",
+      "name_en": "Automobile",
+      "description": "汽车及其他地面交通相关影像",
+      "icon": "🚗"
+    }
+  ]
 }
 ```
 
