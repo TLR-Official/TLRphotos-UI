@@ -31,32 +31,37 @@ const router = express.Router();
  * @returns JWT + 管理员基础信息
  */
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: '请输入用户名和密码' });
-  }
+  try {
+    const { username, password } = req.body;
 
-  const result = await adminLogin(username, password);
-  
-  if (!result.success) {
-    return res.status(401).json(result);
-  }
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: '请输入用户名和密码' });
+    }
 
-  // 记录登录审计日志（包含 IP 用于追踪异常登录）
-  await logAdminAction(result.admin!, 'login', 'admin', result.admin!.id, undefined, req.ip);
-  
-  res.json({
-    success: true,
-    token: result.token,
-    admin: {
-      id: result.admin!.id,
-      username: result.admin!.username,
-      name: result.admin!.name,
-      role: result.admin!.role,
-      zone: result.admin!.zone,
-    },
-  });
+    const result = await adminLogin(username, password);
+
+    if (!result.success) {
+      return res.status(401).json(result);
+    }
+
+    // 记录登录审计日志（包含 IP 用于追踪异常登录）
+    await logAdminAction(result.admin!, 'login', 'admin', result.admin!.id, undefined, req.ip);
+
+    res.json({
+      success: true,
+      token: result.token,
+      admin: {
+        id: result.admin!.id,
+        username: result.admin!.username,
+        name: result.admin!.name,
+        role: result.admin!.role,
+        zone: result.admin!.zone,
+      },
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ success: false, message: '登录服务异常，请稍后重试' });
+  }
 });
 
 /**

@@ -27,7 +27,7 @@ export interface AdminUser {
   updated_at: string;
 }
 
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || '';
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'tlrphotos-admin-secret-change-in-production';
 
 /**
  * 管理员登录：校验用户名密码并签发 JWT

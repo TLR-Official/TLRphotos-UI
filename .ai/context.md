@@ -188,6 +188,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-16 12:15 | [release] 版本号升级至 V1.0.3 — 修复管理后台登录卡死问题 | 全项目 |
+| 2026-08-16 12:15 | [fix] 修复ADMIN_JWT_SECRET为空导致jwt.sign抛异常、/login路由缺少try/catch导致请求挂起 (V1.0.3) | backend/src/services/adminService.ts, backend/src/routes/admin.ts, backend/.env |
 | 2026-08-15 15:00 | [release] 版本号升级至 V1.0.2 — 建立完整测试套件，修复分页和加密边界缺陷 | 全项目 |
 | 2026-08-15 15:00 | [fix] 修复照片列表API缺少分页、crypto.ts空明文解密失败 (V1.0.2) | backend/src/routes/photos.ts, backend/src/utils/crypto.ts |
 | 2026-08-15 15:00 | [feat] 建立完整测试方案：单元测试(url/crypto/tags)、集成测试(auth/photos/admin)、压力测试脚本，共99个测试用例全部通过 | backend/tests/**, backend/package.json |
