@@ -33,7 +33,6 @@ export interface PhotoUploadMeta {
   camera_model?: string;     // 相机型号
   vehicle?: string;          // 拍摄车辆
   location?: string;         // 拍摄地点
-  altitude?: number;         // 海拔
   focal_length?: string;     // 焦距
   iso?: number;              // ISO
   shutter_speed?: string;    // 快门速度

@@ -532,6 +532,7 @@ router.get('/me/photos', async (req, res) => {
               tags = photo.tags.split(' ').filter(Boolean);
             }
           }
+          delete photo.altitude;
           return {
             ...photo,
             thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),

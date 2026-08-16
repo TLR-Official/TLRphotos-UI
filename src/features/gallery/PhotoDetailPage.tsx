@@ -213,7 +213,6 @@ export function PhotoDetailPage() {
                 <DetailRow label="拍摄工具" value={photo.vehicle} theme={theme} />
                 <DetailRow label="相机型号" value={photo.camera_model} theme={theme} />
                 <DetailRow label="拍摄地点" value={photo.location} theme={theme} />
-                <DetailRow label="飞行高度" value={`${photo.altitude} 米`} theme={theme} />
               </div>
             </div>
 

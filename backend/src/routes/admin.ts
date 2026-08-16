@@ -366,11 +366,14 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   const photos = await db.all(query, params);
   const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE status = "pending"');
 
-  // 缩略图地址转换为代理 URL，附带 photoId 以支持代理路由快速鉴权
-  const mappedPhotos = photos.map((photo: any) => ({
-    ...photo,
-    thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
-  }));
+  // 缩略图地址转换为代理 URL，附带 photoId 以支持代理路由快速鉴权；移除 altitude
+  const mappedPhotos = photos.map((photo: any) => {
+    delete photo.altitude;
+    return {
+      ...photo,
+      thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
+    };
+  });
 
   res.json({
     success: true,
@@ -438,6 +441,8 @@ router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
       watermarkConfig = JSON.parse(photo.watermark_config);
     } catch {}
   }
+
+  delete photo.altitude;
 
   res.json({
     success: true,

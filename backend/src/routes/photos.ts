@@ -297,6 +297,7 @@ router.get('/:id', async (req, res) => {
       }
     }
 
+    delete photo.altitude;
     res.json({
       success: true,
       data: {

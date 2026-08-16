@@ -321,11 +321,6 @@ export function PhotoDetailPage({ id }: { id: string }) {
                 value={photo.location || '-'}
                 icon={<MapPin className="w-3 h-3" />}
               />
-              <InfoRow
-                label="海拔"
-                value={photo.altitude ? `${photo.altitude}m` : '-'}
-                icon={<MapPin className="w-3 h-3" />}
-              />
             </div>
           </InfoCard>
 

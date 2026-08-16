@@ -31,7 +31,6 @@ export interface PhotoDetail extends PhotoListItem {
   camera_model: string;
   vehicle: string;
   location: string;
-  altitude: number;
   focal_length: string;
   iso: number;
   shutter_speed: string;

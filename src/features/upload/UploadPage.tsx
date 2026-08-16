@@ -26,7 +26,6 @@ interface ExifData {
   iso?: number;
   shutter_speed?: string;
   aperture?: string;
-  altitude?: number;
   location?: string;
   width?: number;
   height?: number;
@@ -155,9 +154,6 @@ export function UploadPage() {
         }
         if (exifData.GPSLatitude && exifData.GPSLongitude) {
           newExif.location = `${exifData.GPSLatitude.toFixed(4)}, ${exifData.GPSLongitude.toFixed(4)}`;
-        }
-        if (exifData.GPSAltitude) {
-          newExif.altitude = Math.round(exifData.GPSAltitude);
         }
         if (exifData.ImageWidth) newExif.width = exifData.ImageWidth;
         if (exifData.ImageHeight) newExif.height = exifData.ImageHeight;
@@ -496,10 +492,6 @@ export function UploadPage() {
                   <div>
                     <span className="text-xs text-gray-500">光圈</span>
                     <input type="text" value={exif.aperture || ''} onChange={(e) => setExif({ ...exif, aperture: e.target.value })} disabled={step === 'uploading'} className={`${inputCls} mt-1`} />
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-500">海拔</span>
-                    <input type="number" value={exif.altitude || ''} onChange={(e) => setExif({ ...exif, altitude: Number(e.target.value) })} disabled={step === 'uploading'} className={`${inputCls} mt-1`} />
                   </div>
                   <div className="col-span-2 md:col-span-3">
                     <span className="text-xs text-gray-500">拍摄位置</span>

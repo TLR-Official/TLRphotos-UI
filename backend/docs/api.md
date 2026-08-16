@@ -109,7 +109,6 @@
     "camera_model": "Sony A7R IV",
     "vehicle": "DJI Mavic 3 Pro",
     "location": "上海市浦东新区",
-    "altitude": 120,
     "focal_length": "24mm",
     "iso": 100,
     "shutter_speed": "1/500s",
@@ -213,7 +212,6 @@
   "camera_model": "Sony A7R IV",
   "vehicle": "DJI Mavic 3 Pro",
   "location": "上海市浦东新区",
-  "altitude": 120,
   "focal_length": "24mm",
   "iso": 100,
   "shutter_speed": "1/500s",
@@ -257,7 +255,6 @@ Content-Type: multipart/form-data
 | camera_model | string | 否 | 相机型号 |
 | vehicle | string | 否 | 拍摄设备 |
 | location | string | 否 | 拍摄地点 |
-| altitude | number | 否 | 海拔 |
 | focal_length | string | 否 | 焦距 |
 | iso | number | 否 | ISO |
 | shutter_speed | string | 否 | 快门速度 |
