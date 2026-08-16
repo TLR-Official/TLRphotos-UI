@@ -149,6 +149,7 @@ export function PhotoDetailPage() {
                 src={photo.watermarked_url || photo.preview_url || photo.original_url}
                 alt={photo.title}
                 status={photo.status}
+                authToken={token || undefined}
                 className="block max-w-full h-auto"
               />
             </div>

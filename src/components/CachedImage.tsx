@@ -47,20 +47,20 @@ export function CachedImage({
   status,
   ...imgProps
 }: CachedImageProps) {
-  // 实际渲染使用的图片地址：可能为 ObjectURL 或原始 URL
-  // cacheEnabled 为 true 且无 authToken 时初始为空字符串，触发占位状态
-  const useCache = cacheEnabled && !authToken;
-  const [displaySrc, setDisplaySrc] = useState<string>(useCache ? '' : src);
+  // 是否需要走 fetch 路径：启用缓存或携带 authToken 时都必须走 fetch
+  // 关键：authToken 必须通过 fetch 的 Authorization 头传递，原生 <img> 标签无法携带自定义头
+  const shouldFetch = cacheEnabled || !!authToken;
+  const [displaySrc, setDisplaySrc] = useState<string>(shouldFetch ? '' : src);
   // 持有当前 ObjectURL，便于后续释放
   const objectUrlRef = useRef<string | null>(null);
 
   /**
    * 监听 src / cacheEnabled / authToken 变化：从缓存或网络加载图片
-   * 依赖：[src, cacheEnabled, authToken] - 任一变化需重新加载
+   * 依赖：[src, shouldFetch, authToken] - 任一变化需重新加载
    * 清理：通过 cancelled 标志位避免竞态（异步结果到达时组件可能已卸载或 src 已变更）
    */
   useEffect(() => {
-    if (!useCache || !src) {
+    if (!shouldFetch || !src) {
       setDisplaySrc(src);
       return;
     }
@@ -92,7 +92,7 @@ export function CachedImage({
     return () => {
       cancelled = true;
     };
-  }, [src, useCache, authToken]);
+  }, [src, shouldFetch, authToken]);
 
   // 组件卸载时释放 ObjectURL，避免内存泄漏
   // 依赖为空数组，仅在卸载时执行一次

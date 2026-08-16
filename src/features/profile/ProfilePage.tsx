@@ -27,7 +27,7 @@ import {
 export function ProfilePage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { user, isAuthenticated, updateUserInfo } = useUser();
+  const { user, isAuthenticated, updateUserInfo, token } = useUser();
   // viewMode：仪表盘 / 设置 两种顶层视图
   const [viewMode, setViewMode] = useState<'dashboard' | 'settings'>('dashboard');
   // activeTab：设置视图下的子标签页
@@ -1445,6 +1445,7 @@ export function ProfilePage() {
                             src={photo.thumbnail_path}
                             alt={photo.title}
                             status={photo.status}
+                            authToken={token || undefined}
                             cacheEnabled={photo.status === 'approved'}
                             className="w-full h-full object-cover"
                           />

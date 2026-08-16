@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-16 13:45 | [fix] 修复管理后台无法查看未审核图片：CachedImage在传入authToken时因useCache=false绕过fetch路径，导致Authorization头未传递；改用shouldFetch=cacheEnabled||!!authToken强制fetch；用户前台PhotoDetailPage和ProfilePage传入用户token使所有者可查看自己的未审核照片 (V1.2.2) | src/components/CachedImage.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/ProfilePage.tsx |
 | 2026-08-16 13:30 | [fix] 移除所有页面中的飞行高度/海拔(altitude)标签：PhotoDetailPage(用户/管理)、types(PhotoDetail/AdminPhotoDetail)、UploadPage(ExifData海拔输入框/解析)、CachedImage、mockData、api.md文档；后端photo返回对象显式delete altitude (V1.2.1) | src/features/gallery/PhotoDetailPage.tsx, src/features/gallery/types.ts, src/features/gallery/mockData.ts, src/features/upload/UploadPage.tsx, src/api/photos.ts, src/admin/PhotoDetailPage.tsx, src/admin/types.ts, backend/src/routes/photos.ts, backend/src/routes/auth.ts, backend/src/routes/admin.ts, backend/docs/api.md |
 | 2026-08-16 13:24 | [release] 版本号升级至 V1.2.0 — 分区化作品集与审核权限控制 | 全项目 |
 | 2026-08-16 13:24 | [feat] 实现分区化作品集与审核权限控制：上传接口校验category必填；admin路由对zone_master增加分区过滤；新增GET /api/admin/zones分区列表接口；AdminsPage分区下拉选择与zone_master创建zone_auditor权限继承；管理后台非负责分区显示占位提示；画廊页重构为分区标签页+标签选择侧边栏（提取TagSelector可复用组件）；后端搜索/列表接口支持category过滤 (V1.2.0) | backend/src/routes/photos.ts, backend/src/routes/admin.ts, backend/docs/api.md, src/admin/api.ts, src/admin/AdminsPage.tsx, src/admin/AdminApp.tsx, src/admin/PhotosPage.tsx, src/admin/PhotoDetailPage.tsx, src/components/TagSelector.tsx, src/features/upload/UploadPage.tsx, src/features/gallery/GalleryPage.tsx, src/api/photos.ts |
