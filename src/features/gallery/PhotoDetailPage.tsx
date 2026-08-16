@@ -148,6 +148,7 @@ export function PhotoDetailPage() {
               <CachedImage
                 src={photo.watermarked_url || photo.preview_url || photo.original_url}
                 alt={photo.title}
+                status={photo.status}
                 className="block max-w-full h-auto"
               />
             </div>

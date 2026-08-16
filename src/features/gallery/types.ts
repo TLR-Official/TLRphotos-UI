@@ -40,4 +40,6 @@ export interface PhotoDetail extends PhotoListItem {
   views: number;
   uploader?: Uploader | null;
   user_id?: string | null;
+  /** 审核状态：approved / pending / rejected */
+  status?: string;
 }

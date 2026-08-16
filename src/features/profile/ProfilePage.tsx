@@ -10,6 +10,7 @@ import { useUser } from '../../shared/UserContext';
 import { uploadAvatar, changePassword, getUserStats, getMyPhotos } from '../../api/auth';
 import type { User, UserStats, MyPhoto } from '../../api/auth';
 import { getCacheStats, clearCache, formatBytes, type CacheStats } from '../../utils/imageCache';
+import { CachedImage } from '../../components/CachedImage';
 import {
   getPreferences,
   updatePreferences as updatePrefs,
@@ -1440,9 +1441,11 @@ export function ProfilePage() {
                       >
                         {/* 缩略图 */}
                         <div className="relative aspect-video bg-gray-100">
-                          <img
+                          <CachedImage
                             src={photo.thumbnail_path}
                             alt={photo.title}
+                            status={photo.status}
+                            cacheEnabled={photo.status === 'approved'}
                             className="w-full h-full object-cover"
                           />
                           {/* 状态徽章 */}

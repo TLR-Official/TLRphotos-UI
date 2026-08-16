@@ -350,9 +350,15 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   const photos = await db.all(query, params);
   const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE status = "pending"');
 
+  // 缩略图地址转换为代理 URL，附带 photoId 以支持代理路由快速鉴权
+  const mappedPhotos = photos.map((photo: any) => ({
+    ...photo,
+    thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
+  }));
+
   res.json({
     success: true,
-    data: photos,
+    data: mappedPhotos,
     pagination: {
       page,
       pageSize,

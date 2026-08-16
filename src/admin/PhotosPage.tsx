@@ -5,8 +5,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Eye } from 'lucide-react';
-import { getPendingPhotos } from './api';
+import { getPendingPhotos, getAdminToken } from './api';
 import type { AdminPhoto } from './types';
+import { CachedImage } from '../components/CachedImage';
 
 /**
  * 照片审核列表页组件
@@ -19,6 +20,8 @@ export function PhotosPage() {
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // 管理员 Token：用于加载需要鉴权的未审核照片缩略图
+  const adminToken = getAdminToken();
 
   // page 变化时重新拉取待审核照片列表
   useEffect(() => {
@@ -73,9 +76,11 @@ export function PhotosPage() {
                 className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-purple-300 hover:shadow-md transition-all"
               >
                 <div className="relative">
-                  <img
+                  <CachedImage
                     src={photo.thumbnail_path}
                     alt={photo.title}
+                    authToken={adminToken || undefined}
+                    cacheEnabled={false}
                     className="w-full h-48 object-cover"
                   />
                   <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">

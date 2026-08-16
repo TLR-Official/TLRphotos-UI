@@ -12,6 +12,7 @@ import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig } from '../services/imageService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
+import { verifyAdminToken } from '../services/adminService';
 
 const router = express.Router();
 
@@ -32,6 +33,19 @@ function getCurrentUserId(req: express.Request): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 判定请求是否来自已认证的管理员。
+ * 通过 ADMIN_JWT_SECRET 校验 Bearer Token，有效则返回 true。
+ * 用于图片代理路由放行管理员对未审核照片的访问。
+ */
+async function isAdminRequest(req: express.Request): Promise<boolean> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
+  const token = authHeader.substring(7);
+  const admin = await verifyAdminToken(token);
+  return admin !== null;
 }
 
 /**
@@ -407,11 +421,15 @@ router.get('/image/*', async (req: any, res) => {
 
     // 如果找到了照片且状态不是 approved，检查访问权限
     if (photo && photo.status && photo.status !== 'approved') {
-      const currentUserId = getCurrentUserId(req);
-      // 非所有者尝试访问未审核照片 → 403 禁止
-      if (!currentUserId || photo.user_id !== currentUserId) {
-        console.log(`Blocked access to unapproved photo ${photo.id} (status: ${photo.status})`);
-        return sendForbiddenImage(res);
+      // 管理员可查看所有状态的照片，绕过审核状态限制
+      const isAdmin = await isAdminRequest(req);
+      if (!isAdmin) {
+        const currentUserId = getCurrentUserId(req);
+        // 非所有者尝试访问未审核照片 → 403 禁止
+        if (!currentUserId || photo.user_id !== currentUserId) {
+          console.log(`Blocked access to unapproved photo ${photo.id} (status: ${photo.status})`);
+          return sendForbiddenImage(res);
+        }
       }
     }
 

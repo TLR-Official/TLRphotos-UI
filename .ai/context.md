@@ -188,6 +188,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-08-16 12:31 | [release] 版本号升级至 V1.1.0 — 新增基于用户角色的图片差异化访问控制 | 全项目 |
+| 2026-08-16 12:31 | [feat] 图片代理路由识别管理员JWT并绕过审核状态检查；前端CachedImage支持authToken/status属性；用户前台未审核图片显示"审核中"占位符；管理后台图片加载携带管理员token；修复admin待审核列表返回原始OSS URL的Bug (V1.1.0) | backend/src/routes/photos.ts, backend/src/routes/admin.ts, src/components/CachedImage.tsx, src/utils/imageCache.ts, src/features/gallery/types.ts, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/ProfilePage.tsx, src/admin/PhotoDetailPage.tsx, src/admin/PhotosPage.tsx |
 | 2026-08-16 12:15 | [release] 版本号升级至 V1.0.3 — 修复管理后台登录卡死问题 | 全项目 |
 | 2026-08-16 12:15 | [fix] 修复ADMIN_JWT_SECRET为空导致jwt.sign抛异常、/login路由缺少try/catch导致请求挂起 (V1.0.3) | backend/src/services/adminService.ts, backend/src/routes/admin.ts, backend/.env |
 | 2026-08-15 15:00 | [release] 版本号升级至 V1.0.2 — 建立完整测试套件，修复分页和加密边界缺陷 | 全项目 |

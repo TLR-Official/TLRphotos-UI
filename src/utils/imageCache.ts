@@ -223,72 +223,86 @@ async function evictIfNeeded(): Promise<void> {
 /**
  * 从缓存获取图片，如果未命中则从网络获取并缓存
  * @param url 图片 URL
+ * @param headers 可选的自定义请求头（如管理员 Authorization），携带时不走缓存
  * @returns ObjectURL（调用方负责 revokeObjectURL）或原始 URL（降级）
  */
-export async function getCachedImage(url: string): Promise<string> {
+export async function getCachedImage(url: string, headers?: Record<string, string>): Promise<string> {
   await ensureInit();
 
+  // 携带自定义请求头时跳过缓存读写，避免凭据相关的图片被缓存后绕过后端鉴权
+  const useCache = !headers;
+
   try {
-    const db = await openDB();
+    if (useCache) {
+      const db = await openDB();
 
-    // 1. 尝试从缓存读取
-    const cached = await new Promise<CacheEntry | null>((resolve, reject) => {
+      // 1. 尝试从缓存读取
+      const cached = await new Promise<CacheEntry | null>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(url);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => reject(req.error);
+      });
+
+      if (cached) {
+        // 命中：更新访问时间
+        cached.lastAccessedAt = Date.now();
+        cached.accessCount++;
+
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(cached);
+        tx.oncomplete = () => {};
+        tx.onerror = () => {};
+
+        statsHits++;
+        scheduleSaveStats();
+        return URL.createObjectURL(cached.blob);
+      }
+
+      // 2. 未命中：从网络获取
+      statsMisses++;
+      scheduleSaveStats();
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        // 网络失败时返回原始 URL 作为降级
+        return url;
+      }
+
+      const blob = await response.blob();
+      const contentType = blob.type || 'image/jpeg';
+      const size = blob.size;
+
+      // 3. 存入缓存（增量缓存：仅当图片不在缓存中时才存储）
+      const entry: CacheEntry = {
+        url,
+        blob,
+        size,
+        contentType,
+        createdAt: Date.now(),
+        lastAccessedAt: Date.now(),
+        accessCount: 1,
+      };
+
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(url);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error);
-    });
-
-    if (cached) {
-      // 命中：更新访问时间
-      cached.lastAccessedAt = Date.now();
-      cached.accessCount++;
-
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(cached);
-      tx.oncomplete = () => {};
+      tx.objectStore(STORE_NAME).put(entry);
+      tx.oncomplete = () => {
+        // 4. 异步执行 LRU 淘汰
+        evictIfNeeded().catch(() => {});
+      };
       tx.onerror = () => {};
 
-      statsHits++;
-      scheduleSaveStats();
-      return URL.createObjectURL(cached.blob);
+      return URL.createObjectURL(blob);
+    } else {
+      // 携带请求头模式：直接从网络获取，不读写缓存
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        return url;
+      }
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
     }
-
-    // 2. 未命中：从网络获取
-    statsMisses++;
-    scheduleSaveStats();
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      // 网络失败时返回原始 URL 作为降级
-      return url;
-    }
-
-    const blob = await response.blob();
-    const contentType = blob.type || 'image/jpeg';
-    const size = blob.size;
-
-    // 3. 存入缓存（增量缓存：仅当图片不在缓存中时才存储）
-    const entry: CacheEntry = {
-      url,
-      blob,
-      size,
-      contentType,
-      createdAt: Date.now(),
-      lastAccessedAt: Date.now(),
-      accessCount: 1,
-    };
-
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(entry);
-    tx.oncomplete = () => {
-      // 4. 异步执行 LRU 淘汰
-      evictIfNeeded().catch(() => {});
-    };
-    tx.onerror = () => {};
-
-    return URL.createObjectURL(blob);
   } catch {
     // IndexedDB 不可用或任何错误，降级为直接使用原始 URL
     return url;
@@ -298,8 +312,12 @@ export async function getCachedImage(url: string): Promise<string> {
 /**
  * 预加载图片到缓存（不返回 ObjectURL，仅写入缓存）
  * @param url - 图片 URL
+ * @param headers - 可选的自定义请求头，携带时不写入缓存
  */
-export async function preloadImage(url: string): Promise<void> {
+export async function preloadImage(url: string, headers?: Record<string, string>): Promise<void> {
+  // 携带自定义请求头时不预加载到缓存
+  if (headers) return;
+
   await ensureInit();
 
   try {

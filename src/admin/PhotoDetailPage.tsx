@@ -21,8 +21,9 @@ import {
   Eye,
   ThumbsUp,
 } from 'lucide-react';
-import { getPhotoDetail, approvePhoto, rejectPhoto } from './api';
+import { getPhotoDetail, approvePhoto, rejectPhoto, getAdminToken } from './api';
 import type { AdminPhotoDetail } from './types';
+import { CachedImage } from '../components/CachedImage';
 
 /**
  * 照片审核详情页组件
@@ -36,6 +37,8 @@ export function PhotoDetailPage({ id }: { id: string }) {
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
+  // 管理员 Token：用于加载需要鉴权的未审核照片图片
+  const adminToken = getAdminToken();
 
   // 加载照片详情
   useEffect(() => {
@@ -133,9 +136,11 @@ export function PhotoDetailPage({ id }: { id: string }) {
         {/* 左侧：大图预览 */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl overflow-hidden border border-gray-200">
-            <img
+            <CachedImage
               src={mainImage}
               alt={photo.title}
+              authToken={adminToken || undefined}
+              cacheEnabled={false}
               className="w-full max-h-[600px] object-contain bg-gray-50"
             />
             {/* 图片操作栏 */}
@@ -175,6 +180,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                   setPhoto({ ...photo, watermarked_url: photo.watermarked_url! })
                 }
                 label="水印图"
+                authToken={adminToken || undefined}
               />
             )}
             {photo.preview_url && (
@@ -185,6 +191,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                   setPhoto({ ...photo, preview_url: photo.preview_url! })
                 }
                 label="预览图"
+                authToken={adminToken || undefined}
               />
             )}
             <ThumbButton
@@ -194,6 +201,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                 setPhoto({ ...photo, original_url: photo.original_url })
               }
               label="原图"
+              authToken={adminToken || undefined}
             />
           </div>
         </div>
@@ -498,11 +506,13 @@ function ThumbButton({
   active,
   onClick,
   label,
+  authToken,
 }: {
   src: string;
   active: boolean;
   onClick: () => void;
   label: string;
+  authToken?: string;
 }) {
   return (
     <button
@@ -511,7 +521,13 @@ function ThumbButton({
         active ? 'border-purple-500 ring-2 ring-purple-200' : 'border-gray-200 hover:border-gray-300'
       }`}
     >
-      <img src={src} alt={label} className="w-full h-full object-cover" />
+      <CachedImage
+        src={src}
+        alt={label}
+        authToken={authToken}
+        cacheEnabled={false}
+        className="w-full h-full object-cover"
+      />
     </button>
   );
 }
