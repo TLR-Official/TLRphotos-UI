@@ -161,9 +161,10 @@ const startServer = async () => {
     scheduleCleanup();
     // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
     memoryManager.start();
-    // 监听 0.0.0.0 以接受所有网卡请求，便于容器与外网访问
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`TLRphotos backend server running on http://0.0.0.0:${PORT}`);
+    // 仅监听 127.0.0.1：外部访问统一经由 Nginx 反向代理（HTTPS + Cloudflare Zero Trust），
+    // 避免后端 API 直接暴露在公网，绕过管理后台的访问控制
+    app.listen(PORT, '127.0.0.1', () => {
+      console.log(`TLRphotos backend server running on http://127.0.0.1:${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
