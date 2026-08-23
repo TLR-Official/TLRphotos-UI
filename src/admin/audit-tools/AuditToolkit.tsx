@@ -1,23 +1,28 @@
 /**
  * @file AuditToolkit - 审核工具集主容器
  * @description
- *  整合工具栏、图片渲染、叠加层、面板和缩放。
+ *  整合工具栏、常驻快捷键提示、图片渲染、叠加层、面板和缩放。
  *  替换 PhotoDetailPage 中的直接 CachedImage 渲染。
  *
  *  布局：
- *    ┌ 工具栏（图标按钮组）──────────────────┐
- *    ├──────────────────────────────────────┤
- *    │  图片预览 + 叠加层（九宫格/斑马纹等） │
- *    │                          ┌ 面板 ┐    │
- *    │                          │直方图│    │
- *    │                          └─────┘    │
- *    ├──────────────────────────────────────┤
- *    │ 图片操作栏（尺寸/浏览数/点赞数）        │
- *    └──────────────────────────────────────┘
+ *    ┌ 工具栏（图标按钮组，常驻显示快捷键）──────────┐
+ *    ├ 常驻快捷键提示条 ──────────────────────────────┤
+ *    ├──────────────────────────────────────────────┤
+ *    │  ┌ 图片预览 + 叠加层（同变换层）──┐ ┌ 面板 ┐ │
+ *    │  │  （九宫格/脏污点/溢出随图移动）│ │直方图│ │
+ *    │  └──────────────────────────────┘ └─────┘ │
+ *    ├──────────────────────────────────────────────┤
+ *    │ 图片操作栏（尺寸/浏览数/点赞数）               │
+ *    └──────────────────────────────────────────────┘
+ *
+ *  关键设计：
+ *    1. 快捷键常驻显示在工具栏按钮和提示条上，无需按 ? 展开
+ *    2. 叠加层与图片同处变换层，拖拽/缩放时同步移动
+ *    3. 面板作为 flex 兄弟元素位于图片右侧，不遮挡图片
+ *    4. 禁用浏览器原生图片拖拽，确保拖拽直接调整位置
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
-import { HelpCircle } from 'lucide-react';
 import { AuditToolbar, TOOL_METAS } from './components/AuditToolbar';
 import { CanvasOverlay } from './components/CanvasOverlay';
 import { ZoomTool } from './tools/ZoomTool';
@@ -47,12 +52,45 @@ interface AuditToolkitProps {
   footer?: ReactNode;
 }
 
+/** 常驻快捷键提示条的工具项 */
+const SHORTCUT_GROUPS: { label: string; items: { name: string; key: string }[] }[] = [
+  {
+    label: '叠加',
+    items: [
+      { name: '九宫格', key: 'G' },
+      { name: '对角线', key: 'D' },
+      { name: '脏污', key: 'B' },
+      { name: '溢出', key: 'L' },
+    ],
+  },
+  {
+    label: '面板',
+    items: [
+      { name: '直方图', key: 'H' },
+      { name: '对比度', key: 'C' },
+      { name: '饱和度', key: 'S' },
+      { name: '锐度', key: 'R' },
+      { name: '色温', key: 'T' },
+    ],
+  },
+  {
+    label: '操作',
+    items: [
+      { name: '缩放', key: 'Z' },
+      { name: '重置', key: '0' },
+      { name: '放大', key: '+' },
+      { name: '缩小', key: '-' },
+      { name: '关闭', key: 'Esc' },
+    ],
+  },
+];
+
 export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer }: AuditToolkitProps) {
   const [activeTools, setActiveTools] = useState<Set<ToolId>>(new Set());
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
 
-  const imageContainerRef = useRef<HTMLDivElement>(null);
+  // imageWrapperRef：直接包裹图片的容器，用于测量图片渲染尺寸 + 作为 overlay 定位基准
+  const imageWrapperRef = useRef<HTMLDivElement>(null);
   const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
 
   // 像素数据获取（降采样 800px）
@@ -60,19 +98,19 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
 
   // 监听图片容器尺寸变化，用于 Canvas overlay 坐标映射
   useEffect(() => {
-    const container = imageContainerRef.current;
-    if (!container) return;
+    const wrapper = imageWrapperRef.current;
+    if (!wrapper) return;
 
     const updateSize = () => {
       setDisplaySize({
-        width: container.clientWidth,
-        height: container.clientHeight,
+        width: wrapper.clientWidth,
+        height: wrapper.clientHeight,
       });
     };
 
     updateSize();
     const observer = new ResizeObserver(updateSize);
-    observer.observe(container);
+    observer.observe(wrapper);
     return () => observer.disconnect();
   }, []);
 
@@ -92,12 +130,10 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
   /** 关闭所有面板和叠加层 */
   const closeAll = useCallback(() => {
     setActiveTools(new Set());
-    setShowShortcuts(false);
   }, []);
 
-  /** 重置缩放（通过 keydown 0 触发，实际由 ZoomTool 内部处理） */
+  /** 重置缩放（ZoomTool 内部监听事件处理） */
   const resetZoom = useCallback(() => {
-    // ZoomTool 内部管理状态，这里仅触发事件
     window.dispatchEvent(new CustomEvent('audit:reset-zoom'));
   }, []);
 
@@ -114,7 +150,6 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
     t: () => toggleTool('colorTemp'),
     l: () => toggleTool('clipping'),
     '~': () => setToolbarCollapsed((v) => !v),
-    '?': () => setShowShortcuts((v) => !v),
     escape: closeAll,
     '0': resetZoom,
     '+': () => window.dispatchEvent(new CustomEvent('audit:zoom-in')),
@@ -132,7 +167,7 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* 工具栏 */}
+      {/* 工具栏（快捷键常驻显示在按钮上） */}
       <AuditToolbar
         activeTools={activeTools}
         onToggle={toggleTool}
@@ -140,129 +175,100 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
         onToggleCollapse={() => setToolbarCollapsed((v) => !v)}
       />
 
-      {/* 图片 + 叠加层 + 面板 */}
-      <div className="relative bg-gray-50" style={{ minHeight: '400px' }}>
-        {/* 图片渲染区（支持缩放） */}
-        <div
-          ref={imageContainerRef}
-          className="relative flex items-center justify-center"
-          style={{ maxHeight: '600px', overflow: 'hidden' }}
-        >
+      {/* 常驻快捷键提示条 */}
+      <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-x border-gray-200 text-[11px] text-gray-500 overflow-x-auto">
+        {SHORTCUT_GROUPS.map((group) => (
+          <div key={group.label} className="flex items-center gap-1.5 shrink-0">
+            <span className="text-gray-400 font-medium">{group.label}:</span>
+            {group.items.map((item) => (
+              <span key={item.key} className="flex items-center gap-0.5">
+                <span>{item.name}</span>
+                <kbd className="font-mono px-1 py-0.5 rounded bg-white text-gray-600 border border-gray-300 text-[10px]">
+                  {item.key}
+                </kbd>
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* 图片 + 面板（flex 布局，面板不遮挡图片） */}
+      <div className="flex bg-gray-50" style={{ minHeight: '400px' }}>
+        {/* 图片区域（flex-1 占满剩余空间） */}
+        <div className="flex-1 flex items-center justify-center" style={{ maxHeight: '600px', overflow: 'hidden' }}>
           <ZoomTool active={activeTools.has('zoom')}>
-            <CachedImage
-              src={src}
-              alt={alt}
-              authToken={authToken}
-              cacheEnabled={false}
-              className={`${imageClassName}`}
-              style={{ maxHeight: '600px' }}
-            />
+            {/* 图片 + 叠加层同处变换层：拖拽/缩放时同步移动 */}
+            <div ref={imageWrapperRef} className="relative">
+              <CachedImage
+                src={src}
+                alt={alt}
+                authToken={authToken}
+                cacheEnabled={false}
+                className={`${imageClassName}`}
+                draggable={false}
+                style={{ maxHeight: '600px' }}
+              />
+              {/* 叠加层：位于图片上方第二层（z-10），随图片同步移动 */}
+              <CanvasOverlay>
+                <GridOverlayTool
+                  showGrid={activeTools.has('grid')}
+                  showDiagonal={activeTools.has('diagonal')}
+                />
+                <BlemishDetectorTool
+                  active={activeTools.has('blemish')}
+                  pixels={pixels}
+                  displayWidth={displaySize.width}
+                  displayHeight={displaySize.height}
+                />
+                <ClippingWarningTool
+                  active={activeTools.has('clipping')}
+                  pixels={pixels}
+                  displayWidth={displaySize.width}
+                  displayHeight={displaySize.height}
+                />
+              </CanvasOverlay>
+            </div>
           </ZoomTool>
-
-          {/* 叠加层容器 */}
-          <CanvasOverlay>
-            {/* 九宫格 + 对角线 */}
-            <GridOverlayTool
-              showGrid={activeTools.has('grid')}
-              showDiagonal={activeTools.has('diagonal')}
-            />
-
-            {/* 脏污点检测 */}
-            <BlemishDetectorTool
-              active={activeTools.has('blemish')}
-              pixels={pixels}
-              displayWidth={displaySize.width}
-              displayHeight={displaySize.height}
-            />
-
-            {/* 高光/暗部溢出警告 */}
-            <ClippingWarningTool
-              active={activeTools.has('clipping')}
-              pixels={pixels}
-              displayWidth={displaySize.width}
-              displayHeight={displaySize.height}
-            />
-          </CanvasOverlay>
         </div>
 
-        {/* 右侧工具面板（按需滑出） */}
-        {activePanelTool === 'histogram' && (
-          <HistogramTool
-            visible={true}
-            onClose={() => toggleTool('histogram')}
-            pixels={pixels}
-          />
-        )}
-        {activePanelTool === 'contrast' && (
-          <ContrastTool
-            visible={true}
-            onClose={() => toggleTool('contrast')}
-            pixels={pixels}
-          />
-        )}
-        {activePanelTool === 'saturation' && (
-          <SaturationTool
-            visible={true}
-            onClose={() => toggleTool('saturation')}
-            pixels={pixels}
-          />
-        )}
-        {activePanelTool === 'sharpness' && (
-          <SharpnessTool
-            visible={true}
-            onClose={() => toggleTool('sharpness')}
-            pixels={pixels}
-          />
-        )}
-        {activePanelTool === 'colorTemp' && (
-          <ColorTempTool
-            visible={true}
-            onClose={() => toggleTool('colorTemp')}
-            pixels={pixels}
-          />
-        )}
-
-        {/* 快捷键帮助浮层 */}
-        {showShortcuts && (
-          <div className="absolute top-3 right-3 w-64 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-30">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <HelpCircle className="w-4 h-4" />
-                快捷键
-              </h4>
-              <button
-                onClick={() => setShowShortcuts(false)}
-                className="text-gray-400 hover:text-gray-600 text-xs"
-              >
-                关闭
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              {TOOL_METAS.map((t) => (
-                <div key={t.id} className="flex items-center justify-between">
-                  <span className="text-gray-600">{t.label}</span>
-                  <kbd className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">
-                    {t.shortcut}
-                  </kbd>
-                </div>
-              ))}
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">折叠工具栏</span>
-                <kbd className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">~</kbd>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">关闭全部</span>
-                <kbd className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">Esc</kbd>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">重置缩放</span>
-                <kbd className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">0</kbd>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">放大/缩小</span>
-                <kbd className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">+/-</kbd>
-              </div>
-            </div>
+        {/* 工具面板：flex 兄弟元素，位于图片右侧，不遮挡图片 */}
+        {activePanelTool && (
+          <div className="flex-shrink-0">
+            {activePanelTool === 'histogram' && (
+              <HistogramTool
+                visible={true}
+                onClose={() => toggleTool('histogram')}
+                pixels={pixels}
+              />
+            )}
+            {activePanelTool === 'contrast' && (
+              <ContrastTool
+                visible={true}
+                onClose={() => toggleTool('contrast')}
+                pixels={pixels}
+              />
+            )}
+            {activePanelTool === 'saturation' && (
+              <SaturationTool
+                visible={true}
+                onClose={() => toggleTool('saturation')}
+                pixels={pixels}
+              />
+            )}
+            {activePanelTool === 'sharpness' && (
+              <SharpnessTool
+                visible={true}
+                onClose={() => toggleTool('sharpness')}
+                pixels={pixels}
+              />
+            )}
+            {activePanelTool === 'colorTemp' && (
+              <ColorTempTool
+                visible={true}
+                onClose={() => toggleTool('colorTemp')}
+                pixels={pixels}
+              />
+            )}
           </div>
         )}
       </div>

@@ -4,6 +4,11 @@
  *  CSS transform: scale() 实现无极缩放（0.1x - 8x）。
  *  支持滚轮缩放（以鼠标位置为中心）、按钮缩放、拖拽平移。
  *  缩放模式下显示缩放百分比和操作提示。
+ *
+ *  关键设计：图片与叠加层（九宫格/脏污点/溢出警告）位于同一变换层，
+ *  拖拽/缩放时叠加层随图片同步移动，避免叠加层被置顶的异常。
+ *  禁用浏览器原生图片拖拽（onDragStart 拦截 + draggable=false + select-none），
+ *  确保拖拽操作直接实现图片位置调整。
  */
 
 import { useState, useRef, useCallback, type ReactNode } from 'react';
@@ -63,10 +68,11 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
     [active, zoomBy]
   );
 
-  // 拖拽平移
+  // 拖拽平移：preventDefault 阻止浏览器原生图片拖拽幽灵
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!active || scale === 1) return;
+      e.preventDefault();
       isDragging.current = true;
       dragStart.current = { x: e.clientX, y: e.clientY, tx, ty };
     },
@@ -88,6 +94,11 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
     isDragging.current = false;
   }, []);
 
+  // 禁止浏览器原生拖拽（防止 img 被拖出产生幽灵图像）
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -96,9 +107,15 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      className={`relative overflow-hidden ${active && scale !== 1 ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      onDragStart={handleDragStart}
+      // 禁用文本选中与原生图片拖拽，确保拖拽操作直接调整图片位置
+      className={`relative overflow-hidden select-none ${
+        active && scale !== 1 ? 'cursor-grab active:cursor-grabbing' : ''
+      }`}
     >
+      {/* 变换层：图片 + 叠加层同层，拖拽/缩放时同步移动 */}
       <div
+        className="relative"
         style={{
           transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           transformOrigin: 'center center',
@@ -108,7 +125,7 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
         {children}
       </div>
 
-      {/* 缩放控制条 */}
+      {/* 缩放控制条：位于顶层（z-30），不参与变换 */}
       {active && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur rounded-lg shadow-lg border border-gray-200 z-30">
           <button

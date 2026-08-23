@@ -68,8 +68,7 @@ export function PixelCanvas({
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ width: displayWidth, height: displayHeight }}
+      className="absolute inset-0 w-full h-full pointer-events-none"
     />
   );
 }

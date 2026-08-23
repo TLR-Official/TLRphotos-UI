@@ -126,7 +126,7 @@ export function useImagePixels(src: string, authToken?: string): UseImagePixelsR
 }
 
 /**
- * 计算三色直方图（RGB 256 bin）
+ * 计算三色直方图 + 黑白亮度直方图（RGB 256 bin + Luminance 256 bin）
  * 用 useMemo 缓存，imageData 不变时不重复计算
  */
 export function useHistogram(imageData: ImageData | null) {
@@ -136,12 +136,19 @@ export function useHistogram(imageData: ImageData | null) {
     const red = new Array(256).fill(0);
     const green = new Array(256).fill(0);
     const blue = new Array(256).fill(0);
+    const luminance = new Array(256).fill(0);
 
     // 每 4 字节 = RGBA，步进 4 跳过 Alpha
     for (let i = 0; i < data.length; i += 4) {
-      red[data[i]]++;
-      green[data[i + 1]]++;
-      blue[data[i + 2]]++;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      red[r]++;
+      green[g]++;
+      blue[b]++;
+      // ITU-R BT.601 亮度公式，四舍五入到 0-255
+      const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      luminance[lum]++;
     }
 
     const max = Math.max(
@@ -149,8 +156,9 @@ export function useHistogram(imageData: ImageData | null) {
       Math.max(...green),
       Math.max(...blue)
     );
+    const lumMax = Math.max(...luminance);
 
-    return { red, green, blue, max };
+    return { red, green, blue, max, luminance, lumMax };
   }, [imageData]);
 }
 

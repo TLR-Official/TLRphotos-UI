@@ -1,7 +1,8 @@
 /**
  * @file ToolPanel - 工具面板容器
  * @description
- *  右侧滑出抽屉，承载数据类工具的内容（直方图、对比度、饱和度等）。
+ *  静态侧边面板，承载数据类工具的内容（直方图、对比度、饱和度等）。
+ *  作为 flex 布局的子元素，占据图片右侧空间，不遮挡图片内容。
  *  支持折叠/展开，带平滑过渡动画。
  */
 
@@ -20,15 +21,12 @@ interface ToolPanelProps {
 }
 
 /**
- * 工具面板容器（右侧抽屉）
+ * 工具面板容器（静态侧边栏，不遮挡图片）
  */
 export function ToolPanel({ title, visible, onClose, children }: ToolPanelProps) {
+  if (!visible) return null;
   return (
-    <div
-      className={`absolute top-0 right-0 h-full w-80 bg-white border-l border-gray-200 shadow-xl transition-transform duration-300 z-20 ${
-        visible ? 'translate-x-0' : 'translate-x-full'
-      }`}
-    >
+    <div className="w-80 bg-white border-l border-gray-200 shadow-xl flex flex-col h-full transition-all duration-300">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <h3 className="text-sm font-bold text-gray-800">{title}</h3>
         <button
@@ -38,7 +36,7 @@ export function ToolPanel({ title, visible, onClose, children }: ToolPanelProps)
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-4 overflow-y-auto h-[calc(100%-3rem)]">{children}</div>
+      <div className="p-4 overflow-y-auto flex-1">{children}</div>
     </div>
   );
 }

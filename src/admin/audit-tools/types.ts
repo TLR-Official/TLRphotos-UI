@@ -47,7 +47,9 @@ export interface HistogramData {
   red: number[];
   green: number[];
   blue: number[];
-  max: number; // 所有 bin 的最大值，用于归一化绘制
+  max: number; // RGB 三通道 bin 的最大值，用于归一化绘制
+  luminance: number[]; // 黑白亮度直方图（BT.601 加权）
+  lumMax: number; // 亮度通道 bin 的最大值
 }
 
 /** 对比度量化结果 */
