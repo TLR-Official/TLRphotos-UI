@@ -187,7 +187,8 @@ TLRphotos/
 ***
 
 ## Changelog
-
+| 2026-08-23 22:05 | [release] 版本号升级至 V1.3.0 — 新增审核员图像分析工具集 | 全项目 |
+| 2026-08-23 22:05 | [feat] 新增审核员图像分析工具集（9项工具）：曝光度三色直方图、九宫格+对角线辅助线、脏污点智能检测、对比度量化、无极缩放(0.1x-8x)+拖拽平移、饱和度分析、锐度评估(Laplacian方差)、色温分析、高光/暗部溢出警告；快捷键操作(h/g/d/b/c/z/s/r/t/l/~/?/esc/0/+/-)；useImagePixels降采样至800px长边保证<200ms响应；集成至PhotoDetailPage替换原图片渲染 (V1.3.0) | src/admin/audit-tools/**, src/admin/PhotoDetailPage.tsx |
 | 2026-08-16 21:45 | [config] 服务器端口安全加固：后端服务从0.0.0.0:3001改为仅监听127.0.0.1:3001（外部经Nginx反代访问，避免API直接暴露公网绕过Cloudflare Zero Trust）；systemd service 启动参数加--expose-gc以激活MemoryManager的GC能力；关闭并mask snapd.socket/snapd.service/snap.lxd.daemon（0容器、纯浪费资源） (V1.2.4) | backend/src/server.ts, /etc/systemd/system/tlrphotos-backend.service |
 | 2026-08-16 14:45 | [feat] 服务器内存自动释放机制：新增MemoryManager单例，30s采样RSS，60%/75%/90%触发soft/medium/hard分级清理（registerBuffer+disposeProcessedBuffers、sharp缓存重置+vips.shutdown、5min3次medium或90%触发SIGTERM自重启）；上传路由接入registerBuffer+finally；processImage内部finally destroy所有sharp实例+disposeProcessedBuffers；暴露/api/admin/memory/snapshot与POST /release（管理员鉴权）；启动方式需--expose-gc (V1.2.3) | backend/src/services/memoryManager.ts, backend/src/server.ts, backend/src/routes/photos.ts, backend/src/services/imageService.ts |
 | 2026-08-16 13:45 | [fix] 修复管理后台无法查看未审核图片：CachedImage在传入authToken时因useCache=false绕过fetch路径，导致Authorization头未传递；改用shouldFetch=cacheEnabled||!!authToken强制fetch；用户前台PhotoDetailPage和ProfilePage传入用户token使所有者可查看自己的未审核照片 (V1.2.2) | src/components/CachedImage.tsx, src/features/gallery/PhotoDetailPage.tsx, src/features/profile/ProfilePage.tsx |

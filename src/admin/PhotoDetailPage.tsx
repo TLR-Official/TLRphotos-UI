@@ -25,6 +25,7 @@ import {
 import { getPhotoDetail, approvePhoto, rejectPhoto, getAdminToken } from './api';
 import type { AdminPhotoDetail } from './types';
 import { CachedImage } from '../components/CachedImage';
+import { AuditToolkit } from './audit-tools';
 
 /**
  * 照片审核详情页组件
@@ -153,42 +154,40 @@ export function PhotoDetailPage({ id }: { id: string }) {
 
       {/* 主体：左侧图片 + 右侧信息 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 左侧：大图预览 */}
+        {/* 左侧：大图预览 + 审核工具集 */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-xl overflow-hidden border border-gray-200">
-            <CachedImage
-              src={mainImage}
-              alt={photo.title}
-              authToken={adminToken || undefined}
-              cacheEnabled={false}
-              className="w-full max-h-[600px] object-contain bg-gray-50"
-            />
-            {/* 图片操作栏 */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
-              <div className="flex items-center gap-4">
-                {photo.width > 0 && photo.height > 0 && (
+          <AuditToolkit
+            src={mainImage}
+            alt={photo.title}
+            authToken={adminToken || undefined}
+            imageClassName="w-full max-h-[600px] object-contain bg-gray-50"
+            footer={
+              <>
+                <div className="flex items-center gap-4">
+                  {photo.width > 0 && photo.height > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Maximize2 className="w-4 h-4" />
+                      {photo.width} × {photo.height}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
-                    <Maximize2 className="w-4 h-4" />
-                    {photo.width} × {photo.height}
+                    <Eye className="w-4 h-4" />
+                    {photo.views}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <ThumbsUp className="w-4 h-4" />
+                    {photo.likes}
+                  </span>
+                </div>
+                {photo.watermark_config && (
+                  <span className="flex items-center gap-1 text-purple-600">
+                    <ImageIcon className="w-4 h-4" />
+                    已添加水印
                   </span>
                 )}
-                <span className="flex items-center gap-1">
-                  <Eye className="w-4 h-4" />
-                  {photo.views}
-                </span>
-                <span className="flex items-center gap-1">
-                  <ThumbsUp className="w-4 h-4" />
-                  {photo.likes}
-                </span>
-              </div>
-              {photo.watermark_config && (
-                <span className="flex items-center gap-1 text-purple-600">
-                  <ImageIcon className="w-4 h-4" />
-                  已添加水印
-                </span>
-              )}
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* 缩略图选择 */}
           <div className="flex gap-3 mt-4">
