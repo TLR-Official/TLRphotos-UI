@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-23 22:31 | [fix] 图片滚轮缩放交互优化：原生wheel监听器passive:false确保preventDefault跨浏览器生效（修复React onWheel passive导致页面滚动未被禁止）；鼠标悬停图片区域内滚轮仅缩放不滚页面、离开后恢复默认滚动；deltaMode标准化(Firefox lines→pixels)；基于deltaY指数缩放(exp)适配鼠标/触控板；rAF批处理合并同帧多次滚轮事件(delta累加)防卡顿；缩放中心跟随鼠标指针；缩放指示器徽章(百分比+渐隐)；will-change:transform+0.08s过渡 (V1.3.2) | src/admin/audit-tools/tools/ZoomTool.tsx |
 | 2026-08-23 22:22 | [fix] 审核工具集交互体验优化：快捷键常驻显示（工具栏按钮+提示条）；叠加层移入变换层随图片同步移动（修复拖拽时叠加层被置顶）；直方图颜色提亮(alpha 0.4→0.75)+新增黑白曝光直方图(BT.601亮度)；面板改为flex兄弟布局不遮挡图片；拖拽行为修复(draggable=false+onDragStart拦截+select-none+mousedown preventDefault) (V1.3.1) | src/admin/audit-tools/AuditToolkit.tsx, src/admin/audit-tools/tools/ZoomTool.tsx, src/admin/audit-tools/tools/HistogramTool.tsx, src/admin/audit-tools/components/ToolPanel.tsx, src/admin/audit-tools/components/AuditToolbar.tsx, src/admin/audit-tools/components/CanvasOverlay.tsx, src/admin/audit-tools/hooks/useImagePixels.ts, src/admin/audit-tools/types.ts |
 | 2026-08-23 22:05 | [release] 版本号升级至 V1.3.0 — 新增审核员图像分析工具集 | 全项目 |
 | 2026-08-23 22:05 | [feat] 新增审核员图像分析工具集（9项工具）：曝光度三色直方图、九宫格+对角线辅助线、脏污点智能检测、对比度量化、无极缩放(0.1x-8x)+拖拽平移、饱和度分析、锐度评估(Laplacian方差)、色温分析、高光/暗部溢出警告；快捷键操作(h/g/d/b/c/z/s/r/t/l/~/?/esc/0/+/-)；useImagePixels降采样至800px长边保证<200ms响应；集成至PhotoDetailPage替换原图片渲染 (V1.3.0) | src/admin/audit-tools/**, src/admin/PhotoDetailPage.tsx |
