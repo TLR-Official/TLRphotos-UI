@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-24 20:08 | [chore] 插入最高管理员账户 y 到 backend/data/database.db（role=super zone=default，邮箱 Yang16368@outlook.com，bcrypt cost=10；createAdminUser 唯一性校验通过；adminLogin 闭环验证 token 签发成功、角色正确）；create-admin-y.ts 脚本用完即删不留痕 | backend/data/database.db (未追踪的运行时数据) |
 | 2026-08-24 20:00 | [fix] 修复工具面板拖动位置突变漂移：弃用 getBoundingClientRect 含 border-box 的坐标系与 CSS left/top padding-box 参考系混用导致的 (parentRect.left - borderLeft) 恒定偏移；改为纯屏幕 delta 模式 — mousedown 记录 (clientX/Y + panel.offsetLeft/Top DOM 快照)，mousemove 直接 delta 叠加（零坐标换算）；transition 从 className+inline 冲突改为统一 inline 精确配置（拖拽期间 none，释放后仅 box-shadow 150ms，left/top 0s 跳变）；函数式 setState + 每次从起点重算防批处理闭包陈旧 (V1.3.4) | src/admin/audit-tools/components/ToolPanel.tsx |
 | 2026-08-24 19:52 | [fix] 工具面板布局重构：从flex兄弟布局改为position:absolute浮动窗口，不占用图片空间避免图片被压缩裁剪；工具面板初始位置放置在图片展示区外围（优先右侧其次左侧）；支持标题栏自由拖动（40px句柄可见边界约束）；拖拽监听改为window级保证拖出面板仍可捕获；root容器改为overflow-visible面板可跨出边界；切换工具时key重挂载重置初始位置；ResizeObserver动态重算位置 (V1.3.3) | src/admin/audit-tools/AuditToolkit.tsx, src/admin/audit-tools/components/ToolPanel.tsx, src/admin/audit-tools/tools/{HistogramTool,ContrastTool,SaturationTool,SharpnessTool,ColorTempTool}.tsx |
 | 2026-08-23 22:31 | [fix] 图片滚轮缩放交互优化：原生wheel监听器passive:false确保preventDefault跨浏览器生效（修复React onWheel passive导致页面滚动未被禁止）；鼠标悬停图片区域内滚轮仅缩放不滚页面、离开后恢复默认滚动；deltaMode标准化(Firefox lines→pixels)；基于deltaY指数缩放(exp)适配鼠标/触控板；rAF批处理合并同帧多次滚轮事件(delta累加)防卡顿；缩放中心跟随鼠标指针；缩放指示器徽章(百分比+渐隐)；will-change:transform+0.08s过渡 (V1.3.2) | src/admin/audit-tools/tools/ZoomTool.tsx |
