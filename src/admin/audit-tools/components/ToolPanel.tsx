@@ -54,11 +54,18 @@ export function ToolPanel({
   initialY = 0,
   boundsRef,
 }: ToolPanelProps) {
-  // 面板当前位置（相对父容器 absolute）
+  // 面板当前位置（相对父容器 absolute，CSS left/top 同坐标系，即 offsetParent 的 padding-box）
   const [pos, setPos] = useState({ x: initialX, y: initialY });
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 }); // 鼠标到面板左上角的偏移
+
+  /**
+   * 拖拽起始快照（纯 delta 模式，避免坐标系转换漂移）
+   *  - mouseX/Y: 鼠标在 viewport 中的起始像素坐标（event.clientX/Y）
+   *  - panelX/Y: 面板在 offsetParent padding-box 坐标系中的起始 CSS 位置（= panel.offsetLeft/Top）
+   * 两者都使用各自的"绝对"坐标空间，移动时仅叠加 delta，无需互相换算。
+   */
+  const dragStart = useRef({ mouseX: 0, mouseY: 0, panelX: 0, panelY: 0 });
 
   /** 约束 x/y 至 boundsRef 容器的可视区域，至少保留 MIN_VISIBLE 像素可见 */
   const clampToBounds = useCallback(
@@ -93,7 +100,9 @@ export function ToolPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 拖拽开始：记录鼠标相对面板左上角的偏移 ──
+  // ── 拖拽开始：记录鼠标位置 & 面板 DOM 位置的起始快照 ──
+  // 用 DOM 原生 offsetLeft/Top（值与 CSS left/top 完全同坐标系，避免 getBoundingClientRect
+  // border-box 与 CSS padding-box 混用导致的恒定偏移漂移）
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const panel = panelRef.current;
@@ -102,15 +111,11 @@ export function ToolPanel({
       e.stopPropagation();
       isDragging.current = true;
 
-      // 获取当前面板在父容器中的位置
-      const parentRect = panel.offsetParent
-        ? (panel.offsetParent as HTMLElement).getBoundingClientRect()
-        : { left: 0, top: 0 };
-      const panelRect = panel.getBoundingClientRect();
-      // 鼠标位置 - 面板左上角（相对父容器）
-      dragOffset.current = {
-        x: e.clientX - (panelRect.left - parentRect.left),
-        y: e.clientY - (panelRect.top - parentRect.top),
+      dragStart.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        panelX: panel.offsetLeft, // DOM 原生值，与 CSS left 完全一致（含边界约束已落盘）
+        panelY: panel.offsetTop,
       };
 
       // 提升 z-index 保证被拖面板在最上
@@ -126,12 +131,15 @@ export function ToolPanel({
       const panel = panelRef.current;
       if (!panel) return;
 
-      const parent = panel.offsetParent as HTMLElement | null;
-      const parentRect = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+      const s = dragStart.current;
+      // 纯 delta：鼠标移动了多少像素，面板 CSS 位置就移动多少像素 — 完全不涉及坐标换算
+      const deltaX = e.clientX - s.mouseX;
+      const deltaY = e.clientY - s.mouseY;
+      const nextX = s.panelX + deltaX;
+      const nextY = s.panelY + deltaY;
 
-      const nextX = e.clientX - parentRect.left - dragOffset.current.x;
-      const nextY = e.clientY - parentRect.top - dragOffset.current.y;
-      setPos(clampToBounds(nextX, nextY));
+      // 函数式 setState + 每次从起始位置重算（防 React 批处理中旧闭包状态造成累积跳变）
+      setPos(() => clampToBounds(nextX, nextY));
     };
 
     const handleUp = () => {
@@ -155,14 +163,16 @@ export function ToolPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute bg-white rounded-xl border border-gray-200 shadow-2xl flex flex-col select-none transition-shadow duration-150"
+      className="absolute bg-white rounded-xl border border-gray-200 shadow-2xl flex flex-col select-none"
       style={{
         left: `${pos.x}px`,
         top: `${pos.y}px`,
         width: PANEL_WIDTH,
         maxHeight: 'calc(100% - 16px)',
         zIndex: 50,
-        transition: isDragging.current ? 'none' : 'left 0s, top 0s',
+        // 统一用 inline transition 精确控制，避免与 className 里的 transition 类互相覆盖导致拖拽抖帧
+        // 拖拽时完全禁用过渡（保证 1:1 跟手），非拖拽时仅 box-shadow 需要过渡（悬停/交互阴影变化），left/top 保持 0 延迟跳变
+        transition: isDragging.current ? 'none' : 'box-shadow 150ms ease, left 0s linear, top 0s linear',
       }}
     >
       {/* 拖拽句柄：标题栏 */}
