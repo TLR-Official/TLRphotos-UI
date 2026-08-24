@@ -15,9 +15,12 @@ interface HistogramToolProps {
   visible: boolean;
   onClose: () => void;
   pixels: UseImagePixelsResult;
+  initialX?: number;
+  initialY?: number;
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function HistogramTool({ visible, onClose, pixels }: HistogramToolProps) {
+export function HistogramTool({ visible, onClose, pixels, initialX, initialY, boundsRef }: HistogramToolProps) {
   const histogram = useHistogram(pixels.imageData);
   const rgbCanvasRef = useRef<HTMLCanvasElement>(null);
   const lumCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -137,7 +140,14 @@ export function HistogramTool({ visible, onClose, pixels }: HistogramToolProps) 
   }, [visible, histogram]);
 
   return (
-    <ToolPanel title="直方图分析" visible={visible} onClose={onClose}>
+    <ToolPanel
+      title="直方图分析"
+      visible={visible}
+      onClose={onClose}
+      initialX={initialX}
+      initialY={initialY}
+      boundsRef={boundsRef}
+    >
       {pixels.loading && <p className="text-sm text-gray-400">加载像素数据中...</p>}
       {pixels.error && <p className="text-sm text-red-500">{pixels.error}</p>}
       {histogram && (

@@ -13,9 +13,12 @@ interface SaturationToolProps {
   visible: boolean;
   onClose: () => void;
   pixels: UseImagePixelsResult;
+  initialX?: number;
+  initialY?: number;
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function SaturationTool({ visible, onClose, pixels }: SaturationToolProps) {
+export function SaturationTool({ visible, onClose, pixels, initialX, initialY, boundsRef }: SaturationToolProps) {
   const saturation = useSaturation(pixels.imageData);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -57,7 +60,14 @@ export function SaturationTool({ visible, onClose, pixels }: SaturationToolProps
   }, [visible, saturation]);
 
   return (
-    <ToolPanel title="饱和度分析" visible={visible} onClose={onClose}>
+    <ToolPanel
+      title="饱和度分析"
+      visible={visible}
+      onClose={onClose}
+      initialX={initialX}
+      initialY={initialY}
+      boundsRef={boundsRef}
+    >
       {pixels.loading && <p className="text-sm text-gray-400">加载中...</p>}
       {saturation && (
         <>

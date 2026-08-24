@@ -13,6 +13,9 @@ interface SharpnessToolProps {
   visible: boolean;
   onClose: () => void;
   pixels: UseImagePixelsResult;
+  initialX?: number;
+  initialY?: number;
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
 const RATING_CONFIG: Record<string, { text: string; color: string }> = {
@@ -22,11 +25,18 @@ const RATING_CONFIG: Record<string, { text: string; color: string }> = {
   blurry: { text: '模糊', color: 'text-red-600' },
 };
 
-export function SharpnessTool({ visible, onClose, pixels }: SharpnessToolProps) {
+export function SharpnessTool({ visible, onClose, pixels, initialX, initialY, boundsRef }: SharpnessToolProps) {
   const sharpness = useSharpness(pixels.imageData);
 
   return (
-    <ToolPanel title="锐度评估" visible={visible} onClose={onClose}>
+    <ToolPanel
+      title="锐度评估"
+      visible={visible}
+      onClose={onClose}
+      initialX={initialX}
+      initialY={initialY}
+      boundsRef={boundsRef}
+    >
       {pixels.loading && <p className="text-sm text-gray-400">加载中...</p>}
       {sharpness && (
         <>

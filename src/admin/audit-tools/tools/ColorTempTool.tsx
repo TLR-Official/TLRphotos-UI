@@ -14,6 +14,9 @@ interface ColorTempToolProps {
   visible: boolean;
   onClose: () => void;
   pixels: UseImagePixelsResult;
+  initialX?: number;
+  initialY?: number;
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
 const BIAS_CONFIG: Record<string, { text: string; color: string; bg: string }> = {
@@ -22,11 +25,18 @@ const BIAS_CONFIG: Record<string, { text: string; color: string; bg: string }> =
   neutral: { text: '中性', color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
 };
 
-export function ColorTempTool({ visible, onClose, pixels }: ColorTempToolProps) {
+export function ColorTempTool({ visible, onClose, pixels, initialX, initialY, boundsRef }: ColorTempToolProps) {
   const colorTemp = useColorTemp(pixels.imageData);
 
   return (
-    <ToolPanel title="色温分析" visible={visible} onClose={onClose}>
+    <ToolPanel
+      title="色温分析"
+      visible={visible}
+      onClose={onClose}
+      initialX={initialX}
+      initialY={initialY}
+      boundsRef={boundsRef}
+    >
       {pixels.loading && <p className="text-sm text-gray-400">加载中...</p>}
       {colorTemp && (
         <>

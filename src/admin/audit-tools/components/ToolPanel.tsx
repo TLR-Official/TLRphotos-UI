@@ -1,42 +1,194 @@
 /**
- * @file ToolPanel - 工具面板容器
+ * @file ToolPanel - 工具面板容器（可自由拖动的浮动窗口）
  * @description
- *  静态侧边面板，承载数据类工具的内容（直方图、对比度、饱和度等）。
- *  作为 flex 布局的子元素，占据图片右侧空间，不遮挡图片内容。
- *  支持折叠/展开，带平滑过渡动画。
+ *  可拖拽的浮动面板，承载数据类工具的内容（直方图、对比度、饱和度等）。
+ *  通过 position: absolute + x/y state 定位，不占用文档流空间，
+ *  因此不会挤压/缩裁剪图片区域。用户可拖动到任意位置。
+ *
+ *  关键设计：
+ *    1. 仅使用 CSS position: absolute，从文档流中完全移除
+ *    2. 标题栏为拖拽句柄（cursor: grab/grabbing）
+ *    3. 初始位置由父组件传入（基于图片区域的外围，避免覆盖图片）
+ *    4. 边界约束：拖拽时面板至少保留 40px 的句柄条留在容器可视范围内
+ *    5. 防止拖拽时选中文本：select-none + user-select: none
+ *    6. 拖拽过程中 transition: none 保证流畅，释放后恢复过渡
  */
 
-import { X } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Move } from 'lucide-react';
 import type { ReactNode } from 'react';
+
+/** 面板默认宽度（px） */
+export const PANEL_WIDTH = 320;
+/** 面板默认最小高度（px，大致估算，实际会被内容撑开） */
+export const PANEL_DEFAULT_HEIGHT = 420;
+/** 边界约束：至少保留的可见宽度（拖拽句柄条高度，防止面板被拖到完全看不见） */
+const MIN_VISIBLE = 40;
 
 interface ToolPanelProps {
   /** 面板标题 */
   title: string;
-  /** 是否显示 */
+  /** 是否显示（父级 conditionally render 时使用） */
   visible: boolean;
   /** 关闭回调 */
   onClose: () => void;
   /** 面板内容 */
   children: ReactNode;
+  /** 初始位置 x（相对父容器左上角） */
+  initialX?: number;
+  /** 初始位置 y（相对父容器左上角） */
+  initialY?: number;
+  /** 约束边界容器的 ref —— 拖拽时限制面板不越过此容器可视区域范围（至少保留句柄可见） */
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
 /**
- * 工具面板容器（静态侧边栏，不遮挡图片）
+ * 工具面板容器（可自由拖动的浮动窗口，不占用文档流）
  */
-export function ToolPanel({ title, visible, onClose, children }: ToolPanelProps) {
+export function ToolPanel({
+  title,
+  visible,
+  onClose,
+  children,
+  initialX = 0,
+  initialY = 0,
+  boundsRef,
+}: ToolPanelProps) {
+  // 面板当前位置（相对父容器 absolute）
+  const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 }); // 鼠标到面板左上角的偏移
+
+  /** 约束 x/y 至 boundsRef 容器的可视区域，至少保留 MIN_VISIBLE 像素可见 */
+  const clampToBounds = useCallback(
+    (x: number, y: number): { x: number; y: number } => {
+      const panel = panelRef.current;
+      const bounds = boundsRef?.current;
+      if (!panel) return { x, y };
+
+      const panelWidth = panel.offsetWidth;
+      const panelHeight = panel.offsetHeight;
+      const boundsWidth = bounds ? bounds.clientWidth : Infinity;
+      const boundsHeight = bounds ? bounds.clientHeight : Infinity;
+
+      // 限制 x：min=-(panelWidth-MIN_VISIBLE), max=boundsWidth-MIN_VISIBLE
+      const minX = Math.min(0, -(panelWidth - MIN_VISIBLE));
+      const maxX = boundsWidth - MIN_VISIBLE;
+      const cx = Math.min(maxX, Math.max(minX, x));
+
+      // 限制 y：min=-(panelHeight-MIN_VISIBLE), max=boundsHeight-MIN_VISIBLE
+      const minY = Math.min(0, -(panelHeight - MIN_VISIBLE));
+      const maxY = boundsHeight - MIN_VISIBLE;
+      const cy = Math.min(maxY, Math.max(minY, y));
+
+      return { x: cx, y: cy };
+    },
+    [boundsRef]
+  );
+
+  // 初始化：如果有 boundsRef 则约束一次初始位置（首次渲染）
+  useEffect(() => {
+    setPos((p) => clampToBounds(p.x, p.y));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── 拖拽开始：记录鼠标相对面板左上角的偏移 ──
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isDragging.current = true;
+
+      // 获取当前面板在父容器中的位置
+      const parentRect = panel.offsetParent
+        ? (panel.offsetParent as HTMLElement).getBoundingClientRect()
+        : { left: 0, top: 0 };
+      const panelRect = panel.getBoundingClientRect();
+      // 鼠标位置 - 面板左上角（相对父容器）
+      dragOffset.current = {
+        x: e.clientX - (panelRect.left - parentRect.left),
+        y: e.clientY - (panelRect.top - parentRect.top),
+      };
+
+      // 提升 z-index 保证被拖面板在最上
+      panel.style.zIndex = '60';
+    },
+    []
+  );
+
+  // ── 全局鼠标移动与抬起：使用原生 listener 保证拖出 panel 仍能捕获 ──
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const parent = panel.offsetParent as HTMLElement | null;
+      const parentRect = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+
+      const nextX = e.clientX - parentRect.left - dragOffset.current.x;
+      const nextY = e.clientY - parentRect.top - dragOffset.current.y;
+      setPos(clampToBounds(nextX, nextY));
+    };
+
+    const handleUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      const panel = panelRef.current;
+      if (panel) panel.style.zIndex = '50';
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [clampToBounds]);
+
+  // visible 检查必须在所有 Hook 之后（React Hooks 顺序不变原则）
   if (!visible) return null;
+
   return (
-    <div className="w-80 bg-white border-l border-gray-200 shadow-xl flex flex-col h-full transition-all duration-300">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+    <div
+      ref={panelRef}
+      className="absolute bg-white rounded-xl border border-gray-200 shadow-2xl flex flex-col select-none transition-shadow duration-150"
+      style={{
+        left: `${pos.x}px`,
+        top: `${pos.y}px`,
+        width: PANEL_WIDTH,
+        maxHeight: 'calc(100% - 16px)',
+        zIndex: 50,
+        transition: isDragging.current ? 'none' : 'left 0s, top 0s',
+      }}
+    >
+      {/* 拖拽句柄：标题栏 */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100 rounded-t-xl bg-gray-50 cursor-grab active:cursor-grabbing"
+        title="拖动移动面板"
+      >
+        <div className="flex items-center gap-2">
+          <Move className="w-3.5 h-3.5 text-gray-400" />
+          <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+        </div>
         <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+          title="关闭"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-4 overflow-y-auto flex-1">{children}</div>
+      {/* 内容区 */}
+      <div className="p-4 overflow-y-auto flex-1 rounded-b-xl">{children}</div>
     </div>
   );
 }

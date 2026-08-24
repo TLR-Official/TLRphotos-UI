@@ -12,13 +12,23 @@ interface ContrastToolProps {
   visible: boolean;
   onClose: () => void;
   pixels: UseImagePixelsResult;
+  initialX?: number;
+  initialY?: number;
+  boundsRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function ContrastTool({ visible, onClose, pixels }: ContrastToolProps) {
+export function ContrastTool({ visible, onClose, pixels, initialX, initialY, boundsRef }: ContrastToolProps) {
   const contrast = useContrast(pixels.imageData);
 
   return (
-    <ToolPanel title="对比度量化" visible={visible} onClose={onClose}>
+    <ToolPanel
+      title="对比度量化"
+      visible={visible}
+      onClose={onClose}
+      initialX={initialX}
+      initialY={initialY}
+      boundsRef={boundsRef}
+    >
       {pixels.loading && <p className="text-sm text-gray-400">加载中...</p>}
       {contrast && (
         <>
