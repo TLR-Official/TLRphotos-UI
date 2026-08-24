@@ -62,12 +62,20 @@ export function UploadPage() {
 
   const watermarkText = 'TLRphotos';
   // 水印位置/透明度/字号，初始居中
+  // NOTE: watermarkSize 语义与后端强一致 = "以 1200px 长边的预览图为基准的字号"，
+  // 预览显示时按实际渲染图像长边 scaleFactor = max(renderedW, renderedH) / 1200 线性缩放，
+  // 确保用户在上传界面看到的文字比例 = 最终水印图上的文字比例（所见即所得）。
   const [watermarkX, setWatermarkX] = useState(50);
   const [watermarkY, setWatermarkY] = useState(50);
   const [watermarkOpacity, setWatermarkOpacity] = useState(60);
   const [watermarkSize, setWatermarkSize] = useState(32);
   // isDragging：标识水印文字是否处于拖动中
   const [isDragging, setIsDragging] = useState(false);
+  // 实际渲染的预览图在屏幕上的矩形（经过 object-contain，可能比容器小），用于：
+  //   - 字号 scaleFactor 计算（与后端 processImage 保持同一基准）
+  //   - 位置百分比换算（0% = 真实图片左/上边，100% = 真实图片右/下边）
+  const [renderedImageRect, setRenderedImageRect] = useState<{x:number;y:number;width:number;height:number} | null>(null);
+  const previewImgRef = useRef<HTMLImageElement>(null);
 
   // 首次挂载拉取标签分类列表（航空/铁路/汽车）
   useEffect(() => {
@@ -91,6 +99,51 @@ export function UploadPage() {
       if (preview) URL.revokeObjectURL(preview);
     };
   }, [preview]);
+
+  /**
+   * 测量实际渲染的预览图矩形（经过 object-contain 后图片在容器内的真位置），
+   * 并保存到 state 供 scaleFactor 与坐标换算使用。与后端的 scaleFactor 公式完全同源。
+   */
+  const measureRenderedImage = useCallback(() => {
+    const img = previewImgRef.current;
+    const host = previewRef.current;
+    if (!img || !host) return;
+    // 浏览器原生对象定位 API：返回图片内容（object-contain 后）相对宿主 <img> 元素的矩形
+    let imgBox: { left: number; top: number; width: number; height: number } | null = null;
+    if (typeof (img as any).getBoundingClientRect === 'function') {
+      const hostRect = host.getBoundingClientRect();
+      const imgElRect = img.getBoundingClientRect(); // rect of the <img> box itself (fills host)
+      // Use object-contain ratio math (since browser doesn't expose the painted rect directly):
+      const nw = img.naturalWidth || 1;
+      const nh = img.naturalHeight || 1;
+      const boxW = imgElRect.width;
+      const boxH = imgElRect.height;
+      const ratio = Math.min(boxW / nw, boxH / nh);
+      const drawnW = nw * ratio;
+      const drawnH = nh * ratio;
+      const drawnLeft = (boxW - drawnW) / 2 + (imgElRect.left - hostRect.left);
+      const drawnTop = (boxH - drawnH) / 2 + (imgElRect.top - hostRect.top);
+      imgBox = { left: drawnLeft, top: drawnTop, width: drawnW, height: drawnH };
+    }
+    if (imgBox && imgBox.width > 0 && imgBox.height > 0) {
+      setRenderedImageRect({ x: imgBox.left, y: imgBox.top, width: imgBox.width, height: imgBox.height });
+    }
+  }, []);
+
+  // 图片加载/容器尺寸/窗口变化 → 重新测量
+  useEffect(() => {
+    if (!preview) return;
+    measureRenderedImage();
+    const onResize = () => measureRenderedImage();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [preview, step, measureRenderedImage]);
+
+  /** 与后端完全一致的预览字号线性缩放系数 */
+  const previewFontScale = renderedImageRect
+    ? Math.max(renderedImageRect.width, renderedImageRect.height) / 1200
+    : 0;
+  const displayFontSize = Math.max(1, Math.round(watermarkSize * (previewFontScale || 1)));
 
   const inputCls = `w-full px-4 py-2 rounded-lg border ${
     theme === 'dark'
@@ -192,19 +245,27 @@ export function UploadPage() {
   };
 
   /**
-   * 水印拖动中：根据鼠标位置换算为预览区百分比坐标，并钳制在 0~100 范围内
+   * 水印拖动中：以「实际渲染的图片矩形」为坐标系，换算百分比（0-100）。
+   * 与后端 processedWidth / processedHeight 百分比坐标 1:1 对齐。
    * @param e 鼠标移动事件
    */
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !previewRef.current) return;
-
-    const rect = previewRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-    setWatermarkX(Math.max(0, Math.min(100, x)));
-    setWatermarkY(Math.max(0, Math.min(100, y)));
-  }, [isDragging]);
+    if (!isDragging) return;
+    let rect = renderedImageRect;
+    // 如果尚未测量（图片刚加载），兜底使用 previewRef 容器本身坐标
+    if (!rect && previewRef.current) {
+      const r = previewRef.current.getBoundingClientRect();
+      rect = { x: 0, y: 0, width: r.width, height: r.height };
+    }
+    if (!rect) return;
+    const mouseX = e.clientX - (previewRef.current?.getBoundingClientRect().left || 0);
+    const mouseY = e.clientY - (previewRef.current?.getBoundingClientRect().top || 0);
+    // 将鼠标相对容器的坐标 → 相对图片矩形的坐标，再 → 百分比
+    const x = rect.width === 0 ? 0 : Math.max(0, Math.min(100, ((mouseX - rect.x) / rect.width) * 100));
+    const y = rect.height === 0 ? 0 : Math.max(0, Math.min(100, ((mouseY - rect.y) / rect.height) * 100));
+    setWatermarkX(x);
+    setWatermarkY(y);
+  }, [isDragging, renderedImageRect]);
 
   /** 水印拖动结束：退出拖动状态 */
   const handleMouseUp = () => {
@@ -423,7 +484,7 @@ export function UploadPage() {
                       </div>
                     </div>
                     <div>
-                      <span className="text-xs text-gray-500">字体大小: {watermarkSize}px</span>
+                      <span className="text-xs text-gray-500">字体大小: {watermarkSize}px（基准 1200px 长边图像）→ 预览显示 {displayFontSize}px</span>
                       <input type="range" min="12" max="72" value={watermarkSize} onChange={(e) => setWatermarkSize(Number(e.target.value))} className={`w-full mt-1 ${theme === 'dark' ? 'accent-blue-500' : ''}`} />
                     </div>
                     <div>
@@ -440,28 +501,44 @@ export function UploadPage() {
                       onMouseUp={handleMouseUp}
                       onMouseLeave={handleMouseUp}
                     >
-                      <img src={preview} alt="preview" className="w-full max-h-64 object-contain" />
-                      <div
-                        ref={watermarkRef}
-                        className="absolute cursor-move select-none pointer-events-auto"
-                        style={{
-                          left: `${watermarkX}%`,
-                          top: `${watermarkY}%`,
-                          transform: 'translate(-50%, -50%)',
-                        }}
-                        onMouseDown={handleMouseDown}
-                      >
-                        <span
-                          className="text-white drop-shadow-md"
+                      <img
+                        ref={previewImgRef}
+                        src={preview}
+                        alt="preview"
+                        className="w-full max-h-64 object-contain"
+                        onLoad={measureRenderedImage}
+                        onError={measureRenderedImage}
+                      />
+                      {/* 水印覆盖层：
+                          定位基准 = 实际 object-contain 渲染后的图片矩形 (renderedImageRect)
+                          字号 = watermarkSize * max(drawnW, drawnH) / 1200 — 与后端 sharp 绘制 100% 同源
+                      */}
+                      {renderedImageRect ? (
+                        <div
+                          ref={watermarkRef}
+                          className="absolute cursor-move select-none pointer-events-auto"
                           style={{
-                            fontSize: `${watermarkSize}px`,
-                            opacity: watermarkOpacity / 100,
-                            textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+                            left: renderedImageRect.x + (renderedImageRect.width * watermarkX) / 100,
+                            top: renderedImageRect.y + (renderedImageRect.height * watermarkY) / 100,
+                            transform: 'translate(-50%, -50%)',
                           }}
+                          onMouseDown={handleMouseDown}
                         >
-                          {watermarkText}
-                        </span>
-                      </div>
+                          <span
+                            className="text-white drop-shadow-md whitespace-nowrap"
+                            style={{
+                              fontSize: `${displayFontSize}px`,
+                              opacity: watermarkOpacity / 100,
+                              // 与后端 SVG <text stroke=black stroke-width=1> 视觉对齐
+                              WebkitTextStroke: `${Math.max(0.5, displayFontSize * 0.03)}px rgba(0,0,0,${(watermarkOpacity / 100) * 0.5})`,
+                              textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {watermarkText}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>

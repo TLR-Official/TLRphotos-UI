@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-24 21:45 | [fix] 水印尺寸与位置所见即所得：修复上传界面 watermarkSize/watermarkX/Y 与后端 sharp 合成结果比例/坐标不一致 — 新增 measureRenderedImage() 用 naturalWidth*minRatio 推导 object-contain 后图像真实矩形（drawnW/drawnH/drawnLeft/drawnTop），预览 fontSize = watermarkSize * max(drawnW, drawnH)/1200（与后端 scaleFactor 公式 1:1 同源），水印定位相对真实图像矩形百分比而非容器百分比；字号控件显示「基准 1200px → 预览 X px」；描边 WebkitTextStroke 与后端 SVG stroke 对齐。同步更新 api.md 4 个 watermark 字段单位说明 (V1.3.5) | src/features/upload/UploadPage.tsx, backend/docs/api.md |
 | 2026-08-24 21:14 | [chore] 插入最高管理员账户 星空联盟 到 backend/data/database.db（role=super zone=default，邮箱 19876113516@163.com，bcrypt cost=10；createAdminUser 唯一性校验通过；adminLogin 闭环验证 token 签发成功、角色正确）；一次性脚本用完即删不留痕 | backend/data/database.db (未追踪的运行时数据) |
 | 2026-08-24 20:08 | [chore] 插入最高管理员账户 y 到 backend/data/database.db（role=super zone=default，邮箱 Yang16368@outlook.com，bcrypt cost=10；createAdminUser 唯一性校验通过；adminLogin 闭环验证 token 签发成功、角色正确）；create-admin-y.ts 脚本用完即删不留痕 | backend/data/database.db (未追踪的运行时数据) |
 | 2026-08-24 20:00 | [fix] 修复工具面板拖动位置突变漂移：弃用 getBoundingClientRect 含 border-box 的坐标系与 CSS left/top padding-box 参考系混用导致的 (parentRect.left - borderLeft) 恒定偏移；改为纯屏幕 delta 模式 — mousedown 记录 (clientX/Y + panel.offsetLeft/Top DOM 快照)，mousemove 直接 delta 叠加（零坐标换算）；transition 从 className+inline 冲突改为统一 inline 精确配置（拖拽期间 none，释放后仅 box-shadow 150ms，left/top 0s 跳变）；函数式 setState + 每次从起点重算防批处理闭包陈旧 (V1.3.4) | src/admin/audit-tools/components/ToolPanel.tsx |

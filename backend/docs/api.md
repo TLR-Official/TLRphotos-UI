@@ -261,11 +261,11 @@ Content-Type: multipart/form-data
 | aperture | string | 否 | 光圈 |
 | width | number | 否 | 图片宽度 |
 | height | number | 否 | 图片高度 |
-| watermarkText | string | 否 | 水印文本 |
-| watermarkX | number | 否 | 水印 X 坐标 |
-| watermarkY | number | 否 | 水印 Y 坐标 |
-| watermarkOpacity | number | 否 | 水印不透明度 |
-| watermarkSize | number | 否 | 水印字号 |
+| watermarkText | string | 否 | 水印文本（未提供或空字符串则跳过水印合成） |
+| watermarkX | number | 否 | 水印锚点（文本中心）X 坐标，**单位：最终预览图宽度的百分比 0-100**；0=左边缘、50=水平居中、100=右边缘 |
+| watermarkY | number | 否 | 水印锚点（文本中心）Y 坐标，**单位：最终预览图高度的百分比 0-100**；0=上边缘、50=垂直居中、100=下边缘 |
+| watermarkOpacity | number | 否 | 水印不透明度，**单位：0-1 浮点数**（例如 0.6 = 60% 不透明）；后端兜底默认 0.6 |
+| watermarkSize | number | 否 | 水印字号，**语义：长边 1200px 的预览图上的字号（CSS px）**；后端按最终预览图长边/1200 线性缩放，保证不同分辨率下水印视觉比例一致。默认 32 |
 | structured_tags | string | 否 | 结构化标签 JSON |
 
 **响应**:
