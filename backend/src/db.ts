@@ -11,7 +11,9 @@ import { open, Database } from 'sqlite';
 import path from 'path';
 
 // 数据库文件存放路径：backend/data/database.db
-const dbPath = path.join(__dirname, '../data/database.db');
+// V1.5.1：支持通过 DB_PATH 环境变量覆盖，测试套件用它指向隔离的测试库，
+// 避免测试用户/照片写入生产 database.db（曾导致用户量虚高 27 条垃圾记录）
+const dbPath = process.env.DB_PATH ?? path.join(__dirname, '../data/database.db');
 
 // 全局共享的数据库实例，由 initDb 初始化后供各路由模块使用
 export let db: Database;
@@ -492,6 +494,11 @@ const seedMockData = async () => {
         photo.created_at
       );
     }
+
+    // V1.5.1：演示数据状态分布 — 前 10 张标记已审核（供前台画廊展示与测试用例 fixture），
+    // 后 2 张保持默认 pending（供审核流程演示）。原 seed 未设 status 全为 pending，
+    // 导致切到测试库后 photos.test.ts 取不到 approved 照片
+    await db.run("UPDATE photos SET status = 'approved' WHERE id IN ('000001','000002','000003','000004','000005','000006','000007','000008','000009','000010')");
   }
 
   // 文章表为空时插入 5 篇演示文章

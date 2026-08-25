@@ -6,12 +6,19 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 
 let app: express.Application;
 let superAdminToken: string;
 let zoneAuditorToken: string;
 
 beforeAll(async () => {
+  // V1.5.1：测试库隔离，避免 admin_users/测试照片写进生产 database.db
+  const testDbPath = path.join(__dirname, '../../data/test-admin-database.db');
+  if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+  process.env.DB_PATH = testDbPath;
+
   process.env.JWT_SECRET = 'test-jwt-secret';
   process.env.ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('base64');
   process.env.ADMIN_JWT_SECRET = 'test-admin-jwt-secret';

@@ -7,7 +7,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { db } from '../../src/db';
+import path from 'path';
+import fs from 'fs';
 
 let app: express.Application;
 
@@ -18,13 +19,21 @@ let tokenA: string;
 let tokenB: string;
 // 测试目标 photo id（运行时从已有 mock 数据中取一条）
 let testPhotoId: string;
+// V1.5.1：db 句柄在 initDb 后动态获取，避免模块顶层 import 时读错 DB_PATH
+let db: import('../../src/db').Database;
 
 beforeAll(async () => {
+  // V1.5.1：测试库隔离，避免测试照片/点赞/浏览记录写进生产 database.db
+  const testDbPath = path.join(__dirname, '../../data/test-photos-database.db');
+  if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+  process.env.DB_PATH = testDbPath;
+
   process.env.JWT_SECRET = 'test-jwt-secret';
   process.env.ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('base64');
 
-  const { initDb } = await import('../../src/db');
-  await initDb();
+  const dbModule = await import('../../src/db');
+  await dbModule.initDb();
+  db = dbModule.db;
 
   const photoRoutes = (await import('../../src/routes/photos')).default;
 

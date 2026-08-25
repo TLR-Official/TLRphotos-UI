@@ -187,6 +187,8 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 12:55 | [fix] 修复测试数据污染生产库导致用户量虚高：db.ts dbPath 支持 DB_PATH 环境变量覆盖（原硬编码指向生产 database.db）；auth.test.ts 真正赋值 testDbPath 给环境变量（原只算没用）；admin.test.ts/photos.test.ts 补测试库隔离；seedMockData 标记前 10 张演示照片为 approved（原全 pending 导致切测试库后取不到 approved fixture）；清理生产库 75 条 @example.com 测试垃圾用户（90→15）(V1.5.1) | backend/src/db.ts, backend/tests/integration/*.test.ts, backend/data/database.db (未追踪) |
+| 2026-08-25 12:55 | [fix] 部署仪表盘路由顺序修复至运行服务：rebuild backend dist + restart tlrphotos-backend.service（原进程自 8/16 未重启运行旧代码，/photos/stats 被 /photos/:id 抢先匹配返回 404 照片不存在）；验证三个端点 200 + 数据准确（stats total=60=16+34+10，userCount=15，health healthy=true）(V1.5.1) | backend/dist/**, tlrphotos-backend.service |
 | 2026-08-25 12:40 | [release] 版本号升级至 V1.5.0 — 匿名数据清理 + 上传强制登录 + 仪表盘修复 + 监控告警 | 全项目 |
 | 2026-08-25 12:40 | [fix] 修复审核统计接口 404：`/photos/stats` 路由注册在 `/photos/:id` 之后导致 "stats" 被当作 :id 匹配进详情路由，调整为注册在前并加注释说明顺序约束 | backend/src/routes/admin.ts |
 | 2026-08-25 12:40 | [feat] 上传接口强制登录：/upload、/upload/presigned、/upload/complete 三接口前置 JWT 校验，从 token 解析 userId 写入 photos.user_id，杜绝匿名上传落库 NULL；缺少参数返回 400（先认证后参数校验） | backend/src/routes/photos.ts, backend/tests/integration/photos.test.ts |

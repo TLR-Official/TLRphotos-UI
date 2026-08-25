@@ -25,6 +25,9 @@ beforeAll(async () => {
   // 设置环境变量
   process.env.JWT_SECRET = 'test-jwt-secret';
   process.env.ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('base64');
+  // V1.5.1：真正把测试库路径传给 db.ts（dbPath 读 DB_PATH 环境变量），
+  // 原 bug：只算了 testDbPath 却没赋值，导致测试用户写进生产 database.db
+  process.env.DB_PATH = testDbPath;
 
   // 动态导入以使用正确的环境变量
   const { initDb } = await import('../../src/db');
