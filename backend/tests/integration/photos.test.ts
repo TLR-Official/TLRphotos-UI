@@ -134,8 +134,10 @@ describe('GET /api/photos/image/* 安全检查', () => {
 
 describe('POST /api/photos/upload/complete', () => {
   it('应在缺少 key 参数时返回 400', async () => {
+    // V1.5.0：上传接口已强制登录，验证参数校验前需携带有效 token
     const res = await request(app)
       .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
       .send({
         title: '测试照片',
       });
@@ -354,5 +356,31 @@ describe('图片统计与点赞', () => {
     // 清理
     await db.run('DELETE FROM photo_views WHERE photo_id = ? AND viewer_key = ?', testPhotoId, 'ip:198.51.100.1');
     await db.run('UPDATE photos SET views = ? WHERE id = ?', initial.views, testPhotoId);
+  });
+});
+
+// ============================================================================
+// V1.5.0 上传接口强制登录测试
+// ============================================================================
+
+describe('V1.5.0 上传接口强制登录', () => {
+  it('POST /api/photos/upload/presigned 未登录返回 401 + AUTH_REQUIRED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/presigned')
+      .send({ fileName: 'test.jpg' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('POST /api/photos/upload/complete 未登录返回 401 + AUTH_REQUIRED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .send({ key: 'photos/test.jpg' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('AUTH_REQUIRED');
   });
 });

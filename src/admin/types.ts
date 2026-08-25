@@ -82,6 +82,8 @@ export interface AuditStats {
   pending: number;
   approved: number;
   rejected: number;
+  /** V1.5.0：当前管理员所属分区名（zone_master/zone_auditor），super 时为 null */
+  zoneName?: string | null;
 }
 
 /** 系统总览统计（仪表盘使用） */
@@ -91,6 +93,15 @@ export interface SystemStats {
   adminCount: number;
   todayUploads: number;
   pendingCount: number;
+  /** V1.5.0：当前管理员所属分区名（zone_master/zone_auditor），super 时为 null */
+  zoneName?: string | null;
+}
+
+/** 仪表盘健康检查结果（V1.5.0 新增） */
+export interface DashboardHealth {
+  healthy: boolean;
+  issues: string[];
+  checked_at: string;
 }
 
 /** 管理员操作日志 */

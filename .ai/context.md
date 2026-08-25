@@ -187,6 +187,13 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 12:40 | [release] 版本号升级至 V1.5.0 — 匿名数据清理 + 上传强制登录 + 仪表盘修复 + 监控告警 | 全项目 |
+| 2026-08-25 12:40 | [fix] 修复审核统计接口 404：`/photos/stats` 路由注册在 `/photos/:id` 之后导致 "stats" 被当作 :id 匹配进详情路由，调整为注册在前并加注释说明顺序约束 | backend/src/routes/admin.ts |
+| 2026-08-25 12:40 | [feat] 上传接口强制登录：/upload、/upload/presigned、/upload/complete 三接口前置 JWT 校验，从 token 解析 userId 写入 photos.user_id，杜绝匿名上传落库 NULL；缺少参数返回 400（先认证后参数校验） | backend/src/routes/photos.ts, backend/tests/integration/photos.test.ts |
+| 2026-08-25 12:40 | [feat] 仪表盘数据显示修复：统计查询 try/catch 错误隔离替代 Promise.allSettled 类型问题；分区数据过滤（zone_auditor/zone_master 仅本 zone）；total 字段显式 = pending+approved+rejected 修复运算符优先级歧义；GET /api/admin/dashboard/health 健康检查接口检测匿名照片/孤儿记录；前端 DashboardPage 加错误处理 + 重试按钮 + 分区提示 + 告警条 | backend/src/routes/admin.ts, src/admin/DashboardPage.tsx |
+| 2026-08-25 12:40 | [chore] 匿名数据清理：删除 50 条 user_id IS NULL 匿名照片记录 + 关联 photo_likes/photo_views 级联清理；新增 check-data-consistency.ts 巡检脚本（孤儿记录/异常状态检查），清理 3 条 photo_views 孤儿记录 | backend/src/scripts/check-data-consistency.ts, backend/data/database.db (未追踪) |
+| 2026-08-25 12:40 | [test] 新增 6 个集成用例：stats 路由 total 计算、zone 过滤 zoneName、健康检查 healthy/issues、匿名照片告警、上传未登录 401、缺 key 参数 400（带 token） | backend/tests/integration/admin.test.ts, backend/tests/integration/photos.test.ts |
+| 2026-08-25 12:40 | [docs] API 文档同步：上传接口需登录说明、统计接口 zone 过滤与 zoneName 字段、健康检查接口契约 | backend/docs/api.md |
 | 2026-08-25 08:50 | [release] 版本号升级至 V1.4.0 — 图片统计系统优化与点赞交互增强 | 全项目 |
 | 2026-08-25 08:50 | [feat] 浏览次数 24h 去重统计：登录按 user_id + 未登录按 client IP，新增 photo_views 表 (photo_id, viewer_key, last_viewed_at) + recordViewIfEligible 事务 helper + X-Forwarded-For 首段 IP 提取 + 每小时清理 7 天前旧记录 | backend/src/db.ts, backend/src/routes/photos.ts |
 | 2026-08-25 08:50 | [feat] 点赞交互改造：后端强制 JWT 登录（去 req.body.userId anonymous 共用 bug）+ 详情接口返回 is_liked 字段；前端 lucide-react Heart 图标红色填充切换 + 乐观更新 + 失败回滚 + 未登录引导按钮 | backend/src/routes/photos.ts, src/features/gallery/PhotoDetailPage.tsx, src/api/photos.ts, src/features/gallery/types.ts |

@@ -648,13 +648,24 @@ function sendForbiddenImage(res: any) {
 }
 
 /**
- * 生成 OSS 预签名上传地址。
+ * 生成 OSS 预签名上传地址（需登录）。
  * 前端使用该地址直接 PUT 上传文件至 OSS，无需经过服务端中转。
  * @body fileName 目标文件名
  * @returns uploadUrl 预签名上传 URL、key OSS 对象 Key
  */
 router.post('/upload/presigned', async (req, res) => {
   try {
+    // 强制登录：与 /upload 接口策略一致，防止匿名用户生成上传地址
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    }
+    try {
+      jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production');
+    } catch {
+      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
+    }
+
     const { fileName } = req.body;
 
     if (!fileName) {
@@ -677,12 +688,25 @@ router.post('/upload/presigned', async (req, res) => {
 });
 
 /**
- * 预签名上传完成回调接口。
+ * 预签名上传完成回调接口（需登录）。
  * 前端直传 OSS 成功后调用，服务端确认上传结果并写入照片元数据。
  * 照片 ID 取当前最大数值 ID + 1，并补零至 6 位。
  */
 router.post('/upload/complete', async (req, res) => {
   try {
+    // 强制登录：从 JWT 解析 userId 写入 photos.user_id，杜绝匿名上传
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    }
+    let userId: string;
+    try {
+      const decoded = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
+      userId = decoded.userId;
+    } catch {
+      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
+    }
+
     const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height } = req.body;
 
     if (!key) {
@@ -697,6 +721,7 @@ router.post('/upload/complete', async (req, res) => {
       title: title || '未命名照片',
       thumbnail_path: uploadResult.thumbnailUrl,
       original_url: uploadResult.url,
+      user_id: userId, // V1.5.0：补 user_id 字段，防止落库为 NULL
       tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t)) : '[]',
       width: width || 0,
       height: height || 0,
@@ -731,11 +756,12 @@ router.post('/upload/complete', async (req, res) => {
       newId = String(currentMaxId + 1).padStart(6, '0');
 
       await db.run(
-        'INSERT INTO photos (id, title, thumbnail_path, original_url, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         newId,
         newPhoto.title,
         newPhoto.thumbnail_path,
         newPhoto.original_url,
+        newPhoto.user_id,
         newPhoto.tags,
         newPhoto.width,
         newPhoto.height,
@@ -813,15 +839,18 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       }
     );
 
-    // 可选鉴权：解析 JWT 获取上传者 userId，未登录则记为匿名
-    let userId: string | null = null;
+    // 强制登录：与 V1.4.0 点赞强制登录策略一致，杜绝匿名上传
+    // 历史曾允许 user_id 为 null 写入，导致 50 张匿名照片污染统计；V1.5.0 起要求所有上传必须登录
     const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
-        userId = decoded.userId;
-      } catch {}
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    }
+    let userId: string;
+    try {
+      const decoded = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
+      userId = decoded.userId;
+    } catch {
+      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
     }
 
     const {

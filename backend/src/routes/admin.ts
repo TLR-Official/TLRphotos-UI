@@ -387,6 +387,75 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
+ * 获取照片审核状态统计。
+ * 按状态分组聚合计数，返回总数、待审核、已通过、已拒绝数量。
+ * zone_auditor 与 zone_master 仅统计本分区照片，super 统计全部分区。
+ *
+ * 注意：本路由必须注册在 `/photos/:id` 之前，否则 "stats" 会被当作 :id
+ * 参数匹配进详情路由，导致 404。
+ */
+router.get('/photos/stats', adminAuthMiddleware, requireRole(['super', 'zone_master', 'zone_auditor']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // 分区审核员与分区总审核仅统计本分区照片
+  const zoneFilter = (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master')
+    ? req.admin.zone
+    : null;
+
+  let statsQuery = `
+    SELECT
+      status,
+      COUNT(*) as count
+    FROM photos
+  `;
+  const statsParams: (string | number)[] = [];
+
+  if (zoneFilter) {
+    statsQuery += ' WHERE category = ?';
+    statsParams.push(zoneFilter);
+  }
+
+  statsQuery += ' GROUP BY status';
+
+  // V1.5.0：直接 try/catch 替代 Promise.allSettled（避免类型推断问题）
+  let stats: { status: string; count: number }[];
+  try {
+    // sqlite 包的 db.all 类型推断在某些 TS 版本下会丢数组语义，用 as 断言保证类型
+    stats = (await db.all(statsQuery, statsParams)) as { status: string; count: number }[];
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: '审核统计查询失败',
+      error: e instanceof Error ? e.message : 'unknown',
+    });
+  }
+
+  // 转换为以状态为键的对象便于前端读取
+  const statsMap: Record<string, number> = {};
+  stats.forEach((s: { status: string; count: number }) => {
+    statsMap[s.status] = s.count;
+  });
+
+  // V1.5.0 修复：原 `a + b + c || 0` 有运算符优先级歧义，改为每个字段显式兜底
+  const pending = statsMap.pending || 0;
+  const approved = statsMap.approved || 0;
+  const rejected = statsMap.rejected || 0;
+
+  res.json({
+    success: true,
+    data: {
+      total: pending + approved + rejected,
+      pending,
+      approved,
+      rejected,
+      zoneName: zoneFilter || null,
+    },
+  });
+});
+
+/**
  * 获取照片详情（管理员专用）。
  * 返回完整照片信息：EXIF元数据、用户填写的标题/描述/标签、水印配置、
  * 上传者信息、以及所有图片的代理 URL。
@@ -536,51 +605,6 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
- * 获取照片审核状态统计。
- * 按状态分组聚合计数，返回总数、待审核、已通过、已拒绝数量。
- * zone_auditor 与 zone_master 仅统计本分区照片，super 统计全部分区。
- */
-router.get('/photos/stats', adminAuthMiddleware, async (req, res) => {
-  if (!req.admin) {
-    return res.status(401).json({ success: false, message: '未授权' });
-  }
-
-  let statsQuery = `
-    SELECT
-      status,
-      COUNT(*) as count
-    FROM photos
-  `;
-  const statsParams: (string | number)[] = [];
-
-  // 分区审核员与分区总审核仅统计本分区照片
-  if (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') {
-    statsQuery += ' WHERE category = ?';
-    statsParams.push(req.admin.zone);
-  }
-
-  statsQuery += ' GROUP BY status';
-
-  const stats = await db.all(statsQuery, statsParams);
-
-  // 转换为以状态为键的对象便于前端读取
-  const statsMap: Record<string, number> = {};
-  stats.forEach(s => {
-    statsMap[s.status] = s.count;
-  });
-
-  res.json({
-    success: true,
-    data: {
-      total: statsMap.pending + statsMap.approved + statsMap.rejected || 0,
-      pending: statsMap.pending || 0,
-      approved: statsMap.approved || 0,
-      rejected: statsMap.rejected || 0,
-    },
-  });
-});
-
-/**
  * 获取站点用户列表（分页，仅 super 可访问）。
  * 支持按用户名或邮箱关键词模糊搜索。
  * @query page 页码
@@ -703,31 +727,145 @@ router.get('/logs', adminAuthMiddleware, requireRole(['super', 'zone_master']), 
  * 获取后台仪表盘统计数据。
  * 并行查询用户数、照片数、管理员数、今日上传数、待审核数，
  * 用于后台首页关键指标展示。
+ * zone_master/zone_auditor 仅统计本分区照片（V1.5.0 修复：原 today/pending 无 zone 过滤导致数据不一致）。
+ * V1.5.0：改用 Promise.allSettled 隔离单查询失败，返回 partial_error 字段供前端调试。
  */
-router.get('/stats', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
+router.get('/stats', adminAuthMiddleware, requireRole(['super', 'zone_master', 'zone_auditor']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
-  // 五个独立统计查询并行执行，减少总响应耗时
-  const [userCount, photoCount, adminCount, todayUploads, pendingCount] = await Promise.all([
-    db.get('SELECT COUNT(*) as count FROM users WHERE is_active = 1'),
-    db.get('SELECT COUNT(*) as count FROM photos'),
-    db.get('SELECT COUNT(*) as count FROM admin_users WHERE is_active = 1'),
-    db.get("SELECT COUNT(*) as count FROM photos WHERE DATE(created_at) = DATE('now')"),
-    db.get("SELECT COUNT(*) as count FROM photos WHERE status = 'pending'"),
+  // zone_master/zone_auditor 仅统计本分区照片；super 看全部分区
+  const zoneFilter = (req.admin.role === 'zone_master' || req.admin.role === 'zone_auditor')
+    ? req.admin.zone
+    : null;
+  const zoneWhere = zoneFilter ? 'AND category = ?' : '';
+
+  // 五个独立统计查询并行执行，allSettled 隔离失败避免整体 500
+  const queries: { key: string; sql: string; params: (string | number)[] }[] = [
+    { key: 'userCount', sql: 'SELECT COUNT(*) as count FROM users WHERE is_active = 1', params: [] },
+    { key: 'photoCount', sql: zoneFilter
+      ? 'SELECT COUNT(*) as count FROM photos WHERE category = ?'
+      : 'SELECT COUNT(*) as count FROM photos',
+      params: zoneFilter ? [zoneFilter] : [] },
+    { key: 'adminCount', sql: 'SELECT COUNT(*) as count FROM admin_users WHERE is_active = 1', params: [] },
+    { key: 'todayUploads', sql: zoneFilter
+      ? "SELECT COUNT(*) as count FROM photos WHERE DATE(created_at) = DATE('now') AND category = ?"
+      : "SELECT COUNT(*) as count FROM photos WHERE DATE(created_at) = DATE('now')",
+      params: zoneFilter ? [zoneFilter] : [] },
+    { key: 'pendingCount', sql: zoneFilter
+      ? "SELECT COUNT(*) as count FROM photos WHERE status = 'pending' AND category = ?"
+      : "SELECT COUNT(*) as count FROM photos WHERE status = 'pending'",
+      params: zoneFilter ? [zoneFilter] : [] },
+  ];
+
+  const results = await Promise.allSettled(queries.map(q => db.get<{ count: number }>(q.sql, q.params)));
+
+  const data: Record<string, number> = {};
+  const errors: string[] = [];
+
+  results.forEach((r, i) => {
+    const { key } = queries[i];
+    if (r.status === 'fulfilled') {
+      data[key] = r.value?.count ?? 0;
+    } else {
+      data[key] = 0;
+      errors.push(`${key}: ${r.reason instanceof Error ? r.reason.message : 'unknown'}`);
+    }
+  });
+
+  // 附带当前管理员的 zone 名（zone_master/zone_auditor 时供前端显示"当前分区：xxx"）
+  const zoneName = zoneFilter || null;
+
+  res.json({
+    success: true,
+    data: { ...data, zoneName },
+    ...(errors.length ? { partial_error: errors.join('; ') } : {}),
+  });
+});
+
+/**
+ * 仪表盘健康检查接口（V1.5.0 新增）。
+ * 检查关键数据一致性，返回 healthy 状态与 issues 列表，供前端告警条轮询。
+ * 检查项：匿名照片数、anonymous 点赞残留、异常状态照片数、近 1h 告警数。
+ */
+router.get('/dashboard/health', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const checks = await Promise.allSettled([
+    db.get<{ cnt: number }>('SELECT COUNT(*) as cnt FROM photos WHERE user_id IS NULL'),
+    db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM photo_likes WHERE user_id = 'anonymous'"),
+    db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM article_likes WHERE user_id = 'anonymous'"),
+    db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM photos WHERE status NOT IN ('approved', 'pending', 'rejected')"),
+    db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM admin_logs WHERE action = 'dashboard_alert' AND created_at > datetime('now', '-1 hour')"),
   ]);
+
+  const values = checks.map(r => r.status === 'fulfilled' ? (r.value?.cnt ?? 0) : -1); // -1 表示查询失败
+  const [anonPhotos, anonLikes, anonArtLikes, badStatus, recentAlerts] = values;
+
+  const issues: string[] = [];
+  if (anonPhotos > 0) issues.push(`匿名照片: ${anonPhotos}`);
+  if (anonLikes > 0) issues.push(`anonymous 点赞: ${anonLikes}`);
+  if (anonArtLikes > 0) issues.push(`anonymous 文章点赞: ${anonArtLikes}`);
+  if (badStatus > 0) issues.push(`异常状态照片: ${badStatus}`);
+  if (recentAlerts > 0) issues.push(`近 1h 告警: ${recentAlerts}`);
+  checks.forEach((r, i) => {
+    if (r.status === 'rejected') issues.push(`检查项 ${i} 查询失败: ${r.reason instanceof Error ? r.reason.message : 'unknown'}`);
+  });
 
   res.json({
     success: true,
     data: {
-      userCount: userCount?.count || 0,
-      photoCount: photoCount?.count || 0,
-      adminCount: adminCount?.count || 0,
-      todayUploads: todayUploads?.count || 0,
-      pendingCount: pendingCount?.count || 0,
+      healthy: issues.length === 0,
+      issues,
+      checked_at: new Date().toISOString(),
     },
   });
 });
+
+// ── 仪表盘健康监控定时任务（V1.5.0 新增） ─────────────────────────────────
+// 每 5 分钟检查关键数据一致性，异常时直接 INSERT INTO admin_logs（action='dashboard_alert'）
+// + console.error 输出。前端 DashboardPage 30s 轮询 /dashboard/health 读取告警。
+setInterval(async () => {
+  try {
+    const checks = await Promise.allSettled([
+      db.get<{ cnt: number }>('SELECT COUNT(*) as cnt FROM photos WHERE user_id IS NULL'),
+      db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM photo_likes WHERE user_id = 'anonymous'"),
+      db.get<{ cnt: number }>("SELECT COUNT(*) as cnt FROM photos WHERE status NOT IN ('approved', 'pending', 'rejected')"),
+    ]);
+
+    const [anonPhotosR, anonLikesR, badStatusR] = checks;
+    const anonPhotos = anonPhotosR.status === 'fulfilled' ? (anonPhotosR.value?.cnt ?? 0) : 0;
+    const anonLikes = anonLikesR.status === 'fulfilled' ? (anonLikesR.value?.cnt ?? 0) : 0;
+    const badStatus = badStatusR.status === 'fulfilled' ? (badStatusR.value?.cnt ?? 0) : 0;
+
+    const detected: string[] = [];
+    if (anonPhotos > 0) detected.push(`anon_photos=${anonPhotos}`);
+    if (anonLikes > 0) detected.push(`anon_likes=${anonLikes}`);
+    if (badStatus > 0) detected.push(`bad_status=${badStatus}`);
+
+    if (detected.length > 0) {
+      const issueDetails = JSON.stringify({ issues: detected, timestamp: new Date().toISOString() });
+      // 直接 INSERT 不依赖 logAdminAction（无 AdminUser 实例）
+      await db.run(
+        'INSERT INTO admin_logs (id, admin_id, admin_name, action, target_type, target_id, details, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        `health-monitor-${Date.now()}`,
+        'system_health_monitor',
+        'Health Monitor',
+        'dashboard_alert',
+        'system',
+        'health',
+        issueDetails,
+        '127.0.0.1',
+        new Date().toISOString()
+      );
+      console.error(`[HealthMonitor] 检测到异常: ${detected.join(', ')}`);
+    }
+  } catch (e) {
+    console.error('[HealthMonitor] 检查失败:', e);
+  }
+}, 5 * 60 * 1000); // 5 分钟
 
 export default router;

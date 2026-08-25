@@ -195,6 +195,8 @@
 
 **POST** `/api/photos/upload/presigned`
 
+**需登录**（V1.5.0）：请求头必须包含 `Authorization: Bearer <token>`，未登录返回 `401 { code: "AUTH_REQUIRED" }`。杜绝匿名用户生成上传地址，与 V1.4.0 点赞强制登录策略一致。
+
 **请求体**:
 ```json
 {
@@ -216,6 +218,8 @@
 ### 完成上传并保存照片
 
 **POST** `/api/photos/upload/complete`
+
+**需登录**（V1.5.0）：请求头必须包含 `Authorization: Bearer <token>`。从 JWT 解析 userId 写入 `photos.user_id`，防止落库为 NULL（历史曾因此导致 50 张匿名照片污染统计）。
 
 **请求体**:
 ```json
@@ -778,6 +782,94 @@ Authorization: Bearer <admin_token>
       "icon": "🚗"
     }
   ]
+}
+```
+
+---
+
+## 管理后台统计与监控
+
+### 获取仪表盘系统统计
+
+**GET** `/api/admin/stats`
+
+**需登录**：管理员 token。`zone_master`/`zone_auditor` 仅统计本分区照片，`super` 看全部分区。
+
+**响应**（V1.5.0）:
+```json
+{
+  "success": true,
+  "data": {
+    "userCount": 156,
+    "photoCount": 89,
+    "adminCount": 3,
+    "todayUploads": 5,
+    "pendingCount": 12,
+    "zoneName": null
+  }
+}
+```
+
+**字段说明**：
+- `zoneName`：当前管理员所属分区名（`zone_master`/`zone_auditor` 时返回，`super` 时为 `null`）；前端用于显示"当前分区：xxx"提示
+- `partial_error`：可选，单个统计查询失败时返回错误明细（V1.5.0 改用 `Promise.allSettled` 隔离失败）
+
+### 获取照片审核统计
+
+**GET** `/api/admin/photos/stats`
+
+**需登录**：管理员 token。`zone_master`/`zone_auditor` 仅统计本分区照片。
+
+**响应**（V1.5.0 修复 total 运算符优先级 + 增加 zoneName）:
+```json
+{
+  "success": true,
+  "data": {
+    "total": 89,
+    "pending": 12,
+    "approved": 67,
+    "rejected": 10,
+    "zoneName": "landscape"
+  }
+}
+```
+
+### 仪表盘健康检查（V1.5.0 新增）
+
+**GET** `/api/admin/dashboard/health`
+
+**需登录**：`super` 或 `zone_master` token。
+
+**作用**：检查关键数据一致性，返回 `healthy` 状态与 `issues` 列表。前端 DashboardPage 每 30 秒轮询，异常时显示黄色告警条。后端另有 5 分钟定时任务（`setInterval`），异常时写入 `admin_logs`（action=`dashboard_alert`）。
+
+**检查项**：
+- `photos.user_id IS NULL` 数量（应为 0）
+- `photo_likes.user_id='anonymous'` 残留（应为 0）
+- `article_likes.user_id='anonymous'` 残留（应为 0）
+- `photos.status` 非 approved/pending/rejected 的异常状态数（应为 0）
+- 近 1 小时 `admin_logs` 中 `dashboard_alert` 数量
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "healthy": true,
+    "issues": [],
+    "checked_at": "2026-08-25T09:30:00.000Z"
+  }
+}
+```
+
+异常时：
+```json
+{
+  "success": true,
+  "data": {
+    "healthy": false,
+    "issues": ["匿名照片: 5", "anonymous 点赞: 3"],
+    "checked_at": "2026-08-25T09:30:00.000Z"
+  }
 }
 ```
 

@@ -241,8 +241,19 @@ export async function getLogs(page = 1, pageSize = 50): Promise<{ success: boole
 }
 
 /** 获取系统总览统计（用户数、照片数、今日上传数、待审核数） */
-export async function getStats(): Promise<{ success: boolean; data?: SystemStats }> {
+export async function getStats(): Promise<{ success: boolean; data?: SystemStats; partial_error?: string }> {
   const response = await fetch(`${API_BASE}/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 仪表盘健康检查（V1.5.0 新增）
+ * 检查关键数据一致性，返回 healthy 状态与 issues 列表
+ */
+export async function getDashboardHealth(): Promise<{ success: boolean; data?: import('./types').DashboardHealth }> {
+  const response = await fetch(`${API_BASE}/dashboard/health`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.json();

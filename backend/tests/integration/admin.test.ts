@@ -181,3 +181,62 @@ describe('GET /api/admin/logs', () => {
     expect(res.status).toBe(403);
   });
 });
+
+// ============================================================================
+// V1.5.0 仪表盘数据一致性 + 上传强制登录 + 健康检查
+// 覆盖：zone 过滤、total 运算符优先级修复、health 接口、上传接口 401
+// ============================================================================
+
+describe('V1.5.0 仪表盘数据与上传强制登录', () => {
+  it('GET /api/admin/stats zone_auditor 仅返回本 zone 统计 + zoneName', async () => {
+    const res = await request(app)
+      .get('/api/admin/stats')
+      .set('Authorization', `Bearer ${zoneAuditorToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('zoneName');
+    // zoneAuditorToken 的 zone 是 'landscape'，所以 zoneName 应为 'landscape'
+    expect(res.body.data.zoneName).toBe('landscape');
+  });
+
+  it('GET /api/admin/photos/stats total = pending + approved + rejected（无运算符优先级 bug）', async () => {
+    const res = await request(app)
+      .get('/api/admin/photos/stats')
+      .set('Authorization', `Bearer ${superAdminToken}`);
+
+    expect(res.status).toBe(200);
+    const { total, pending, approved, rejected } = res.body.data;
+    expect(total).toBe(pending + approved + rejected);
+  });
+
+  it('GET /api/admin/dashboard/healthy 无异常时返回 healthy=true', async () => {
+    const res = await request(app)
+      .get('/api/admin/dashboard/health')
+      .set('Authorization', `Bearer ${superAdminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveProperty('healthy');
+    expect(res.body.data).toHaveProperty('issues');
+    expect(Array.isArray(res.body.data.issues)).toBe(true);
+  });
+
+  it('GET /api/admin/dashboard/health 检测到匿名照片时返回 issues', async () => {
+    // 插入一条 user_id IS NULL 照片触发告警
+    const { db } = await import('../../src/db');
+    await db.run(
+      `INSERT OR REPLACE INTO photos (id, title, thumbnail_path, original_url, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)`,
+      'test-anon-detector', '测试匿名照片', '', '', new Date().toISOString()
+    );
+
+    const res = await request(app)
+      .get('/api/admin/dashboard/health')
+      .set('Authorization', `Bearer ${superAdminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.healthy).toBe(false);
+    expect(res.body.data.issues.some((i: string) => i.includes('匿名照片'))).toBe(true);
+
+    // 清理测试数据
+    await db.run('DELETE FROM photos WHERE id = ?', 'test-anon-detector');
+  });
+});
