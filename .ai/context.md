@@ -187,6 +187,11 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 08:50 | [release] 版本号升级至 V1.4.0 — 图片统计系统优化与点赞交互增强 | 全项目 |
+| 2026-08-25 08:50 | [feat] 浏览次数 24h 去重统计：登录按 user_id + 未登录按 client IP，新增 photo_views 表 (photo_id, viewer_key, last_viewed_at) + recordViewIfEligible 事务 helper + X-Forwarded-For 首段 IP 提取 + 每小时清理 7 天前旧记录 | backend/src/db.ts, backend/src/routes/photos.ts |
+| 2026-08-25 08:50 | [feat] 点赞交互改造：后端强制 JWT 登录（去 req.body.userId anonymous 共用 bug）+ 详情接口返回 is_liked 字段；前端 lucide-react Heart 图标红色填充切换 + 乐观更新 + 失败回滚 + 未登录引导按钮 | backend/src/routes/photos.ts, src/features/gallery/PhotoDetailPage.tsx, src/api/photos.ts, src/features/gallery/types.ts |
+| 2026-08-25 08:50 | [fix] API 文档同步契约：is_liked 字段说明、点赞需登录与 401 code:AUTH_REQUIRED、浏览去重机制段落 | backend/docs/api.md |
+| 2026-08-25 08:50 | [test] 新增 8 个集成用例：IP/user_id 去重、24h 窗口、强制登录、幂等、100 并发点赞一致性 | backend/tests/integration/photos.test.ts |
 | 2026-08-24 21:45 | [fix] 水印尺寸与位置所见即所得：修复上传界面 watermarkSize/watermarkX/Y 与后端 sharp 合成结果比例/坐标不一致 — 新增 measureRenderedImage() 用 naturalWidth*minRatio 推导 object-contain 后图像真实矩形（drawnW/drawnH/drawnLeft/drawnTop），预览 fontSize = watermarkSize * max(drawnW, drawnH)/1200（与后端 scaleFactor 公式 1:1 同源），水印定位相对真实图像矩形百分比而非容器百分比；字号控件显示「基准 1200px → 预览 X px」；描边 WebkitTextStroke 与后端 SVG stroke 对齐。同步更新 api.md 4 个 watermark 字段单位说明 (V1.3.5) | src/features/upload/UploadPage.tsx, backend/docs/api.md |
 | 2026-08-24 21:14 | [chore] 插入最高管理员账户 星空联盟 到 backend/data/database.db（role=super zone=default，邮箱 19876113516@163.com，bcrypt cost=10；createAdminUser 唯一性校验通过；adminLogin 闭环验证 token 签发成功、角色正确）；一次性脚本用完即删不留痕 | backend/data/database.db (未追踪的运行时数据) |
 | 2026-08-24 20:08 | [chore] 插入最高管理员账户 y 到 backend/data/database.db（role=super zone=default，邮箱 Yang16368@outlook.com，bcrypt cost=10；createAdminUser 唯一性校验通过；adminLogin 闭环验证 token 签发成功、角色正确）；create-admin-y.ts 脚本用完即删不留痕 | backend/data/database.db (未追踪的运行时数据) |

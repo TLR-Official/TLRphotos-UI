@@ -37,6 +37,8 @@ export interface PhotoDetail extends PhotoListItem {
   aperture: string;
   likes: number;
   views: number;
+  /** 当前登录用户是否已点赞；未登录或未点赞时为 false */
+  is_liked?: boolean;
   uploader?: Uploader | null;
   user_id?: string | null;
   /** 审核状态：approved / pending / rejected */

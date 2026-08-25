@@ -37,6 +37,53 @@ function getCurrentUserId(req: express.Request): string | null {
 }
 
 /**
+ * 浏览去重窗口：24 小时（毫秒）。
+ * 同一 viewerKey 在窗口内对同一照片的多次访问只计 1 次有效浏览。
+ */
+const VIEW_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 提取客户端真实 IP（项目部署在 Nginx 反代后）。
+ * 优先取 X-Forwarded-For 首段（最接近客户端的代理 IP），避免反代后所有请求都显示为 127.0.0.1。
+ */
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+  if (Array.isArray(forwarded) && forwarded.length) return forwarded[0];
+  return req.socket?.remoteAddress || req.ip || 'unknown';
+}
+
+/**
+ * 浏览计数 + 24h 去重。
+ * 计算 viewer_key（登录按 user_id，未登录按 IP），查询 photo_views：
+ *  - 若窗口内已存在记录：跳过计数（返回 false）
+ *  - 否则：UPDATE photos.views +1 并 INSERT OR REPLACE photo_views（返回 true）
+ * 注：sqlite3 单连接默认串行化执行，SELECT→UPDATE→INSERT 序列调用之间不会被其他请求插入，等价于原子事务。
+ * @param photoId 照片 ID
+ * @param viewerKey 'user:<userId>' 或 'ip:<clientIp>'
+ * @returns 是否计入了本次浏览（true=已计入，false=被去重）
+ */
+async function recordViewIfEligible(photoId: string, viewerKey: string): Promise<boolean> {
+  const now = Date.now();
+  const row = await db.get<{ last_viewed_at: number }>(
+    'SELECT last_viewed_at FROM photo_views WHERE photo_id = ? AND viewer_key = ?',
+    photoId,
+    viewerKey
+  );
+  if (row && now - row.last_viewed_at < VIEW_DEDUP_WINDOW_MS) {
+    return false; // 24h 内已浏览过，去重
+  }
+  await db.run('UPDATE photos SET views = views + 1 WHERE id = ?', photoId);
+  await db.run(
+    'INSERT OR REPLACE INTO photo_views (photo_id, viewer_key, last_viewed_at) VALUES (?, ?, ?)',
+    photoId,
+    viewerKey,
+    now
+  );
+  return true;
+}
+
+/**
  * 判定请求是否来自已认证的管理员。
  * 通过 ADMIN_JWT_SECRET 校验 Bearer Token，有效则返回 true。
  * 用于图片代理路由放行管理员对未审核照片的访问。
@@ -282,8 +329,9 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: '照片不存在' });
     }
 
-    // 浏览量 +1，独立于 /:id/view 接口，避免重复计数时调用方需要双次请求
-    await db.run('UPDATE photos SET views = views + 1 WHERE id = ?', id);
+    // 浏览计数：登录按 user_id 去重，未登录按 client IP 去重，24h 窗口内只计 1 次
+    const viewerKey = currentUserId ? `user:${currentUserId}` : `ip:${getClientIp(req)}`;
+    await recordViewIfEligible(id, viewerKey);
 
     // 查询上传者公开信息（仅返回 id、用户名、头像）
     let uploader = null;
@@ -298,11 +346,28 @@ router.get('/:id', async (req, res) => {
       }
     }
 
+    // 当前登录用户是否已点赞（未登录时为 false）
+    let is_liked = false;
+    if (currentUserId) {
+      const likeRow = await db.get('SELECT 1 FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
+      is_liked = !!likeRow;
+    }
+
+    // 重新查询最新浏览数（去重逻辑可能未自增）
+    const freshPhoto = await db.get<{ views: number; likes: number }>(
+      'SELECT views, likes FROM photos WHERE id = ?',
+      id
+    );
+
     delete photo.altitude;
     res.json({
       success: true,
       data: {
         ...photo,
+        // 用最新统计数覆盖 photo 对象上的旧值（去重逻辑可能未更新 views）
+        views: freshPhoto?.views ?? photo.views,
+        likes: freshPhoto?.likes ?? photo.likes,
+        is_liked,
         // 所有图片地址统一转换为代理 URL，避免暴露 OSS 直链
         // 附带 photoId 参数以支持代理路由的快速鉴权
         original_url: getProxyUrl(photo.original_url, photo.id),
@@ -322,31 +387,46 @@ router.get('/:id', async (req, res) => {
 });
 
 /**
- * 点赞照片。
- * 基于照片 ID + 用户 ID 联合主键去重，重复点赞直接返回当前计数不重复增加。
+ * 点赞照片（需登录）。
+ * 强制从 JWT 解析 user_id（不再从 body 取，杜绝 anonymous 共用导致一个匿名点赞后所有人无法再赞）。
+ * 重复点赞幂等返回当前计数。响应附带 is_liked 字段供前端切换 UI 状态。
  * @param id 照片 ID
- * @body userId 用户 ID，未传时记为 anonymous
- * @returns 最新点赞数
+ * @returns 最新点赞数 + is_liked 状态
  */
 router.post('/:id/like', async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId = 'anonymous' } = req.body || {};
 
-    // 已点赞：幂等返回当前点赞数
-    const existingLike = await db.get('SELECT * FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, userId);
+    // 强制登录：未登录或令牌无效返回 401
+    const currentUserId = getCurrentUserId(req);
+    if (!currentUserId) {
+      return res.status(401).json({
+        success: false,
+        message: '请先登录后点赞',
+        code: 'AUTH_REQUIRED',
+      });
+    }
 
+    // 已点赞：幂等返回当前点赞数 + is_liked=true
+    const existingLike = await db.get('SELECT 1 FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
     if (existingLike) {
-      const currentPhoto = await db.get('SELECT likes FROM photos WHERE id = ?', id);
-      return res.json({ success: true, data: { likes: currentPhoto?.likes || 0 } });
+      const currentPhoto = await db.get<{ likes: number }>('SELECT likes FROM photos WHERE id = ?', id);
+      return res.json({
+        success: true,
+        data: { likes: currentPhoto?.likes || 0, is_liked: true },
+      });
     }
 
     // 未点赞：写入点赞记录并累加照片 likes 字段
-    await db.run('INSERT INTO photo_likes (photo_id, user_id) VALUES (?, ?)', id, userId);
+    // 注：sqlite3 单连接默认串行化执行，INSERT + UPDATE 之间不会被其他请求插入
+    await db.run('INSERT INTO photo_likes (photo_id, user_id) VALUES (?, ?)', id, currentUserId);
     await db.run('UPDATE photos SET likes = likes + 1 WHERE id = ?', id);
-    const updatedPhoto = await db.get('SELECT likes FROM photos WHERE id = ?', id);
+    const updatedPhoto = await db.get<{ likes: number }>('SELECT likes FROM photos WHERE id = ?', id);
 
-    res.json({ success: true, data: { likes: updatedPhoto?.likes || 0 } });
+    res.json({
+      success: true,
+      data: { likes: updatedPhoto?.likes || 0, is_liked: true },
+    });
   } catch (error) {
     console.error('Error liking photo:', error);
     res.status(500).json({ success: false, message: '点赞失败' });
@@ -354,27 +434,40 @@ router.post('/:id/like', async (req, res) => {
 });
 
 /**
- * 取消点赞照片。
- * 与点赞接口对称，未点赞时幂等返回当前值；已点赞则删除记录并扣减计数（使用 MAX(0, ...) 防止负数）。
+ * 取消点赞照片（需登录）。
+ * 与点赞接口对称：未点赞时幂等返回当前值；已点赞则删除记录并扣减计数（MAX(0, ...) 防负数）。
  */
 router.delete('/:id/like', async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId = 'anonymous' } = req.body || {};
 
-    const existingLike = await db.get('SELECT * FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, userId);
-
-    if (!existingLike) {
-      const currentPhoto = await db.get('SELECT likes FROM photos WHERE id = ?', id);
-      return res.json({ success: true, data: { likes: currentPhoto?.likes || 0 } });
+    const currentUserId = getCurrentUserId(req);
+    if (!currentUserId) {
+      return res.status(401).json({
+        success: false,
+        message: '请先登录',
+        code: 'AUTH_REQUIRED',
+      });
     }
 
-    await db.run('DELETE FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, userId);
+    const existingLike = await db.get('SELECT 1 FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
+    if (!existingLike) {
+      const currentPhoto = await db.get<{ likes: number }>('SELECT likes FROM photos WHERE id = ?', id);
+      return res.json({
+        success: true,
+        data: { likes: currentPhoto?.likes || 0, is_liked: false },
+      });
+    }
+
+    await db.run('DELETE FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
     // MAX(0, likes - 1) 防止并发或异常情况下计数变为负数
     await db.run('UPDATE photos SET likes = MAX(0, likes - 1) WHERE id = ?', id);
-    const updatedPhoto = await db.get('SELECT likes FROM photos WHERE id = ?', id);
+    const updatedPhoto = await db.get<{ likes: number }>('SELECT likes FROM photos WHERE id = ?', id);
 
-    res.json({ success: true, data: { likes: updatedPhoto?.likes || 0 } });
+    res.json({
+      success: true,
+      data: { likes: updatedPhoto?.likes || 0, is_liked: false },
+    });
   } catch (error) {
     console.error('Error unliking photo:', error);
     res.status(500).json({ success: false, message: '取消点赞失败' });
@@ -382,17 +475,25 @@ router.delete('/:id/like', async (req, res) => {
 });
 
 /**
- * 显式累加浏览量接口。
- * 与详情接口的浏览量累加独立，用于前端在已有详情缓存时单独触发计数。
+ * 显式累加浏览量接口（24h 去重）。
+ * 与详情接口共用 recordViewIfEligible helper，避免重复计数时调用方需要双次请求。
+ * 响应附带 counted 字段标识本次浏览是否被计入。
  */
 router.post('/:id/view', async (req, res) => {
   try {
     const { id } = req.params;
 
-    await db.run('UPDATE photos SET views = views + 1 WHERE id = ?', id);
-    const updatedPhoto = await db.get('SELECT views FROM photos WHERE id = ?', id);
+    // 登录按 user_id 去重，未登录按 client IP 去重
+    const currentUserId = getCurrentUserId(req);
+    const viewerKey = currentUserId ? `user:${currentUserId}` : `ip:${getClientIp(req)}`;
+    const counted = await recordViewIfEligible(id, viewerKey);
 
-    res.json({ success: true, data: { views: updatedPhoto?.views || 0 } });
+    const updatedPhoto = await db.get<{ views: number }>('SELECT views FROM photos WHERE id = ?', id);
+
+    res.json({
+      success: true,
+      data: { views: updatedPhoto?.views || 0, counted },
+    });
   } catch (error) {
     console.error('Error incrementing view:', error);
     res.status(500).json({ success: false, message: '更新浏览量失败' });
@@ -973,5 +1074,15 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ success: false, message: '删除照片失败' });
   }
 });
+
+// ── photo_views 旧记录定时清理 ─────────────────────────────────────────────
+// 去重窗口 24h，保留 7 天足够回溯；每小时清理一次 7 天前的旧记录避免表无限增长
+const PHOTO_VIEWS_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+setInterval(() => {
+  const cutoff = Date.now() - PHOTO_VIEWS_RETENTION_MS;
+  db.run('DELETE FROM photo_views WHERE last_viewed_at < ?', cutoff)
+    .then(() => console.log(`[PhotoViews] Cleaned records older than 7 days (cutoff=${new Date(cutoff).toISOString()})`))
+    .catch(err => console.error('[PhotoViews] Cleanup failed:', err));
+}, 60 * 60 * 1000); // 每小时
 
 export default router;

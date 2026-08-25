@@ -106,36 +106,35 @@ export async function getPhotoById(id: string): Promise<ApiResponse<PhotoDetail>
 }
 
 /**
- * 点赞照片
+ * 点赞照片（需登录）
  * @param id - 照片 ID
- * @returns ApiResponse，data.likes 为最新点赞数
+ * @returns ApiResponse，data 含 { likes, is_liked }；未登录时 401 由 request 自动跳转 /auth
  */
-export async function likePhoto(id: string): Promise<ApiResponse<{ likes: number }>> {
-  return request<{ likes: number }>(`/photos/${id}/like`, {
+export async function likePhoto(id: string): Promise<ApiResponse<{ likes: number; is_liked: boolean }>> {
+  // Authorization 头由 client.ts 自动从 localStorage 注入；不再硬编码 anonymous userId
+  return request<{ likes: number; is_liked: boolean }>(`/photos/${id}/like`, {
     method: 'POST',
-    body: JSON.stringify({ userId: 'anonymous' }),
   });
 }
 
 /**
- * 取消点赞
+ * 取消点赞（需登录）
  * @param id - 照片 ID
- * @returns ApiResponse，data.likes 为最新点赞数
+ * @returns ApiResponse，data 含 { likes, is_liked }
  */
-export async function unlikePhoto(id: string): Promise<ApiResponse<{ likes: number }>> {
-  return request<{ likes: number }>(`/photos/${id}/like`, {
+export async function unlikePhoto(id: string): Promise<ApiResponse<{ likes: number; is_liked: boolean }>> {
+  return request<{ likes: number; is_liked: boolean }>(`/photos/${id}/like`, {
     method: 'DELETE',
-    body: JSON.stringify({ userId: 'anonymous' }),
   });
 }
 
 /**
- * 浏览数自增
+ * 浏览数自增（24h 去重）
  * @param id - 照片 ID
- * @returns ApiResponse，data.views 为最新浏览数
+ * @returns ApiResponse，data 含 { views, counted }；counted=false 表示被去重未计入
  */
-export async function incrementView(id: string): Promise<ApiResponse<{ views: number }>> {
-  return request<{ views: number }>(`/photos/${id}/view`, {
+export async function incrementView(id: string): Promise<ApiResponse<{ views: number; counted: boolean }>> {
+  return request<{ views: number; counted: boolean }>(`/photos/${id}/view`, {
     method: 'POST',
   });
 }

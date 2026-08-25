@@ -102,6 +102,18 @@ const initSchema = async () => {
       FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
     );
 
+    -- 照片浏览去重表：(photo_id, viewer_key) 联合主键天然去重
+    -- viewer_key 形如 'user:<userId>' 或 'ip:<clientIp>'，配合 last_viewed_at 实现 24h 窗口去重
+    CREATE TABLE IF NOT EXISTS photo_views (
+      photo_id TEXT NOT NULL,
+      viewer_key TEXT NOT NULL,
+      last_viewed_at INTEGER NOT NULL,
+      PRIMARY KEY (photo_id, viewer_key),
+      FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
+    );
+    -- last_viewed_at 索引：定时清理 7 天前旧记录时使用
+    CREATE INDEX IF NOT EXISTS idx_photo_views_last_viewed_at ON photo_views(last_viewed_at);
+
     -- 文章点赞表：与 photo_likes 结构对称
     CREATE TABLE IF NOT EXISTS article_likes (
       article_id TEXT NOT NULL,

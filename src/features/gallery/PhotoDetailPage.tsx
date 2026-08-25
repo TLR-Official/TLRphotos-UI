@@ -4,10 +4,11 @@
  * 当访问者为上传者本人时，提供两步确认式删除入口。
  */
 import { useParams, useNavigate } from 'react-router-dom';
-import { getPhotoById, deletePhoto } from '../../api/photos';
+import { getPhotoById, deletePhoto, likePhoto, unlikePhoto } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { useState, useEffect } from 'react';
+import { Heart, Eye } from 'lucide-react';
 import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
@@ -32,6 +33,17 @@ export function PhotoDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState('');
 
+  // 点赞相关本地 state：用于在详情数据加载后维护可交互的 UI 状态
+  // - isLiked：当前用户是否已点赞（基于后端 is_liked 字段初始化，本地乐观更新）
+  // - likeCount / viewCount：本地缓存的最新统计数（点击后立即更新，服务器返回后校准）
+  // - likeLoading：防止用户连续点击触发并发请求
+  // - likeError：点赞失败/未登录的提示信息（3 秒后自动清空）
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [viewCount, setViewCount] = useState(0);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [likeError, setLikeError] = useState('');
+
   // 根据 id 拉取照片详情；cancelled 标志防止组件卸载后异步回调写入 state
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +52,10 @@ export function PhotoDetailPage() {
       if (cancelled) return;
       if (result.success && result.data) {
         setPhoto(result.data);
+        // 初始化点赞/浏览本地状态（来自后端 is_liked / likes / views 字段）
+        setIsLiked(!!result.data.is_liked);
+        setLikeCount(result.data.likes);
+        setViewCount(result.data.views);
       }
       setIsLoading(false);
     });
@@ -49,6 +65,54 @@ export function PhotoDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  /**
+   * 切换点赞状态：未登录引导登录，已登录调用 likePhoto/unlikePhoto
+   * 采用乐观更新策略 — 本地 state 立即更新让 UI 即时响应；
+   * 服务器返回后用权威值校准，失败则回滚到点击前的状态。
+   */
+  const handleToggleLike = async () => {
+    if (!photo) return;
+
+    // 未登录：显示引导提示（client.ts 在请求层也会拦截 401 跳 /auth，这里前置避免无效请求）
+    if (!user || !token) {
+      setLikeError('请先登录后点赞');
+      setTimeout(() => setLikeError(''), 3000);
+      return;
+    }
+    if (likeLoading) return; // 防连点
+
+    setLikeLoading(true);
+    // 乐观更新快照（用于失败回滚）
+    const prevLiked = isLiked;
+    const prevCount = likeCount;
+    setIsLiked(!prevLiked);
+    setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+
+    try {
+      const result = prevLiked
+        ? await unlikePhoto(photo.id)
+        : await likePhoto(photo.id);
+      if (!result.success || !result.data) {
+        // 回滚
+        setIsLiked(prevLiked);
+        setLikeCount(prevCount);
+        setLikeError(result.message || '操作失败');
+        setTimeout(() => setLikeError(''), 3000);
+      } else {
+        // 用服务器权威值校准（防止并发下乐观更新与真实值有偏差）
+        setIsLiked(result.data.is_liked);
+        setLikeCount(result.data.likes);
+      }
+    } catch (err) {
+      setIsLiked(prevLiked);
+      setLikeCount(prevCount);
+      setLikeError(err instanceof Error ? err.message : '网络错误');
+      setTimeout(() => setLikeError(''), 3000);
+    } finally {
+      setLikeLoading(false);
+    }
+  };
 
   /**
    * 执行删除请求
@@ -237,24 +301,49 @@ export function PhotoDetailPage() {
               <h2 className={`text-lg font-semibold mb-4 ${
                 theme === 'dark' ? 'text-white' : 'text-gray-900'
               }`}>数据统计</h2>
-              <div className="flex gap-6">
-                <div className="text-center cursor-pointer hover:scale-105 transition-transform">
-                  <div className={`text-xl font-bold ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>{photo.likes}</div>
-                  <div className={`text-sm ${
-                    theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
-                  }`}>喜欢</div>
-                </div>
-                <div className="text-center cursor-pointer hover:scale-105 transition-transform">
-                  <div className={`text-xl font-bold ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>{photo.views.toLocaleString()}</div>
-                  <div className={`text-sm ${
-                    theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
-                  }`}>浏览</div>
+              <div className="flex gap-4 items-center flex-wrap">
+                {/* 点赞按钮：可点击切换状态，Heart 图标红色填充=已点赞/描边=未点赞 */}
+                <button
+                  onClick={handleToggleLike}
+                  disabled={likeLoading}
+                  aria-label={isLiked ? '取消点赞' : '点赞'}
+                  title={user ? (isLiked ? '取消点赞' : '点赞') : '请先登录后点赞'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                    isLiked
+                      ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                      : theme === 'dark'
+                        ? 'bg-white/5 text-slate-300 hover:bg-white/10'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  } ${likeLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+                >
+                  <Heart
+                    className={`w-5 h-5 transition-transform ${isLiked ? 'fill-current scale-110' : ''}`}
+                    strokeWidth={2}
+                  />
+                  <span className="font-semibold text-lg">{likeCount}</span>
+                </button>
+                {/* 浏览数：纯展示，Eye 图标 + 数字 */}
+                <div className={`flex items-center gap-2 px-4 py-2 ${
+                  theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
+                }`}>
+                  <Eye className="w-5 h-5" strokeWidth={2} />
+                  <span className="font-semibold text-lg">{viewCount.toLocaleString()}</span>
                 </div>
               </div>
+              {likeError && (
+                <p className="mt-3 text-sm text-red-500 text-center">{likeError}</p>
+              )}
+              {!user && (
+                <p className="mt-2 text-xs text-center text-gray-400">
+                  <button
+                    onClick={() => navigate('/auth')}
+                    className="text-blue-500 hover:underline"
+                  >
+                    登录
+                  </button>
+                  后即可点赞
+                </p>
+              )}
             </div>
 
             <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${

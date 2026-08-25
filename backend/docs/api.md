@@ -115,54 +115,59 @@
     "aperture": "f/8",
     "likes": 1256,
     "views": 8932,
+    "is_liked": false,
     "created_at": "2024-05-15T18:30:00Z"
   }
 }
 ```
 
+**字段说明**:
+- `is_liked`: 当前登录用户是否已点赞；未登录或未点赞时返回 `false`，前端用于切换点赞按钮视觉状态
+- `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复访问只计 1 次）
+
 ### 点赞照片
 
 **POST** `/api/photos/:id/like`
 
-**请求体**:
-```json
-{
-  "userId": "anonymous"
-}
-```
+**需登录**：请求头必须包含 `Authorization: Bearer <token>`，未登录或令牌无效返回 `401 { success: false, message: "请先登录后点赞", code: "AUTH_REQUIRED" }`。用户身份从 JWT 解析，不再从请求体取 `userId`（杜绝前端硬编码 anonymous 导致一个匿名点赞后所有人无法再赞的 bug）。
+
+**请求体**: 无需（用户身份来自 JWT）
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
-    "likes": 1257
+    "likes": 1257,
+    "is_liked": true
   }
 }
 ```
+
+重复点赞幂等返回当前计数 + `is_liked: true`（不重复增加）。
 
 ### 取消点赞照片
 
 **DELETE** `/api/photos/:id/like`
 
-**请求体**:
-```json
-{
-  "userId": "anonymous"
-}
-```
+**需登录**：与点赞接口对称。
+
+**请求体**: 无需
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
-    "likes": 1256
+    "likes": 1256,
+    "is_liked": false
   }
 }
 ```
 
-### 增加浏览量
+未点赞时幂等返回当前计数 + `is_liked: false`。
+
+### 增加浏览量（24h 去重）
 
 **POST** `/api/photos/:id/view`
 
@@ -171,10 +176,20 @@
 {
   "success": true,
   "data": {
-    "views": 8933
+    "views": 8933,
+    "counted": true
   }
 }
 ```
+
+**字段说明**:
+- `counted`: 本次浏览是否被计入；`false` 表示在 24h 去重窗口内被跳过未自增
+
+**浏览去重机制**（适用于 GET `/api/photos/:id` 与 POST `/api/photos/:id/view`）：
+- **viewer_key 计算**：登录用户取 `user:<userId>`，未登录用户取 `ip:<clientIp>`（从 X-Forwarded-For 首段提取，Nginx 反代后真实客户端 IP）
+- **去重窗口**：24 小时。同一 (photo_id, viewer_key) 在窗口内重复访问只计 1 次有效浏览
+- **去重存储**：`photo_views` 表，`(photo_id, viewer_key)` 联合主键 + `last_viewed_at` 时间戳；每小时定时清理 7 天前的旧记录
+- **事务一致性**：sqlite3 单连接默认串行化执行，SELECT→UPDATE→INSERT 序列调用之间不会被其他请求插入，等价于原子事务
 
 ### 获取预签名上传地址
 
