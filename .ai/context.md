@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 13:20 | [fix] 下载按钮视觉强化：浅色半透明背景改为实色 bg-blue-600 白字 + py-4 加高 + text-base font-bold 加粗 + shadow-md 阴影 + hover:scale-[1.03]/shadow-lg + active:scale-95 按压反馈 + Download 图标放大至 w-6 h-6/strokeWidth 2.5 (V1.6.1) | src/features/gallery/PhotoDetailPage.tsx |
 | 2026-08-25 13:10 | [release] 版本号升级至 V1.6.0 — 照片详情页新增带水印原图下载功能 | 全项目 |
 | 2026-08-25 13:10 | [feat] 照片详情页新增独立下载按钮：后端图片代理路由 /api/photos/image/* 支持 ?download=1 参数，设置 Content-Disposition: attachment + RFC 5987 UTF-8 中文文件名（按照片标题命名）；前端 PhotoDetailPage 加 Download 图标按钮，已审核公开照片走浏览器原生导航下载（同源+attachment，流式直存磁盘最快），未审核照片所有者带 token fetch blob 下载；无水印图时回退下载原图并标注；防连点 + 失败提示 | backend/src/routes/photos.ts, src/features/gallery/PhotoDetailPage.tsx |
 | 2026-08-25 12:55 | [fix] 修复测试数据污染生产库导致用户量虚高：db.ts dbPath 支持 DB_PATH 环境变量覆盖（原硬编码指向生产 database.db）；auth.test.ts 真正赋值 testDbPath 给环境变量（原只算没用）；admin.test.ts/photos.test.ts 补测试库隔离；seedMockData 标记前 10 张演示照片为 approved（原全 pending 导致切测试库后取不到 approved fixture）；清理生产库 75 条 @example.com 测试垃圾用户（90→15）(V1.5.1) | backend/src/db.ts, backend/tests/integration/*.test.ts, backend/data/database.db (未追踪) |

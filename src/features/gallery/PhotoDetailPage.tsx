@@ -368,15 +368,13 @@ export function PhotoDetailPage() {
                 onClick={handleDownload}
                 disabled={isDownloading}
                 title={photo.watermarked_url ? '下载带水印原图' : '下载原图（无水印版）'}
-                className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all ${
+                className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl text-base font-bold shadow-md transition-all ${
                   isDownloading
                     ? 'opacity-50 cursor-not-allowed'
-                    : theme === 'dark'
-                      ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 cursor-pointer hover:scale-[1.02]'
-                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer hover:scale-[1.02]'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer hover:scale-[1.03] hover:shadow-lg active:scale-95'
                 }`}
               >
-                <Download className="w-5 h-5" strokeWidth={2} />
+                <Download className="w-6 h-6" strokeWidth={2.5} />
                 {isDownloading ? '下载中...' : (photo.watermarked_url ? '下载带水印原图' : '下载原图')}
               </button>
               {downloadError && (
