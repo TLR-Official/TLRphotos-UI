@@ -8,7 +8,7 @@ import { getPhotoById, deletePhoto, likePhoto, unlikePhoto } from '../../api/pho
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { useState, useEffect } from 'react';
-import { Heart, Eye } from 'lucide-react';
+import { Heart, Eye, Download } from 'lucide-react';
 import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
@@ -43,6 +43,9 @@ export function PhotoDetailPage() {
   const [viewCount, setViewCount] = useState(0);
   const [likeLoading, setLikeLoading] = useState(false);
   const [likeError, setLikeError] = useState('');
+  // 下载状态：isDownloading 防重复点击，downloadError 失败提示（3 秒自动清空）
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
 
   // 根据 id 拉取照片详情；cancelled 标志防止组件卸载后异步回调写入 state
   useEffect(() => {
@@ -151,6 +154,65 @@ export function PhotoDetailPage() {
 
   // 仅当当前登录用户与照片上传者 id 一致时，判定为所有者
   const isOwner = user && photo && photo.user_id === user.id;
+
+  /**
+   * 下载带水印原图
+   * 通过在代理 URL 上追加 download=1 参数，触发后端设置 Content-Disposition: attachment，
+   * 浏览器原生流式下载到磁盘，无需前端 fetch blob 全量加载到内存，速度最快。
+   * 对未审核照片，所有者需带 token 才能下载（代理路由按 photoId + 状态鉴权）。
+   */
+  const handleDownload = () => {
+    if (!photo) return;
+    // 带水印原图优先；无水印图时回退到原图（标注无水印）
+    const baseUrl = photo.watermarked_url || photo.original_url;
+    if (!baseUrl) {
+      setDownloadError('该照片暂无可下载的原图');
+      setTimeout(() => setDownloadError(''), 3000);
+      return;
+    }
+    if (isDownloading) return;
+
+    setIsDownloading(true);
+    // 拼接 download=1 参数：原 URL 已含 ?photoId=xxx，追加 &download=1
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    const downloadUrl = `${baseUrl}${sep}download=1`;
+
+    // 所有者下载未审核照片时需带 token：通过隐藏 iframe 触发带凭证的下载
+    // 已审核照片为公开资源，无需 token
+    if (token && photo.status && photo.status !== 'approved') {
+      // 所有者下载未审核照片：用 fetch 带 Authorization 头获取 blob
+      fetch(downloadUrl, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => {
+          if (!res.ok) throw new Error('下载失败');
+          return res.blob();
+        })
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${photo.title || photo.id}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch(() => {
+          setDownloadError('下载失败，请稍后重试');
+          setTimeout(() => setDownloadError(''), 3000);
+        })
+        .finally(() => setIsDownloading(false));
+    } else {
+      // 已审核公开照片：浏览器直接导航触发下载（同源 + Content-Disposition，最快）
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${photo.title || photo.id}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // 给浏览器一点时间发起下载请求后恢复按钮
+      setTimeout(() => setIsDownloading(false), 1500);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -293,6 +355,36 @@ export function PhotoDetailPage() {
                 <DetailRow label="快门" value={photo.shutter_speed} theme={theme} />
                 <DetailRow label="光圈" value={photo.aperture} theme={theme} />
               </div>
+            </div>
+
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
+              theme === 'dark' ? 'glass' : 'bg-white'
+            }`}>
+              <h2 className={`text-lg font-semibold mb-4 ${
+                theme === 'dark' ? 'text-white' : 'text-gray-900'
+              }`}>下载</h2>
+              {/* 下载带水印原图按钮：公开照片走浏览器原生下载（最快），未审核照片所有者带 token fetch */}
+              <button
+                onClick={handleDownload}
+                disabled={isDownloading}
+                title={photo.watermarked_url ? '下载带水印原图' : '下载原图（无水印版）'}
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all ${
+                  isDownloading
+                    ? 'opacity-50 cursor-not-allowed'
+                    : theme === 'dark'
+                      ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 cursor-pointer hover:scale-[1.02]'
+                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer hover:scale-[1.02]'
+                }`}
+              >
+                <Download className="w-5 h-5" strokeWidth={2} />
+                {isDownloading ? '下载中...' : (photo.watermarked_url ? '下载带水印原图' : '下载原图')}
+              </button>
+              {downloadError && (
+                <p className="mt-3 text-sm text-red-500 text-center">{downloadError}</p>
+              )}
+              {!photo.watermarked_url && (
+                <p className="mt-2 text-xs text-center text-gray-400">该照片暂无水印版本，将下载原图</p>
+              )}
             </div>
 
             <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${

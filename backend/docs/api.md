@@ -191,6 +191,30 @@
 - **去重存储**：`photo_views` 表，`(photo_id, viewer_key)` 联合主键 + `last_viewed_at` 时间戳；每小时定时清理 7 天前的旧记录
 - **事务一致性**：sqlite3 单连接默认串行化执行，SELECT→UPDATE→INSERT 序列调用之间不会被其他请求插入，等价于原子事务
 
+### 图片代理（原图/缩略图/预览/水印图）
+
+**GET** `/api/photos/image/:key`
+
+所有图片地址（`original_url`/`thumbnail_path`/`preview_url`/`watermarked_url`）均经此通配符路由代理，避免暴露 OSS 直链。后端按 OSS Key 生成预签名 URL 后流式回传（pipeline 自动背压），不全部载入内存。
+
+**路径参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| key | string（URL 编码） | OSS 对象 Key，如 `photos/watermarked/xxx_watermarked.webp` |
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| photoId | string | 照片 ID，用于代理路由快速鉴权（按照片状态+所有者判定访问权限） |
+| download | string | 传 `1` 时后端设置 `Content-Disposition: attachment`，触发浏览器保存到磁盘（V1.6.0 新增） |
+
+**响应**: 二进制图片流（`Content-Type` 透传 OSS，如 `image/webp`/`image/jpeg`）。
+
+**下载模式**（`download=1`）：
+- 后端按 `photoId` 查询照片标题，设置 `Content-Disposition: attachment; filename="<id>.jpg"; filename*=UTF-8''<编码标题>.jpg`（RFC 5987 支持中文文件名）
+- 浏览器原生流式下载到磁盘，无需前端 fetch blob 全量加载到内存，速度最快
+- 未审核照片仅所有者（带 `Authorization` 头）可下载；已审核照片为公开资源，任何人可下载
+
 ### 获取预签名上传地址
 
 **POST** `/api/photos/upload/presigned`

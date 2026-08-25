@@ -591,6 +591,17 @@ router.get('/image/*', async (req: any, res) => {
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
     res.setHeader('Content-Type', contentType);
+
+    // 支持下载模式：?download=1 时设置 Content-Disposition 触发浏览器保存到磁盘
+    // 浏览器原生流式下载，无需前端 fetch blob 全量加载到内存，速度最快
+    if (req.query.download === '1' && photo) {
+      const titleRow = await db.get<{ title: string }>('SELECT title FROM photos WHERE id = ?', photo.id);
+      const title = titleRow?.title || photo.id;
+      // RFC 5987：ASCII 兜底 filename + UTF-8 编码 filename*，支持中文文件名
+      const safeName = encodeURIComponent(`${title}.jpg`).replace(/['%]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${photo.id}.jpg"; filename*=UTF-8''${safeName}`);
+    }
+
     if (response.body) {
       // 使用 pipeline 自动处理背压和流清理，避免 reader 泄漏
       const { pipeline } = require('stream');
