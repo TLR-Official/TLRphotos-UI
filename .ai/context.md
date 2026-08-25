@@ -187,6 +187,10 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 20:24 | [release] 版本号升级至 V1.7.1 — 修复间歇性"服务器未返回响应"登录失败 | 全项目 |
+| 2026-08-25 20:24 | [fix] 根因修复：/etc/hosts 错误将 127.0.1.1 映射为 localhost（应为 hostname），导致 Nginx 解析 localhost 偶发返回 127.0.1.1；后端仅监听 127.0.0.1:3001，连 127.0.1.1:3001 时被拒（111 Connection refused）→ Nginx 返 502/空响应 → 前端"服务器未返回响应"；删除该错误行 (V1.7.1) | /etc/hosts |
+| 2026-08-25 20:24 | [fix] 防御性修复：tlrphotos + tlrphotos-admin 两站点 5 处 proxy_pass 由 http://localhost:3001 改为 http://127.0.0.1:3001，避免 DNS 歧义（已备份 .bak.202608251940）；nginx -t 通过 + reload 生效 (V1.7.1) | /etc/nginx/sites-available/tlrphotos, /etc/nginx/sites-available/tlrphotos-admin |
+| 2026-08-25 20:24 | [fix] 前端登录错误提示增强：auth.ts login/refresh 增加 AbortController 超时控制（登录 30s/刷新 15s）+ 区分 5xx（"服务器暂时不可用"）/ 2xx 空响应（"服务器未返回数据"）/ 网络错误（"请检查网络连接后重试"）/ 超时（"请求超时"），移除笼统的"服务器未返回响应"；client.ts request 同步增强 5xx 与空响应提示 (V1.7.1) | src/api/auth.ts, src/api/client.ts |
 | 2026-08-25 22:30 | [release] 版本号升级至 V1.7.0 — 管理后台用户管理增强：账号封禁 + 精细化功能权限控制 | 全项目 |
 | 2026-08-25 22:30 | [feat] 账号封禁功能：users 表新增 banned_at 字段；admin 新增 POST /users/:id/ban、POST /users/:id/unban 接口；封禁时 deleteUserSessions 强制下线 + loadAuthUser 在所有需鉴权接口检查 banned_at 使现有 JWT 立即失效（401 USER_BANNED）；被封禁用户重新登录收到"该账号已被封禁"提示无法登录 (V1.7.0) | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/admin.ts, backend/src/routes/photos.ts |
 | 2026-08-25 22:30 | [feat] 精细化功能权限控制：users 表新增 can_upload/can_view/can_download/can_like 字段（1=允许，0=禁止）；admin 新增 PUT /users/:id/permissions 接口记录每项 from→to 变更审计日志；照片接口注入权限检查 — 上传/预签名/完成上传检查 can_upload、详情/代理检查 can_view、下载检查 can_download、点赞检查 can_like（均返回 403 PERMISSION_DENIED）；匿名访客仍可公开浏览已审核照片与代理图（V1.7.0） | backend/src/db.ts, backend/src/routes/admin.ts, backend/src/routes/photos.ts, src/admin/UsersPage.tsx, src/admin/api.ts, src/admin/types.ts |

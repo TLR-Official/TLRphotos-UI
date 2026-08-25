@@ -94,6 +94,10 @@ export interface RefreshResponse {
  * @returns LoginResponse，含 user、token 与可选 session_token
  */
 export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
+  // 超时控制：登录涉及 bcrypt 校验，留 30s 余量；超时后 abort 中断 fetch
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   try {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
@@ -101,20 +105,35 @@ export async function login(email: string, password: string, remember?: boolean)
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ email, password, remember }),
+      signal: controller.signal,
     });
 
     const text = await response.text();
 
     if (!text) {
+      // 区分 5xx（服务不可用，如上游 502）与 2xx 空响应
+      if (response.status >= 500) {
+        return {
+          success: false,
+          message: `服务器暂时不可用（${response.status}），请稍后重试`,
+        };
+      }
       return {
         success: false,
-        message: '服务器未返回响应',
+        message: '服务器未返回数据，请稍后重试',
       };
     }
 
     try {
       return JSON.parse(text);
     } catch {
+      // 非 JSON 响应（如 Nginx 502 默认 HTML 页面）
+      if (response.status >= 500) {
+        return {
+          success: false,
+          message: `服务器暂时不可用（${response.status}），请稍后重试`,
+        };
+      }
       return {
         success: false,
         message: `请求失败: ${response.status} ${response.statusText}`,
@@ -122,10 +141,19 @@ export async function login(email: string, password: string, remember?: boolean)
     }
   } catch (error) {
     console.error('Login error:', error);
+    // 超时中断
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        message: '登录请求超时，请检查网络后重试',
+      };
+    }
     return {
       success: false,
-      message: '网络请求失败，请稍后重试',
+      message: '网络请求失败，请检查网络连接后重试',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -135,6 +163,10 @@ export async function login(email: string, password: string, remember?: boolean)
  * @returns RefreshResponse，含新的 user 与 token
  */
 export async function refresh(sessionToken: string): Promise<RefreshResponse> {
+  // 超时控制：refresh 通常 <1s，给 15s 余量；超时后 abort 中断 fetch
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
   try {
     const response = await fetch('/api/auth/refresh', {
       method: 'POST',
@@ -142,20 +174,33 @@ export async function refresh(sessionToken: string): Promise<RefreshResponse> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ session_token: sessionToken }),
+      signal: controller.signal,
     });
 
     const text = await response.text();
 
     if (!text) {
+      if (response.status >= 500) {
+        return {
+          success: false,
+          message: `服务器暂时不可用（${response.status}），请稍后重试`,
+        };
+      }
       return {
         success: false,
-        message: '服务器未返回响应',
+        message: '服务器未返回数据，请稍后重试',
       };
     }
 
     try {
       return JSON.parse(text);
     } catch {
+      if (response.status >= 500) {
+        return {
+          success: false,
+          message: `服务器暂时不可用（${response.status}），请稍后重试`,
+        };
+      }
       return {
         success: false,
         message: `请求失败: ${response.status} ${response.statusText}`,
@@ -163,10 +208,18 @@ export async function refresh(sessionToken: string): Promise<RefreshResponse> {
     }
   } catch (error) {
     console.error('Refresh error:', error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        message: '登录状态刷新超时，请重新登录',
+      };
+    }
     return {
       success: false,
-      message: '网络请求失败，请稍后重试',
+      message: '网络请求失败，请检查网络连接后重试',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

@@ -124,14 +124,31 @@ async function request<T = unknown>(
       try {
         const text = await response.text();
         if (text) {
-          const errorData = JSON.parse(text);
-          return {
-            success: false,
-            message: errorData.message || `请求失败: ${response.status} ${response.statusText}`,
-          };
+          try {
+            const errorData = JSON.parse(text);
+            return {
+              success: false,
+              message: errorData.message || `请求失败: ${response.status} ${response.statusText}`,
+            };
+          } catch {
+            // 非 JSON 响应（如 Nginx 502/504 默认 HTML 页面）
+            if (response.status >= 500) {
+              return {
+                success: false,
+                message: `服务器暂时不可用（${response.status}），请稍后重试`,
+              };
+            }
+          }
         }
       } catch {}
 
+      // 空响应体或非 JSON：5xx 与其他错误给出不同提示
+      if (response.status >= 500) {
+        return {
+          success: false,
+          message: `服务器暂时不可用（${response.status}），请稍后重试`,
+        };
+      }
       return {
         success: false,
         message: `请求失败: ${response.status} ${response.statusText}`,
@@ -142,9 +159,10 @@ async function request<T = unknown>(
     try {
       const text = await response.text();
       if (!text) {
+        // 走到这里说明 response.ok=true（2xx）但响应体为空
         return {
           success: false,
-          message: '服务器未返回响应',
+          message: '服务器未返回数据，请稍后重试',
         };
       }
       return JSON.parse(text);
