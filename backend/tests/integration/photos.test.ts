@@ -50,6 +50,17 @@ beforeAll(async () => {
   if (!photo) throw new Error('测试数据库中没有已审核照片，无法执行统计/点赞测试');
   testPhotoId = photo.id;
 
+  // V1.7.0：loadAuthUser 会查 users 表，测试用户必须存在且 is_active=1 / 权限全开
+  for (const u of [
+    { id: TEST_USER_A, email: 'a@test.local', username: 'UserA' },
+    { id: TEST_USER_B, email: 'b@test.local', username: 'UserB' },
+  ]) {
+    await db.run(
+      'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, ?, ?)',
+      u.id, u.email, '$2b$10$placeholderhashplaceholderhashplaceholderhashplaceholder', u.username, new Date().toISOString(), new Date().toISOString()
+    );
+  }
+
   // 清理该照片上测试用户的历史点赞/浏览记录，保证测试初始状态干净
   await db.run('DELETE FROM photo_likes WHERE photo_id = ? AND user_id IN (?, ?)', testPhotoId, TEST_USER_A, TEST_USER_B);
   await db.run('DELETE FROM photo_views WHERE photo_id = ? AND viewer_key IN (?, ?)', testPhotoId, `user:${TEST_USER_A}`, `user:${TEST_USER_B}`);
@@ -305,6 +316,15 @@ describe('图片统计与点赞', () => {
     const userIds = Array.from({ length: 100 }, (_, i) => `concurrent-user-${i}`);
     const tokens = userIds.map(uid => jwt.sign({ userId: uid }, process.env.JWT_SECRET!));
 
+    // V1.7.0：loadAuthUser 会查 users 表，并发用户必须存在且 is_active=1/权限全开
+    const now = new Date().toISOString();
+    for (const uid of userIds) {
+      await db.run(
+        'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, ?, ?)',
+        uid, `${uid}@test.local`, '$2b$10$placeholderhashplaceholderhashplaceholderhashplaceholder', uid, now, now
+      );
+    }
+
     // 清理可能的历史记录
     await db.run(
       `DELETE FROM photo_likes WHERE photo_id = ? AND user_id IN (${userIds.map(() => '?').join(',')})`,
@@ -391,5 +411,144 @@ describe('V1.5.0 上传接口强制登录', () => {
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('AUTH_REQUIRED');
+  });
+});
+
+// ============================================================================
+// V1.7.0 用户封禁 + 精细化功能权限强制执行测试
+// 用 TEST_USER_B（tokenB）作为受限用户，每条测试前重置其状态保证隔离
+// ============================================================================
+
+describe('V1.7.0 用户封禁强制下线', () => {
+  // 每条测试前重置 TEST_USER_B：解封 + 权限全开
+  async function resetUserB() {
+    await db.run('UPDATE users SET is_active = 1, banned_at = NULL, can_upload = 1, can_view = 1, can_download = 1, can_like = 1 WHERE id = ?', TEST_USER_B);
+  }
+
+  it('封禁后 tokenB 调用点赞应返回 401 + USER_BANNED', async () => {
+    await resetUserB();
+    await db.run("UPDATE users SET is_active = 0, banned_at = ? WHERE id = ?", new Date().toISOString(), TEST_USER_B);
+
+    const res = await request(app)
+      .post(`/api/photos/${testPhotoId}/like`)
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('USER_BANNED');
+    expect(res.body.message).toContain('封禁');
+  });
+
+  it('封禁后 tokenB 访问照片详情应返回 401 + USER_BANNED', async () => {
+    await resetUserB();
+    await db.run("UPDATE users SET is_active = 0, banned_at = ? WHERE id = ?", new Date().toISOString(), TEST_USER_B);
+
+    const res = await request(app)
+      .get(`/api/photos/${testPhotoId}`)
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('USER_BANNED');
+  });
+
+  it('解封后 tokenB 可正常访问照片详情', async () => {
+    await resetUserB();
+    // 先封禁再解封，验证解封生效
+    await db.run("UPDATE users SET is_active = 0, banned_at = ? WHERE id = ?", new Date().toISOString(), TEST_USER_B);
+    await db.run('UPDATE users SET is_active = 1, banned_at = NULL WHERE id = ?', TEST_USER_B);
+
+    const res = await request(app)
+      .get(`/api/photos/${testPhotoId}`)
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+});
+
+describe('V1.7.0 精细化功能权限', () => {
+  async function resetUserB() {
+    await db.run('UPDATE users SET is_active = 1, banned_at = NULL, can_upload = 1, can_view = 1, can_download = 1, can_like = 1 WHERE id = ?', TEST_USER_B);
+  }
+
+  it('禁用 can_upload 后上传应返回 403 + PERMISSION_DENIED', async () => {
+    await resetUserB();
+    await db.run('UPDATE users SET can_upload = 0 WHERE id = ?', TEST_USER_B);
+
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenB}`)
+      .send({ key: 'photos/test.jpg', title: 't' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('PERMISSION_DENIED');
+    expect(res.body.message).toContain('上传');
+  });
+
+  it('禁用 can_like 后点赞应返回 403 + PERMISSION_DENIED', async () => {
+    await resetUserB();
+    await db.run('UPDATE users SET can_like = 0 WHERE id = ?', TEST_USER_B);
+
+    const res = await request(app)
+      .post(`/api/photos/${testPhotoId}/like`)
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PERMISSION_DENIED');
+    expect(res.body.message).toContain('点赞');
+  });
+
+  it('禁用 can_view 后登录态访问详情应 403，匿名访问放行 200', async () => {
+    await resetUserB();
+    await db.run('UPDATE users SET can_view = 0 WHERE id = ?', TEST_USER_B);
+
+    // 登录态：403
+    const resAuth = await request(app)
+      .get(`/api/photos/${testPhotoId}`)
+      .set('Authorization', `Bearer ${tokenB}`);
+    expect(resAuth.status).toBe(403);
+    expect(resAuth.body.code).toBe('PERMISSION_DENIED');
+
+    // 匿名：200（公开浏览放行）
+    const resAnon = await request(app).get(`/api/photos/${testPhotoId}`);
+    expect(resAnon.status).toBe(200);
+    expect(resAnon.body.success).toBe(true);
+  });
+
+  it('禁用 can_download 后 download=1 应返回 403，匿名 download=1 应 401 需登录', async () => {
+    await resetUserB();
+    await db.run('UPDATE users SET can_download = 0 WHERE id = ?', TEST_USER_B);
+
+    // 取测试照片的缩略图 key 构造图片代理 URL
+    const photo = await db.get<{ thumbnail_path: string }>('SELECT thumbnail_path FROM photos WHERE id = ?', testPhotoId);
+    const key = encodeURIComponent(photo.thumbnail_path);
+
+    // 登录态 + can_download=0 → 403
+    const resAuth = await request(app)
+      .get(`/api/photos/image/${key}?photoId=${testPhotoId}&download=1`)
+      .set('Authorization', `Bearer ${tokenB}`);
+    expect(resAuth.status).toBe(403);
+    expect(resAuth.body.code).toBe('PERMISSION_DENIED');
+
+    // 匿名 download=1 → 401 需登录（用户确认：下载需登录）
+    const resAnon = await request(app)
+      .get(`/api/photos/image/${key}?photoId=${testPhotoId}&download=1`);
+    expect(resAnon.status).toBe(401);
+    expect(resAnon.body.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('权限全开时 tokenB 可正常点赞', async () => {
+    await resetUserB();
+    // 清理可能的已点赞记录，确保测试幂等
+    await db.run('DELETE FROM photo_likes WHERE photo_id = ? AND user_id = ?', testPhotoId, TEST_USER_B);
+
+    const res = await request(app)
+      .post(`/api/photos/${testPhotoId}/like`)
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.is_liked).toBe(true);
   });
 });

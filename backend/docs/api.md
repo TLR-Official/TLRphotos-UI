@@ -88,6 +88,11 @@
 
 **GET** `/api/photos/:id`
 
+**V1.7.0 权限检查**：
+- 匿名访客（无 token）放行公开已审核照片
+- 被封禁/禁用用户的 token 不降级为匿名，返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`
+- 登录用户 `can_view=0` 返回 `403 { code: "PERMISSION_DENIED", message: "您已被禁止查看图片" }`
+
 **路径参数**:
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -130,6 +135,8 @@
 **POST** `/api/photos/:id/like`
 
 **需登录**：请求头必须包含 `Authorization: Bearer <token>`，未登录或令牌无效返回 `401 { success: false, message: "请先登录后点赞", code: "AUTH_REQUIRED" }`。用户身份从 JWT 解析，不再从请求体取 `userId`（杜绝前端硬编码 anonymous 导致一个匿名点赞后所有人无法再赞的 bug）。
+
+**V1.7.0 权限检查**：被封禁用户返回 `401 { code: "USER_BANNED" }`；`can_like=0` 返回 `403 { code: "PERMISSION_DENIED", message: "您已被禁止点赞" }`。
 
 **请求体**: 无需（用户身份来自 JWT）
 
@@ -208,6 +215,11 @@
 | photoId | string | 照片 ID，用于代理路由快速鉴权（按照片状态+所有者判定访问权限） |
 | download | string | 传 `1` 时后端设置 `Content-Disposition: attachment`，触发浏览器保存到磁盘（V1.6.0 新增） |
 
+**V1.7.0 权限检查**：
+- 匿名访客普通访问放行；`download=1` 需登录，返回 `401 { code: "AUTH_REQUIRED" }`
+- 被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`
+- 登录用户 `can_view=0` 普通访问返回 `403`；`can_download=0` 且 `download=1` 返回 `403`
+
 **响应**: 二进制图片流（`Content-Type` 透传 OSS，如 `image/webp`/`image/jpeg`）。
 
 **下载模式**（`download=1`）：
@@ -220,6 +232,8 @@
 **POST** `/api/photos/upload/presigned`
 
 **需登录**（V1.5.0）：请求头必须包含 `Authorization: Bearer <token>`，未登录返回 `401 { code: "AUTH_REQUIRED" }`。杜绝匿名用户生成上传地址，与 V1.4.0 点赞强制登录策略一致。
+
+**V1.7.0 权限检查**：被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`；`can_upload=0` 返回 `403 { code: "PERMISSION_DENIED", message: "您已被禁止上传图片" }`。
 
 **请求体**:
 ```json
@@ -244,6 +258,8 @@
 **POST** `/api/photos/upload/complete`
 
 **需登录**（V1.5.0）：请求头必须包含 `Authorization: Bearer <token>`。从 JWT 解析 userId 写入 `photos.user_id`，防止落库为 NULL（历史曾因此导致 50 张匿名照片污染统计）。
+
+**V1.7.0 权限检查**：被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`；`can_upload=0` 返回 `403 { code: "PERMISSION_DENIED" }`。
 
 **请求体**:
 ```json
@@ -283,9 +299,11 @@
 
 **请求头**:
 ```
-Authorization: Bearer <token>（可选，未登录记为匿名上传）
+Authorization: Bearer <token>（V1.5.0 起强制登录，未登录返回 401）
 Content-Type: multipart/form-data
 ```
+
+**V1.7.0 权限检查**：被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`；`can_upload=0` 返回 `403 { code: "PERMISSION_DENIED" }`。
 
 **请求体**:
 | 参数 | 类型 | 必填 | 说明 |
@@ -568,6 +586,7 @@ Content-Type: multipart/form-data
 **说明**: 
 - 当 `remember` 为 `true` 时，返回 `session_token`，用于自动登录
 - `session_token` 有效期为 30 天，或连续 7 天无活动自动过期
+- **V1.7.0 封禁检查**：被封禁用户（`banned_at` 非空）尝试登录时返回 `400 { success: false, message: "该账号已被封禁" }`，无法成功登录；被封禁用户的现有 JWT 也会在所有需鉴权接口（上传/点赞/查看/下载）被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
 
 ### 自动登录（刷新令牌）
 
@@ -808,6 +827,121 @@ Authorization: Bearer <admin_token>
   ]
 }
 ```
+
+---
+
+## 管理后台用户管理（V1.7.0）
+
+> 以下接口均需 `Authorization: Bearer <admin_token>`，仅 `super` 角色可调用。
+
+### 获取站点用户列表
+
+**GET** `/api/admin/users/list`
+
+**查询参数**:
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| page | number | 1 | 页码 |
+| pageSize | number | 20 | 每页数量 |
+| keyword | string | - | 按用户名或邮箱模糊搜索 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "user_123",
+      "email": "user@example.com",
+      "username": "用户名",
+      "avatar_url": null,
+      "is_active": 1,
+      "banned_at": null,
+      "can_upload": 1,
+      "can_view": 1,
+      "can_download": 1,
+      "can_like": 1,
+      "created_at": "2026-07-15T10:00:00Z",
+      "updated_at": "2026-07-15T10:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 156 }
+}
+```
+
+### 切换用户启用/禁用
+
+**PUT** `/api/admin/users/:id/toggle`
+
+**说明**：翻转 `is_active`（1→0 禁用，0→1 启用），不影响封禁状态。被封禁用户需先解封才能使用此接口。
+
+**响应**:
+```json
+{ "success": true, "message": "用户已禁用", "data": { "is_active": 0 } }
+```
+
+### 封禁用户（V1.7.0 新增）
+
+**POST** `/api/admin/users/:id/ban`
+
+**说明**：设置 `is_active=0` + `banned_at=时间戳`，并删除所有"记住我"会话实现强制下线。被封禁用户：
+- 重新登录时返回 `400 { message: "该账号已被封禁" }`
+- 现有 JWT 在所有需鉴权接口被拦截，返回 `401 { code: "USER_BANNED" }`
+
+**响应**:
+```json
+{ "success": true, "message": "用户已封禁" }
+```
+
+**审计日志**：`action=ban_user`，`details` 含 `{ username, email, banned_at }`，`ip` 记录操作来源。
+
+### 解封用户（V1.7.0 新增）
+
+**POST** `/api/admin/users/:id/unban`
+
+**说明**：清除 `banned_at` 标记并恢复 `is_active=1`。解封后用户可重新登录。
+
+**响应**:
+```json
+{ "success": true, "message": "用户已解封" }
+```
+
+**审计日志**：`action=unban_user`。
+
+### 更新用户功能权限（V1.7.0 新增）
+
+**PUT** `/api/admin/users/:id/permissions`
+
+**说明**：精细化权限控制 — 单独禁用/启用上传、查看、下载、点赞。仅传需变更的字段（0 或 1），未传字段不变。
+
+**请求体**（所有字段可选）:
+```json
+{
+  "can_upload": 0,
+  "can_view": 1,
+  "can_download": 0,
+  "can_like": 1
+}
+```
+
+**权限字段说明**:
+| 字段 | 禁止后效果 | 拦截接口 |
+|------|-----------|---------|
+| can_upload | 无法上传新照片 | POST /upload, /upload/presigned, /upload/complete → 403 |
+| can_view | 登录态无法查看图片详情/代理图（匿名仍可公开浏览已审核照片） | GET /:id, GET /image/* → 403 |
+| can_download | 无法下载图片（下载需登录） | GET /image/*?download=1 → 403 |
+| can_like | 无法点赞或取消点赞 | POST/DELETE /:id/like → 403 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "权限已更新",
+  "data": { "can_upload": 0, "can_view": 1, "can_download": 0, "can_like": 1 }
+}
+```
+
+**审计日志**：`action=update_permissions`，`details` 含 `changes` 对象记录每项 `from→to`。
 
 ---
 

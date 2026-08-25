@@ -187,6 +187,12 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-25 22:30 | [release] 版本号升级至 V1.7.0 — 管理后台用户管理增强：账号封禁 + 精细化功能权限控制 | 全项目 |
+| 2026-08-25 22:30 | [feat] 账号封禁功能：users 表新增 banned_at 字段；admin 新增 POST /users/:id/ban、POST /users/:id/unban 接口；封禁时 deleteUserSessions 强制下线 + loadAuthUser 在所有需鉴权接口检查 banned_at 使现有 JWT 立即失效（401 USER_BANNED）；被封禁用户重新登录收到"该账号已被封禁"提示无法登录 (V1.7.0) | backend/src/db.ts, backend/src/services/authService.ts, backend/src/routes/admin.ts, backend/src/routes/photos.ts |
+| 2026-08-25 22:30 | [feat] 精细化功能权限控制：users 表新增 can_upload/can_view/can_download/can_like 字段（1=允许，0=禁止）；admin 新增 PUT /users/:id/permissions 接口记录每项 from→to 变更审计日志；照片接口注入权限检查 — 上传/预签名/完成上传检查 can_upload、详情/代理检查 can_view、下载检查 can_download、点赞检查 can_like（均返回 403 PERMISSION_DENIED）；匿名访客仍可公开浏览已审核照片与代理图（V1.7.0） | backend/src/db.ts, backend/src/routes/admin.ts, backend/src/routes/photos.ts, src/admin/UsersPage.tsx, src/admin/api.ts, src/admin/types.ts |
+| 2026-08-25 22:30 | [fix] 修复 /users/list 路由被 /users/:id 抢先匹配返回"管理员不存在"（与 V1.5.0 /photos/stats 同类路由顺序 bug）；/upload/presigned 和 /upload/complete 从内联 jwt.verify 改为 loadAuthUser 统一认证 + can_upload 权限检查 (V1.7.0) | backend/src/routes/admin.ts, backend/src/routes/photos.ts |
+| 2026-08-25 22:30 | [docs] API 文档同步：新增管理后台用户管理接口契约（users/list、toggle、ban、unban、permissions）；登录接口补充封禁检查说明；照片上传/详情/代理/点赞接口补充 V1.7.0 权限检查行为说明 (V1.7.0) | backend/docs/api.md |
+| 2026-08-25 22:30 | [test] 新增 10 个集成用例：封禁后 token 调用点赞/详情返回 401 USER_BANNED、解封后可正常访问、禁用 can_upload/can_like/can_view/can_download 返回 403 PERMISSION_DENIED、匿名 download=1 需登录 401、权限全开可正常操作 — 全部 121 用例通过 (V1.7.0) | backend/tests/integration/photos.test.ts |
 | 2026-08-25 13:20 | [fix] 下载按钮视觉强化：浅色半透明背景改为实色 bg-blue-600 白字 + py-4 加高 + text-base font-bold 加粗 + shadow-md 阴影 + hover:scale-[1.03]/shadow-lg + active:scale-95 按压反馈 + Download 图标放大至 w-6 h-6/strokeWidth 2.5 (V1.6.1) | src/features/gallery/PhotoDetailPage.tsx |
 | 2026-08-25 13:10 | [release] 版本号升级至 V1.6.0 — 照片详情页新增带水印原图下载功能 | 全项目 |
 | 2026-08-25 13:10 | [feat] 照片详情页新增独立下载按钮：后端图片代理路由 /api/photos/image/* 支持 ?download=1 参数，设置 Content-Disposition: attachment + RFC 5987 UTF-8 中文文件名（按照片标题命名）；前端 PhotoDetailPage 加 Download 图标按钮，已审核公开照片走浏览器原生导航下载（同源+attachment，流式直存磁盘最快），未审核照片所有者带 token fetch blob 下载；无水印图时回退下载原图并标注；防连点 + 失败提示 | backend/src/routes/photos.ts, src/features/gallery/PhotoDetailPage.tsx |

@@ -203,6 +203,23 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN rejection_reason TEXT');
   } catch {}
+
+  // V1.7.0 用户管理增强：封禁标记 + 四项功能权限字段
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN banned_at TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_upload INTEGER DEFAULT 1');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_view INTEGER DEFAULT 1');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_download INTEGER DEFAULT 1');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_like INTEGER DEFAULT 1');
+  } catch {}
 };
 
 /**

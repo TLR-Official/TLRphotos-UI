@@ -13,6 +13,7 @@ import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS }
 import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
 import { verifyAdminToken } from '../services/adminService';
+import { loadAuthUser } from '../services/authService';
 import { memoryManager } from '../services/memoryManager';
 
 const router = express.Router();
@@ -306,15 +307,17 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 可选鉴权：携带 Bearer Token 时解析当前用户 ID，用于放行本人未审核照片
-    let currentUserId = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-        currentUserId = decoded.userId;
-      } catch {}
+    // V1.7.0：可选鉴权用 loadAuthUser 统一加载，同时检查封禁/禁用状态与查看权限。
+    // 匿名访客（无 token）放行公开浏览；登录用户受限（can_view=0）时返回 403。
+    // 封禁/禁用用户的 token 不再有效（loadAuthUser 返回 error），降级为匿名访问公开已审核照片。
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr) {
+      // token 有效但账号被封禁/禁用：返回明确提示，不降级为匿名（避免被封禁用户绕过）
+      return res.status(authErr.status).json({ success: false, message: authErr.message, code: authErr.code });
+    }
+    const currentUserId = authUser ? authUser.id : null;
+    if (authUser && !authUser.can_view) {
+      return res.status(403).json({ success: false, message: '您已被禁止查看图片', code: 'PERMISSION_DENIED' });
     }
 
     // 已登录用户：可查看已审核或本人上传的照片；未登录：仅查看已审核照片
@@ -398,14 +401,19 @@ router.post('/:id/like', async (req, res) => {
     const { id } = req.params;
 
     // 强制登录：未登录或令牌无效返回 401
-    const currentUserId = getCurrentUserId(req);
-    if (!currentUserId) {
-      return res.status(401).json({
+    // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用 + 点赞权限
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
         success: false,
-        message: '请先登录后点赞',
-        code: 'AUTH_REQUIRED',
+        message: authErr?.message || '请先登录后点赞',
+        code: authErr?.code || 'AUTH_REQUIRED',
       });
     }
+    if (!authUser.can_like) {
+      return res.status(403).json({ success: false, message: '您已被禁止点赞', code: 'PERMISSION_DENIED' });
+    }
+    const currentUserId = authUser.id;
 
     // 已点赞：幂等返回当前点赞数 + is_liked=true
     const existingLike = await db.get('SELECT 1 FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
@@ -441,14 +449,19 @@ router.delete('/:id/like', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const currentUserId = getCurrentUserId(req);
-    if (!currentUserId) {
-      return res.status(401).json({
+    // V1.7.0：用 loadAuthUser 统一认证 + 检查点赞权限（取消点赞同样受 can_like 约束）
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
         success: false,
-        message: '请先登录',
-        code: 'AUTH_REQUIRED',
+        message: authErr?.message || '请先登录',
+        code: authErr?.code || 'AUTH_REQUIRED',
       });
     }
+    if (!authUser.can_like) {
+      return res.status(403).json({ success: false, message: '您已被禁止点赞', code: 'PERMISSION_DENIED' });
+    }
+    const currentUserId = authUser.id;
 
     const existingLike = await db.get('SELECT 1 FROM photo_likes WHERE photo_id = ? AND user_id = ?', id, currentUserId);
     if (!existingLike) {
@@ -522,6 +535,27 @@ router.get('/image/*', async (req: any, res) => {
     let decodedKey = decodeURIComponent(key);
 
     console.log('Proxy image request:', decodedKey);
+
+    // V1.7.0：功能权限检查（仅登录态生效）
+    // - 匿名访客：普通访问放行（公开浏览）；download=1 需登录（401）
+    // - 登录用户：封禁/禁用 → 401；can_view=0 普通访问 → 403；can_download=0 且 download=1 → 403
+    const isDownload = req.query.download === '1';
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr) {
+      return res.status(authErr.status).json({ success: false, message: authErr.message, code: authErr.code });
+    }
+    if (isDownload && !authUser) {
+      // 下载需登录（匿名访客不可下载，用户确认的决策）
+      return res.status(401).json({ success: false, message: '请先登录后下载', code: 'AUTH_REQUIRED' });
+    }
+    if (authUser) {
+      if (isDownload && !authUser.can_download) {
+        return res.status(403).json({ success: false, message: '您已被禁止下载图片', code: 'PERMISSION_DENIED' });
+      }
+      if (!isDownload && !authUser.can_view) {
+        return res.status(403).json({ success: false, message: '您已被禁止查看图片', code: 'PERMISSION_DENIED' });
+      }
+    }
 
     // 安全检查：查找该图片所属的照片记录
     const photoId = req.query.photoId as string | undefined;
@@ -666,15 +700,17 @@ function sendForbiddenImage(res: any) {
  */
 router.post('/upload/presigned', async (req, res) => {
   try {
-    // 强制登录：与 /upload 接口策略一致，防止匿名用户生成上传地址
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
+        success: false,
+        message: authErr?.message || '请先登录后上传',
+        code: authErr?.code || 'AUTH_REQUIRED',
+      });
     }
-    try {
-      jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production');
-    } catch {
-      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
+    if (!authUser.can_upload) {
+      return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
 
     const { fileName } = req.body;
@@ -705,18 +741,19 @@ router.post('/upload/presigned', async (req, res) => {
  */
 router.post('/upload/complete', async (req, res) => {
   try {
-    // 强制登录：从 JWT 解析 userId 写入 photos.user_id，杜绝匿名上传
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
+        success: false,
+        message: authErr?.message || '请先登录后上传',
+        code: authErr?.code || 'AUTH_REQUIRED',
+      });
     }
-    let userId: string;
-    try {
-      const decoded = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
-      userId = decoded.userId;
-    } catch {
-      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
+    if (!authUser.can_upload) {
+      return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
+    const userId = authUser.id;
 
     const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height } = req.body;
 
@@ -851,18 +888,19 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
     );
 
     // 强制登录：与 V1.4.0 点赞强制登录策略一致，杜绝匿名上传
-    // 历史曾允许 user_id 为 null 写入，导致 50 张匿名照片污染统计；V1.5.0 起要求所有上传必须登录
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: '请先登录后上传', code: 'AUTH_REQUIRED' });
+    // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + 功能权限
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
+        success: false,
+        message: authErr?.message || '请先登录后上传',
+        code: authErr?.code || 'AUTH_REQUIRED',
+      });
     }
-    let userId: string;
-    try {
-      const decoded = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'your-secret-key-change-in-production') as { userId: string };
-      userId = decoded.userId;
-    } catch {
-      return res.status(401).json({ success: false, message: '登录已过期，请重新登录', code: 'AUTH_REQUIRED' });
+    if (!authUser.can_upload) {
+      return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
+    const userId = authUser.id;
 
     const {
       title,

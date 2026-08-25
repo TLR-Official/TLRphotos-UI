@@ -125,4 +125,11 @@ export interface User {
   avatar_url?: string;
   is_active: number;
   created_at: string;
+  /** V1.7.0：封禁时间戳，非空表示已封禁 */
+  banned_at?: string | null;
+  /** V1.7.0：四项功能权限（1=允许，0=禁止） */
+  can_upload?: number;
+  can_view?: number;
+  can_download?: number;
+  can_like?: number;
 }

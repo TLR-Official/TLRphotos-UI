@@ -229,6 +229,49 @@ export async function toggleUser(id: string): Promise<{ success: boolean; messag
 }
 
 /**
+ * 封禁用户（V1.7.0）
+ * 封禁后用户无法登录，现有会话立即失效（强制下线）。
+ * @param id 用户 id
+ */
+export async function banUser(id: string): Promise<{ success: boolean; message?: string }> {
+  const response = await fetch(`${API_BASE}/users/${id}/ban`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 解封用户（V1.7.0）
+ * 清除封禁标记，用户可重新登录。
+ * @param id 用户 id
+ */
+export async function unbanUser(id: string): Promise<{ success: boolean; message?: string }> {
+  const response = await fetch(`${API_BASE}/users/${id}/unban`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 更新用户功能权限（V1.7.0）
+ * @param id 用户 id
+ * @param perms 待变更的权限字段（仅传需变更项，0/1）
+ */
+export async function updateUserPermissions(
+  id: string,
+  perms: Partial<{ can_upload: number; can_view: number; can_download: number; can_like: number }>
+): Promise<{ success: boolean; message?: string; data?: { can_upload: number; can_view: number; can_download: number; can_like: number } }> {
+  const response = await fetch(`${API_BASE}/users/${id}/permissions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(perms),
+  });
+  return response.json();
+}
+
+/**
  * 分页拉取管理员操作日志
  * @param page 页码（默认 1）
  * @param pageSize 每页数量（默认 50）

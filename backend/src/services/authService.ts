@@ -6,6 +6,7 @@
 
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import type express from 'express';
 import { db } from '../db';
 import { createSession, deleteUserSessions } from './cookieService';
 
@@ -25,6 +26,11 @@ export interface User {
   location: string | null;
   custom_fields: string | null;
   is_active: number;
+  banned_at: string | null;
+  can_upload: number;
+  can_view: number;
+  can_download: number;
+  can_like: number;
   created_at: string;
   updated_at: string;
 }
@@ -76,12 +82,16 @@ export async function register(email: string, password: string, username?: strin
  * @returns 用户信息、JWT 及可选会话 token
  */
 export async function login(email: string, password: string, remember?: boolean, ipAddress?: string): Promise<LoginResult> {
-  const user = await db.get('SELECT id, email, password_hash, username, avatar_url, is_active, created_at, updated_at FROM users WHERE email = ?', email);
+  const user = await db.get('SELECT id, email, password_hash, username, avatar_url, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at FROM users WHERE email = ?', email);
 
   if (!user) {
     throw new Error('邮箱或密码错误');
   }
 
+  // V1.7.0：先判封禁再判禁用，给出明确区分提示
+  if (user.banned_at) {
+    throw new Error('该账号已被封禁');
+  }
   if (!user.is_active) {
     throw new Error('用户已被禁用');
   }
@@ -112,6 +122,11 @@ export async function login(email: string, password: string, remember?: boolean,
       location: null,
       custom_fields: null,
       is_active: user.is_active,
+      banned_at: null,
+      can_upload: user.can_upload ?? 1,
+      can_view: user.can_view ?? 1,
+      can_download: user.can_download ?? 1,
+      can_like: user.can_like ?? 1,
       created_at: user.created_at,
       updated_at: user.updated_at,
     },
@@ -140,8 +155,58 @@ export function verifyToken(token: string): { userId: string } | null {
  * @returns 用户信息；不存在返回 null
  */
 export async function getUserById(userId: string): Promise<User | null> {
-  const user = await db.get('SELECT id, email, username, avatar_url, bio, phone, website, location, custom_fields, is_active, created_at, updated_at FROM users WHERE id = ?', userId);
+  const user = await db.get('SELECT id, email, username, avatar_url, bio, phone, website, location, custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at FROM users WHERE id = ?', userId);
   return user ? (user as User) : null;
+}
+
+/**
+ * 认证错误信息（V1.7.0 新增）。
+ * 用于 loadAuthUser 返回的 error 字段，供路由决定如何响应。
+ */
+export interface AuthError {
+  code: string;
+  message: string;
+  status: number;
+}
+
+/**
+ * 加载当前请求的认证用户（含封禁状态与功能权限）。
+ * V1.7.0 新增：替代内联 jwt.verify，统一在认证流程查库检查 banned_at/is_active，
+ * 实现封禁后现有 JWT 立即失效（任何需鉴权操作都返回 401）。
+ *
+ * - 无 token / token 无效 → { user: null, error: null }（匿名，公开路由放行）
+ * - token 有效但 banned_at 非空 → { user: null, error: USER_BANNED }（强制下线）
+ * - token 有效但 !is_active 且未封禁 → { user: null, error: USER_DISABLED }
+ * - 正常 → { user, error: null }
+ *
+ * @param req Express 请求（读取 Authorization 头）
+ * @returns { user, error }：user 含权限字段，error 为认证失败信息
+ */
+export async function loadAuthUser(req: express.Request): Promise<{ user: User | null; error: AuthError | null }> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { user: null, error: null };
+  }
+  const token = authHeader.substring(7);
+  let userId: string;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    userId = decoded.userId;
+  } catch {
+    return { user: null, error: null };
+  }
+
+  const user = await getUserById(userId);
+  if (!user) {
+    return { user: null, error: null };
+  }
+  if (user.banned_at) {
+    return { user: null, error: { code: 'USER_BANNED', message: '该账号已被封禁', status: 401 } };
+  }
+  if (!user.is_active) {
+    return { user: null, error: { code: 'USER_DISABLED', message: '用户已被禁用', status: 401 } };
+  }
+  return { user, error: null };
 }
 
 /**

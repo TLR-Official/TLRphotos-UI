@@ -21,6 +21,7 @@ import {
 import { db } from '../db';
 import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
+import { deleteUserSessions } from '../services/cookieService';
 
 const router = express.Router();
 
@@ -193,6 +194,54 @@ router.get('/users', adminAuthMiddleware, requireRole(['super', 'zone_master']),
       created_by: a.created_by,
       created_at: a.created_at,
     })),
+  });
+});
+
+/**
+ * 获取站点用户列表（分页，仅 super 可访问）。
+ * 支持按用户名或邮箱关键词模糊搜索。
+ *
+ * 注意：本路由必须注册在 `/users/:id` 之前，否则 "list" 会被当作 :id
+ * 参数匹配进详情路由，导致 404（与 /photos/stats 同样的顺序约束）。
+ * @query page 页码
+ * @query pageSize 每页数量
+ * @query keyword 用户名或邮箱关键词
+ */
+router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  const page = parseInt(req.query.page as string) || 1;
+  const pageSize = parseInt(req.query.pageSize as string) || 20;
+  const offset = (page - 1) * pageSize;
+  const keyword = req.query.keyword as string || '';
+
+  let query = 'SELECT * FROM users';
+  const params: (string | number)[] = [];
+
+  // 关键词搜索：同时匹配用户名与邮箱
+  if (keyword) {
+    query += ' WHERE username LIKE ? OR email LIKE ?';
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(pageSize, offset);
+
+  const users = await db.all(query, params);
+
+  // 计数查询需与列表查询保持相同的 WHERE 条件
+  let countQuery = 'SELECT COUNT(*) as count FROM users';
+  if (keyword) {
+    countQuery += ' WHERE username LIKE ? OR email LIKE ?';
+  }
+  const count = await db.get(countQuery, keyword ? [`%${keyword}%`, `%${keyword}%`] : []);
+
+  res.json({
+    success: true,
+    data: users,
+    pagination: {
+      page,
+      pageSize,
+      total: count?.count || 0,
+    },
   });
 });
 
@@ -605,51 +654,6 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
- * 获取站点用户列表（分页，仅 super 可访问）。
- * 支持按用户名或邮箱关键词模糊搜索。
- * @query page 页码
- * @query pageSize 每页数量
- * @query keyword 用户名或邮箱关键词
- */
-router.get('/users/list', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
-  const page = parseInt(req.query.page as string) || 1;
-  const pageSize = parseInt(req.query.pageSize as string) || 20;
-  const offset = (page - 1) * pageSize;
-  const keyword = req.query.keyword as string || '';
-
-  let query = 'SELECT * FROM users';
-  const params: (string | number)[] = [];
-
-  // 关键词搜索：同时匹配用户名与邮箱
-  if (keyword) {
-    query += ' WHERE username LIKE ? OR email LIKE ?';
-    params.push(`%${keyword}%`, `%${keyword}%`);
-  }
-
-  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  params.push(pageSize, offset);
-
-  const users = await db.all(query, params);
-  
-  // 计数查询需与列表查询保持相同的 WHERE 条件
-  let countQuery = 'SELECT COUNT(*) as count FROM users';
-  if (keyword) {
-    countQuery += ' WHERE username LIKE ? OR email LIKE ?';
-  }
-  const count = await db.get(countQuery, keyword ? [`%${keyword}%`, `%${keyword}%`] : []);
-
-  res.json({
-    success: true,
-    data: users,
-    pagination: {
-      page,
-      pageSize,
-      total: count?.count || 0,
-    },
-  });
-});
-
-/**
  * 切换站点用户启用/禁用状态（仅 super 可访问）。
  * 取当前 is_active 反值并写入，同时记录审计日志。
  * @param id 用户 ID
@@ -674,6 +678,124 @@ router.put('/users/:id/toggle', adminAuthMiddleware, requireRole(['super']), asy
     success: true,
     message: newStatus ? '用户已启用' : '用户已禁用',
     data: { is_active: newStatus },
+  });
+});
+
+/**
+ * 封禁站点用户（仅 super 可访问）。
+ * V1.7.0：设置 is_active=0 + banned_at=时间戳，并删除所有"记住我"会话实现强制下线。
+ * 被封禁用户重新登录时收到"该账号已被封禁"提示；现有 JWT 因 loadAuthUser 检查 banned_at 立即失效。
+ * @param id 用户 ID
+ */
+router.post('/users/:id/ban', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const user = await db.get('SELECT id, username, email, banned_at FROM users WHERE id = ?', [req.params.id]);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+  if (user.banned_at) {
+    return res.status(400).json({ success: false, message: '该用户已被封禁' });
+  }
+
+  const now = new Date().toISOString();
+  await db.run('UPDATE users SET is_active = 0, banned_at = ?, updated_at = ? WHERE id = ?', [now, now, req.params.id]);
+  // 强制下线：删除所有"记住我"会话；现有 JWT 由 loadAuthUser 在需鉴权接口拦截
+  await deleteUserSessions(req.params.id);
+  await logAdminAction(req.admin, 'ban_user', 'user', req.params.id, { username: user.username, email: user.email, banned_at: now }, req.ip);
+
+  res.json({ success: true, message: '用户已封禁' });
+});
+
+/**
+ * 解封站点用户（仅 super 可访问）。
+ * 清除 banned_at 标记并恢复 is_active=1。解封后用户可重新登录。
+ * @param id 用户 ID
+ */
+router.post('/users/:id/unban', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const user = await db.get('SELECT id, username, email, banned_at FROM users WHERE id = ?', [req.params.id]);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+  if (!user.banned_at) {
+    return res.status(400).json({ success: false, message: '该用户未被封禁' });
+  }
+
+  const now = new Date().toISOString();
+  await db.run('UPDATE users SET is_active = 1, banned_at = NULL, updated_at = ? WHERE id = ?', [now, req.params.id]);
+  await logAdminAction(req.admin, 'unban_user', 'user', req.params.id, { username: user.username, email: user.email }, req.ip);
+
+  res.json({ success: true, message: '用户已解封' });
+});
+
+/**
+ * 更新站点用户功能权限（仅 super 可访问）。
+ * V1.7.0：精细化权限控制 — 单独禁用上传/查看/下载/点赞。
+ * 仅传需变更的字段；先取当前值计算变更项，UPDATE 仅变更字段，并记录每项 from→to 审计日志。
+ * @param id 用户 ID
+ * @body can_upload / can_view / can_download / can_like（0/1，可选）
+ */
+router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const user = await db.get<{ id: string; username: string | null; can_upload: number; can_view: number; can_download: number; can_like: number }>(
+    'SELECT id, username, can_upload, can_view, can_download, can_like FROM users WHERE id = ?',
+    [req.params.id]
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  // 收集变更项：仅接受 0/1 整数，记录 from→to
+  const fields = ['can_upload', 'can_view', 'can_download', 'can_like'] as const;
+  const changes: Record<string, { from: number; to: number }> = {};
+  const updates: string[] = [];
+  const params: (string | number)[] = [];
+
+  for (const f of fields) {
+    const incoming = req.body[f];
+    if (incoming === 0 || incoming === 1) {
+      const current = user[f];
+      if (current !== incoming) {
+        changes[f] = { from: current, to: incoming };
+        updates.push(`${f} = ?`);
+        params.push(incoming);
+      }
+    }
+  }
+
+  if (updates.length === 0) {
+    return res.json({
+      success: true,
+      message: '权限未变更',
+      data: { can_upload: user.can_upload, can_view: user.can_view, can_download: user.can_download, can_like: user.can_like },
+    });
+  }
+
+  const now = new Date().toISOString();
+  updates.push('updated_at = ?');
+  params.push(now, req.params.id);
+  await db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+
+  await logAdminAction(req.admin, 'update_permissions', 'user', req.params.id, { username: user.username, changes }, req.ip);
+
+  const updated = await db.get<{ can_upload: number; can_view: number; can_download: number; can_like: number }>(
+    'SELECT can_upload, can_view, can_download, can_like FROM users WHERE id = ?',
+    [req.params.id]
+  );
+
+  res.json({
+    success: true,
+    message: '权限已更新',
+    data: updated,
   });
 });
 
