@@ -187,6 +187,8 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-08-31 22:12 | [fix] 定位登录 405 真正根因：Cloudflare Pages 项目绑定了 tlrphotos.com/www 自定义域，在边缘层接管全部流量（GET 全返 SPA 的 index.html、POST 一律 405 空体），公网请求从未到达源站（nginx access.log 零记录证实）；V1.7.1 的 /etc/hosts 修复仅对源站内部生效 | Cloudflare Dashboard (Pages/DNS) |
+| 2026-08-31 22:12 | [fix] 修复执行：移除 Pages 自定义域绑定（DNS A 记录本已正确指向 47.242.194.32）+ 清边缘缓存；关闭 Bot Fight Mode 与 AI Labyrinth（BFM 不在 Ruleset Engine 内、不可被 Skip 自定义规则跳过，且会误拦真实用户 POST）。验证全通过：POST /api/auth/login 返 400/401 业务 JSON、GET /api/photos 返真数据（cf-cache-status: DYNAMIC）、bundle index-BQJ4Zk6S.js 与本地 dist 一致、nginx access.log 恢复公网流量；无仓库代码变更，不升级版本号 | Cloudflare Dashboard (Pages/Security) |
 | 2026-08-25 20:24 | [release] 版本号升级至 V1.7.1 — 修复间歇性"服务器未返回响应"登录失败 | 全项目 |
 | 2026-08-25 20:24 | [fix] 根因修复：/etc/hosts 错误将 127.0.1.1 映射为 localhost（应为 hostname），导致 Nginx 解析 localhost 偶发返回 127.0.1.1；后端仅监听 127.0.0.1:3001，连 127.0.1.1:3001 时被拒（111 Connection refused）→ Nginx 返 502/空响应 → 前端"服务器未返回响应"；删除该错误行 (V1.7.1) | /etc/hosts |
 | 2026-08-25 20:24 | [fix] 防御性修复：tlrphotos + tlrphotos-admin 两站点 5 处 proxy_pass 由 http://localhost:3001 改为 http://127.0.0.1:3001，避免 DNS 歧义（已备份 .bak.202608251940）；nginx -t 通过 + reload 生效 (V1.7.1) | /etc/nginx/sites-available/tlrphotos, /etc/nginx/sites-available/tlrphotos-admin |
