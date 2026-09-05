@@ -18,9 +18,11 @@ import columnRouter from './routes/column';
 import authRouter from './routes/auth';
 import tagsRouter from './routes/tags';
 import adminRouter from './routes/admin';
+import verificationRouter from './routes/verification';
 import { initDb } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
+import { cleanupExpiredVerifications } from './services/verificationService';
 import { initSuperAdmin } from './services/adminService';
 import { memoryManager } from './services/memoryManager';
 
@@ -42,13 +44,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// 业务路由挂载：每个路由对应一组 /api/* 接口
+// 业务路由挂载：每个路由对应一组 /api/* 接口（含 V1.8.0 人机验证路由）
 app.use('/api/auth', authRouter);
 app.use('/api/photos', photosRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/verification', verificationRouter);
 
 // 静态资源：文章 Markdown 原文与上传文件目录
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));
@@ -106,6 +109,11 @@ function scheduleCleanup() {
     try {
       const deletedCount = await cleanupExpired();
       console.log(`[Cleanup] Deleted ${deletedCount} expired sessions at ${new Date().toISOString()}`);
+      // 同步清理已过期的人机验证状态记录，防止 user_verifications 表无限膨胀
+      const verifiedDeleted = await cleanupExpiredVerifications();
+      if (verifiedDeleted > 0) {
+        console.log(`[Cleanup] Deleted ${verifiedDeleted} expired verifications at ${new Date().toISOString()}`);
+      }
     } catch (error) {
       console.error('[Cleanup] Failed to clean up expired sessions:', error);
     }

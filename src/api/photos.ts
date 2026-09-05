@@ -212,6 +212,20 @@ export async function directUpload(
   });
 
   if (!response.ok) {
+    // V1.8.0：解析响应体透传业务错误码（如 HUMAN_VERIFICATION_REQUIRED），供前端验证门识别
+    try {
+      const errText = await response.text();
+      if (errText) {
+        const errData = JSON.parse(errText);
+        return {
+          success: false,
+          code: errData.code,
+          message: errData.message || `上传失败: ${response.status} ${response.statusText}`,
+        };
+      }
+    } catch {
+      // 非 JSON 响应走下方统一提示
+    }
     return {
       success: false,
       message: `上传失败: ${response.status} ${response.statusText}`,

@@ -5,7 +5,8 @@
  */
 import { useState, useEffect } from 'react';
 import { Search, User, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, Ban, ShieldCheck, Settings, X } from 'lucide-react';
-import { getUsers, toggleUser, banUser, unbanUser, updateUserPermissions } from './api';
+import { getUsers, toggleUser, banUser, unbanUser, updateUserPermissions, submitAdminVerification } from './api';
+import { useHumanVerification } from '../shared/useHumanVerification';
 import type { User as AdminUser } from './types';
 
 /** 权限弹窗中四项功能权限的配置（label + 字段 key） */
@@ -22,6 +23,11 @@ const PERMISSION_FIELDS: { key: 'can_upload' | 'can_view' | 'can_download' | 'ca
  */
 export function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  // V1.8.0：人机验证门（封禁/解封/权限变更为高危管理操作，走管理员验证接口）
+  const { guard: verificationGuard, modal: verificationModal } = useHumanVerification({
+    description: '封禁、解封与权限变更为高危管理操作，需完成人机验证。验证通过后 7 天内同一网络环境下无需重复验证。',
+    submitFn: submitAdminVerification,
+  });
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
@@ -72,7 +78,7 @@ export function UsersPage() {
   const handleBan = async (user: AdminUser) => {
     if (!confirm(`确定封禁用户「${user.username || user.email}」？\n封禁后该用户将立即下线且无法登录。`)) return;
     setActionLoading(user.id);
-    const result = await banUser(user.id);
+    const result = await verificationGuard('admin_user_admin', () => banUser(user.id));
     if (result.success) {
       const now = new Date().toISOString();
       setUsers(users.map(u => u.id === user.id ? { ...u, is_active: 0, banned_at: now } : u));
@@ -89,7 +95,7 @@ export function UsersPage() {
    */
   const handleUnban = async (user: AdminUser) => {
     setActionLoading(user.id);
-    const result = await unbanUser(user.id);
+    const result = await verificationGuard('admin_user_admin', () => unbanUser(user.id));
     if (result.success) {
       setUsers(users.map(u => u.id === user.id ? { ...u, is_active: 1, banned_at: null } : u));
     } else {
@@ -109,7 +115,7 @@ export function UsersPage() {
     // 乐观更新
     setPermUser({ ...permUser, [field]: newValue });
     setPermLoading(true);
-    const result = await updateUserPermissions(permUser.id, { [field]: newValue });
+    const result = await verificationGuard('admin_user_admin', () => updateUserPermissions(permUser.id, { [field]: newValue }));
     if (result.success && result.data) {
       // 用服务端返回的快照同步列表与弹窗
       setUsers(users.map(u => u.id === permUser.id ? { ...u, ...result.data } : u));
@@ -150,6 +156,7 @@ export function UsersPage() {
 
   return (
     <div>
+      {verificationModal}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">用户管理</h2>
         <div className="relative">

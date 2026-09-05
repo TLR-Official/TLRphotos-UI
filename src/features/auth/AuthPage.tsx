@@ -3,7 +3,8 @@
  * 通过顶部切换按钮在登录与注册两种模式间切换，支持邮箱密码登录、注册（含确认密码与用户名）、
  * 记住登录状态，以及微信/QQ 第三方登录入口（占位）。
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../../components/TurnstileWidget';
 import { useUser } from '../../shared/UserContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
@@ -25,6 +26,9 @@ export function AuthPage() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // V1.8.0：Turnstile 人机验证令牌（挑战通过后随表单提交）
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const { login, register, isAuthenticated } = useUser();
   const navigate = useNavigate();
 
@@ -34,6 +38,12 @@ export function AuthPage() {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
+
+  // V1.8.0：切换登录/注册模式时重置人机验证（action 变化，旧令牌不再匹配）
+  useEffect(() => {
+    setTurnstileToken('');
+    turnstileRef.current?.reset();
+  }, [isLogin]);
 
   /**
    * 表单提交处理
@@ -64,10 +74,10 @@ export function AuthPage() {
 
     try {
       if (isLogin) {
-        await login(email, password, remember);
+        await login(email, password, remember, turnstileToken || undefined);
         navigate('/');
       } else {
-        await register(email, password, username);
+        await register(email, password, username, turnstileToken || undefined);
         // 注册成功后切回登录模式并清空表单
         setIsLogin(true);
         setEmail('');
@@ -77,6 +87,9 @@ export function AuthPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败');
+      // Turnstile 令牌一次性：提交后需重置挑战获取新令牌
+      setTurnstileToken('');
+      turnstileRef.current?.reset();
     } finally {
       setIsLoading(false);
     }
@@ -240,6 +253,21 @@ export function AuthPage() {
                     ? 'bg-white/10 border border-white/20 text-white placeholder-white/40' 
                     : 'bg-white border border-gray-200 text-gray-900 placeholder-gray-400'
                 }`}
+              />
+            </div>
+
+            {/* V1.8.0：人机验证（Turnstile）。挑战通过后令牌随表单提交，通过后 7 天内同 IP 免重复验证 */}
+            <div>
+              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-white/70' : 'text-gray-600'}`}>
+                安全验证
+              </label>
+              <TurnstileWidget
+                ref={turnstileRef}
+                action={isLogin ? 'login' : 'register'}
+                theme={isDark ? 'dark' : 'light'}
+                onSuccess={setTurnstileToken}
+                onExpire={() => setTurnstileToken('')}
+                onError={() => setTurnstileToken('')}
               />
             </div>
 

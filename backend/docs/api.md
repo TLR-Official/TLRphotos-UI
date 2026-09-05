@@ -530,9 +530,12 @@ Content-Type: multipart/form-data
 {
   "email": "user@example.com",
   "password": "password123",
-  "username": "用户名"
+  "username": "用户名",
+  "turnstile_token": "0.zzAAA..."
 }
 ```
+
+**V1.8.0 人机验证**：注册为高危操作，请求体必须携带 Turnstile 挑战令牌 `turnstile_token`（action=register），服务端 siteverify 校验（success + action + hostname 白名单）通过后方可注册，fail-closed。
 
 **响应**:
 ```json
@@ -565,6 +568,7 @@ Content-Type: multipart/form-data
 | email | string | 是 | - | 邮箱地址 |
 | password | string | 是 | - | 密码 |
 | remember | boolean | 否 | false | 是否保存登录状态（30天有效） |
+| turnstile_token | string | 条件 | - | V1.8.0 人机验证令牌：当前无有效验证状态（168h 内同 IP）时必传（action=login），已有有效验证状态可省略 |
 
 **响应**:
 ```json
@@ -587,6 +591,7 @@ Content-Type: multipart/form-data
 - 当 `remember` 为 `true` 时，返回 `session_token`，用于自动登录
 - `session_token` 有效期为 30 天，或连续 7 天无活动自动过期
 - **V1.7.0 封禁检查**：被封禁用户（`banned_at` 非空）尝试登录时返回 `400 { success: false, message: "该账号已被封禁" }`，无法成功登录；被封禁用户的现有 JWT 也会在所有需鉴权接口（上传/点赞/查看/下载）被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
+- **V1.8.0 人机验证**：登录前先做人机验证门——若该用户已有有效验证状态（168h 内且 IP 未变）则直接放行；否则校验请求体 `turnstile_token`（action=login），未通过返回 `403/503 { code: "HUMAN_VERIFICATION_REQUIRED" }`。登录成功即建立/刷新 168h 验证状态
 
 ### 自动登录（刷新令牌）
 
@@ -761,6 +766,118 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 ```
 
 ---
+
+## 人机验证 (Human Verification, V1.8.0)
+
+基于 Cloudflare Turnstile 的人机认证机制，保护所有高危操作。
+
+### 机制说明
+
+- **验证门（fail-closed）**：下方清单中的高危端点在执行前强制校验人机验证状态；Turnstile 服务未配置或暂不可用时一律拒绝（503），不存在任何绕过通道
+- **168 小时有效期**：通过一次验证后 168 小时（7 天）内免重复验证，超时自动过期（定时任务每日清理过期记录）
+- **IP 绑定**：验证状态与客户端 IP（X-Forwarded-For 首段）绑定，IP 变更立即失效
+- **登出失效**：`POST /api/auth/logout` 成功后立即清除该用户的验证状态
+- **登录/注册内联验证**：登录与注册在请求体内直接携带 `turnstile_token`，服务端 canonical siteverify 校验（success === true + action 匹配 + hostname 白名单）通过后方可继续；登录成功即建立 168h 验证状态
+- **其余高危操作**：请求被 403 拦截后，前端弹出 Turnstile 验证组件，完成挑战后调用 `POST /api/verification/verify`（管理端调 `/api/admin/verification/verify`）建立验证状态，再重试原操作
+- **测试绕过**：仅 `NODE_ENV=test` 且请求携带与 `TEST_BYPASS_TOKEN` 完全匹配的 `tokens` 参数时放行；生产环境该通道物理关闭
+
+### 高危端点清单
+
+| 端点 | 方法 | action | 拦截方式 |
+|------|------|--------|----------|
+| /api/auth/register | POST | register | 请求体携带 turnstile_token |
+| /api/auth/login | POST | login | 请求体携带 turnstile_token（已有有效验证状态时免） |
+| /api/auth/me | PUT | update_profile | 403 验证门 |
+| /api/auth/me/password | PUT | change_password | 403 验证门 |
+| /api/auth/me/avatar | POST | avatar_upload | 403 验证门 |
+| /api/photos/upload/presigned | POST | photo_upload | 403 验证门 |
+| /api/photos/upload/complete | POST | photo_upload | 403 验证门 |
+| /api/photos/upload | POST | photo_upload | 403 验证门 |
+| /api/photos/:id | DELETE | photo_delete | 403 验证门 |
+| /api/admin/users/:id/ban | POST | admin_user_admin | 403 验证门 |
+| /api/admin/users/:id/unban | POST | admin_user_admin | 403 验证门 |
+| /api/admin/users/:id/permissions | PUT | admin_user_admin | 403 验证门 |
+
+### 验证门拦截响应（403）
+
+```json
+{
+  "success": false,
+  "code": "HUMAN_VERIFICATION_REQUIRED",
+  "message": "该操作需先完成人机验证，请按页面提示完成验证后重试"
+}
+```
+
+### 查询验证状态（用户端）
+
+**GET** `/api/verification/status`
+
+**鉴权**: Bearer Token（用户）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "verified": true,
+    "verified_at": "2026-09-05T12:00:00.000Z",
+    "expires_at": "2026-09-12T12:00:00.000Z"
+  }
+}
+```
+
+### 提交人机验证（用户端）
+
+**POST** `/api/verification/verify`
+
+**鉴权**: Bearer Token（用户）
+
+**请求体**:
+```json
+{
+  "action": "photo_delete",
+  "turnstile_token": "0.zzAAA..."
+}
+```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| action | string | 是 | 高危操作类型，白名单：login / register / change_password / update_profile / avatar_upload / photo_upload / photo_delete / admin_user_admin |
+| turnstile_token | string | 是 | Turnstile widget 返回的令牌（一次性，≤2048 字符） |
+| tokens | string | 否 | 测试绕过参数，仅 NODE_ENV=test 且匹配 TEST_BYPASS_TOKEN 时生效 |
+
+**响应**: 同"查询验证状态"
+
+**错误**:
+- `403 HUMAN_VERIFICATION_FAILED`：siteverify 校验未通过（token 无效 / action 不匹配 / hostname 不在 TURNSTILE_HOSTNAMES 白名单）
+- `503`：Turnstile 服务未配置或暂不可用（fail-closed，一律拒绝）
+
+### 提交人机验证（管理端）
+
+**POST** `/api/admin/verification/verify`
+
+**鉴权**: Bearer Token（管理员）
+
+**请求体**:
+```json
+{
+  "action": "admin_user_admin",
+  "turnstile_token": "0.zzAAA..."
+}
+```
+
+**说明**: `action` 固定为 `admin_user_admin`；校验通过后建立管理员 168h 验证状态（subject_type=admin），与用户态相互独立。
+
+**响应**: 同"查询验证状态"
+
+### 查询验证状态（管理端）
+
+**GET** `/api/admin/verification/status`
+
+**鉴权**: Bearer Token（管理员）
+
+**响应**: 同"查询验证状态"（verified 为管理员当前验证状态）
 
 ## 专栏接口 (Column)
 

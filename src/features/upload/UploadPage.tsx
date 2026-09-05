@@ -8,6 +8,7 @@ import { useTheme } from '../../shared/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
+import { useHumanVerification } from '../../shared/useHumanVerification';
 import { getTagCategories } from '../../api/tags';
 import type { TagCategory } from '../../api/tags';
 import { TagSelector } from '../../components/TagSelector';
@@ -40,6 +41,8 @@ export function UploadPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const { isAuthenticated, token } = useUser();
+  // V1.8.0：人机验证门（上传被 403 拦截时弹出）
+  const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const watermarkRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -319,7 +322,7 @@ export function UploadPage() {
         uploadMeta.watermarkSize = watermarkSize;
       }
 
-      const result = await directUpload(file, uploadMeta, token || undefined);
+      const result = await verificationGuard('photo_upload', () => directUpload(file, uploadMeta, token || undefined));
 
       if (!result.success || !result.data) {
         setError(result.message || '上传失败');
@@ -358,6 +361,7 @@ export function UploadPage() {
 
   return (
     <div className="min-h-screen py-8 px-4">
+      {verificationModal}
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className={`text-3xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>

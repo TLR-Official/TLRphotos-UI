@@ -9,6 +9,15 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { register, login, verifyToken, getUserById, updateUser, changePassword, updateAvatar } from '../services/authService';
 import { getSession, updateLastActive, deleteSession } from '../services/cookieService';
+import {
+  isTestBypass,
+  verifyTurnstileToken,
+  getValidVerification,
+  saveVerification,
+  clearVerification,
+  ensureHumanVerified,
+  getVerificationIp,
+} from '../services/verificationService';
 import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
@@ -72,10 +81,22 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, username } = req.body;
+    const { email, password, username, turnstile_token, tokens } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: '邮箱和密码不能为空' });
+    }
+
+    // V1.8.0 人机验证：注册必须先通过 Turnstile（action=register；测试环境可用 tokens 绕过）
+    if (!isTestBypass(tokens)) {
+      const verdict = await verifyTurnstileToken(turnstile_token, 'register', getVerificationIp(req));
+      if (!verdict.ok) {
+        return res.status(verdict.status).json({
+          success: false,
+          code: 'HUMAN_VERIFICATION_REQUIRED',
+          message: verdict.message,
+        });
+      }
     }
 
     const user = await register(email, password, username);
@@ -105,14 +126,37 @@ router.post('/register', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password, remember } = req.body;
+    const { email, password, remember, turnstile_token, tokens } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: '邮箱和密码不能为空' });
     }
 
     const ipAddress = getClientIp(req);
+    const vIp = getVerificationIp(req);
+
+    // V1.8.0 人机验证（fail-closed），按序判断：
+    // 1) 测试环境 tokens 绕过；2) 168h 内已验证、未登出且 IP 未变 → 免重复验证；
+    // 3) 否则必须携带有效 Turnstile token（action=login）方可进入密码校验
+    if (!isTestBypass(tokens)) {
+      const userRow = await db.get('SELECT id FROM users WHERE email = ?', email);
+      const verified = userRow ? await getValidVerification('user', userRow.id, vIp) : null;
+      if (!verified) {
+        const verdict = await verifyTurnstileToken(turnstile_token, 'login', vIp);
+        if (!verdict.ok) {
+          return res.status(verdict.status).json({
+            success: false,
+            code: 'HUMAN_VERIFICATION_REQUIRED',
+            message: verdict.message,
+          });
+        }
+      }
+    }
+
     const result = await login(email, password, remember, ipAddress);
+
+    // V1.8.0：登录成功即建立/刷新 168h 人机验证状态（绑定当前 IP）
+    await saveVerification('user', result.user.id, vIp, 'login');
 
     res.json({
       success: true,
@@ -205,6 +249,12 @@ router.put('/me', async (req, res) => {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
+    // V1.8.0：资料修改为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', decoded.userId, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
+    }
+
     const { username, bio, phone, website, location, custom_fields } = req.body;
 
     const updatedUser = await updateUser(decoded.userId, {
@@ -255,6 +305,12 @@ router.put('/me/password', async (req, res) => {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
+    // V1.8.0：修改密码为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', decoded.userId, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
+    }
+
     const { oldPassword, newPassword } = req.body;
 
     if (!oldPassword || !newPassword) {
@@ -293,6 +349,13 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
+    // V1.8.0：头像上传为高危操作，需人机验证状态；拦截时清理 multer 已落盘临时文件
+    const denied = await ensureHumanVerified('user', decoded.userId, req);
+    if (denied) {
+      cleanupTempFile(req);
+      return res.status(denied.status).json(denied.payload);
+    }
+
     if (!req.file) {
       return res.status(400).json({ success: false, message: '请上传图片' });
     }
@@ -324,6 +387,11 @@ router.post('/logout', async (req, res) => {
   try {
     const sessionToken = req.headers['x-session-token'] as string;
     if (sessionToken) {
+      // V1.8.0：退出登录使人机验证状态立即失效（再次高危操作需重新验证）
+      const session = await getSession(sessionToken);
+      if (session?.user_id) {
+        await clearVerification('user', session.user_id);
+      }
       await deleteSession(sessionToken);
     }
     res.json({ success: true, message: '退出成功' });

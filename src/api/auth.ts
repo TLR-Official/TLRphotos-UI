@@ -45,6 +45,7 @@ export interface LoginData {
 export interface LoginResponse {
   success: boolean;
   message?: string;
+  code?: string;      // 业务错误码（人机验证拦截时为 HUMAN_VERIFICATION_REQUIRED）
   data?: {
     user: User;
     token: string;
@@ -56,6 +57,7 @@ export interface LoginResponse {
 export interface RegisterResponse {
   success: boolean;
   message?: string;
+  code?: string;      // 业务错误码（人机验证拦截时为 HUMAN_VERIFICATION_REQUIRED）
   data?: {
     id: string;
     email: string;
@@ -91,9 +93,10 @@ export interface RefreshResponse {
  * @param email - 邮箱
  * @param password - 密码
  * @param remember - 是否启用长期会话（返回 session_token）
+ * @param turnstileToken - Turnstile 人机验证令牌（V1.8.0，验证门要求时必传）
  * @returns LoginResponse，含 user、token 与可选 session_token
  */
-export async function login(email: string, password: string, remember?: boolean): Promise<LoginResponse> {
+export async function login(email: string, password: string, remember?: boolean, turnstileToken?: string): Promise<LoginResponse> {
   // 超时控制：登录涉及 bcrypt 校验，留 30s 余量；超时后 abort 中断 fetch
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -104,7 +107,7 @@ export async function login(email: string, password: string, remember?: boolean)
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, password, remember }),
+      body: JSON.stringify({ email, password, remember, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
       signal: controller.signal,
     });
 
@@ -246,14 +249,15 @@ export async function loginWithManager(email: string, password: string): Promise
  * @param email - 邮箱
  * @param password - 密码
  * @param username - 用户名（可选）
+ * @param turnstileToken - Turnstile 人机验证令牌（V1.8.0，验证门要求时必传）
  * @returns ApiResponse<RegisterData>
  */
-export async function register(email: string, password: string, username?: string): Promise<ApiResponse<RegisterData>> {
+export async function register(email: string, password: string, username?: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
   const key = `register:${email}`;
   return deduplicatedRequest(key, () =>
     request<RegisterData>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, username }),
+      body: JSON.stringify({ email, password, username, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
     })
   );
 }

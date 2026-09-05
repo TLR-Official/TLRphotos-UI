@@ -49,6 +49,14 @@ beforeAll(async () => {
 
   app = express();
   app.use(express.json());
+  // V1.8.0：测试环境人机验证绕过 —— 为请求体注入 tokens 参数，
+  // isTestBypass 仅在 NODE_ENV=test 且与 TEST_BYPASS_TOKEN 完全匹配时放行
+  process.env.TEST_BYPASS_TOKEN = 'test-verification-bypass';
+  app.use((req, _res, next) => {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) req.body = {};
+    req.body.tokens = 'test-verification-bypass';
+    next();
+  });
   app.use('/api/admin', adminRoutes);
 
   // 登录获取 token

@@ -301,3 +301,28 @@ export async function getDashboardHealth(): Promise<{ success: boolean; data?: i
   });
   return response.json();
 }
+
+/**
+ * 查询管理员当前人机验证状态（V1.8.0）
+ * @returns verified 是否处于有效验证状态及到期时间
+ */
+export async function getAdminVerificationStatus(): Promise<{ success: boolean; data?: { verified: boolean; verified_at?: string; expires_at?: string } }> {
+  const response = await fetch(`${API_BASE}/verification/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 提交管理员人机验证（V1.8.0）
+ * 完成 Turnstile 挑战后调用，建立 168 小时管理员验证状态（绑定 IP）。
+ * @param turnstileToken Turnstile 一次性令牌
+ */
+export async function submitAdminVerification(turnstileToken: string): Promise<{ success: boolean; message?: string }> {
+  const response = await fetch(`${API_BASE}/verification/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action: 'admin_user_admin', turnstile_token: turnstileToken }),
+  });
+  return response.json();
+}

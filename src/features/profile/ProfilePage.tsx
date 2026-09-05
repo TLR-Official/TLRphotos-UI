@@ -7,7 +7,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
-import { uploadAvatar, changePassword, getUserStats, getMyPhotos } from '../../api/auth';
+import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser } from '../../api/auth';
+import { useHumanVerification } from '../../shared/useHumanVerification';
 import type { User, UserStats, MyPhoto } from '../../api/auth';
 import { getCacheStats, clearCache, formatBytes, type CacheStats } from '../../utils/imageCache';
 import { CachedImage } from '../../components/CachedImage';
@@ -27,7 +28,9 @@ import {
 export function ProfilePage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { user, isAuthenticated, updateUserInfo, token } = useUser();
+  const { user, isAuthenticated, updateUserInfo, refreshUser, token } = useUser();
+  // V1.8.0：人机验证门（头像上传/资料修改/修改密码被 403 拦截时弹出）
+  const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
   // viewMode：仪表盘 / 设置 两种顶层视图
   const [viewMode, setViewMode] = useState<'dashboard' | 'settings'>('dashboard');
   // activeTab：设置视图下的子标签页
@@ -277,7 +280,8 @@ export function ProfilePage() {
       if (avatarPreview) {
         const fileInput = document.getElementById('avatar-input') as HTMLInputElement;
         if (fileInput.files?.[0]) {
-          const result = await uploadAvatar(fileInput.files[0]);
+          const avatarFile = fileInput.files[0];
+          const result = await verificationGuard('avatar_upload', () => uploadAvatar(avatarFile));
           if (result.success && result.data) {
             await updateUserInfo({ avatar_url: result.data.avatar_url });
           } else {
@@ -294,7 +298,12 @@ export function ProfilePage() {
         location: formData.location,
         custom_fields: formData.custom_fields,
       };
-      await updateUserInfo(updateData);
+      // V1.8.0：资料修改为高危操作，经验证门包裹（用原始 API 以便 403 拦截可被识别）
+      const updated = await verificationGuard('update_profile', () => updateUser(updateData));
+      if (!updated.success) {
+        throw new Error(updated.message || '更新用户信息失败');
+      }
+      await refreshUser();
       setMessage('资料更新成功');
     } catch (error) {
       setMessage((error as Error).message || '更新失败');
@@ -357,7 +366,7 @@ export function ProfilePage() {
     setMessage('');
 
     try {
-      const result = await changePassword(passwordForm.oldPassword, passwordForm.newPassword);
+      const result = await verificationGuard('change_password', () => changePassword(passwordForm.oldPassword, passwordForm.newPassword));
       if (result.success) {
         setMessage('密码修改成功');
         setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -461,6 +470,7 @@ export function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {verificationModal}
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* 头部：用户信息 */}
         <div className="rounded-2xl shadow-xl overflow-hidden bg-white mb-6">

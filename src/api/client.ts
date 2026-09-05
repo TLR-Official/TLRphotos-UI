@@ -21,6 +21,7 @@ interface ApiResponse<T = unknown> {
   success: boolean;   // 业务是否成功
   data?: T;           // 业务数据
   message?: string;   // 提示信息（失败时必填）
+  code?: string;      // 业务错误码（如 HUMAN_VERIFICATION_REQUIRED，供前端验证门识别）
 }
 
 // 错误类型枚举常量集合
@@ -128,6 +129,7 @@ async function request<T = unknown>(
             const errorData = JSON.parse(text);
             return {
               success: false,
+              code: errorData.code,
               message: errorData.message || `请求失败: ${response.status} ${response.statusText}`,
             };
           } catch {

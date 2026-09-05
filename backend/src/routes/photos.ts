@@ -14,6 +14,7 @@ import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedB
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
 import { verifyAdminToken } from '../services/adminService';
 import { loadAuthUser } from '../services/authService';
+import { ensureHumanVerified } from '../services/verificationService';
 import { memoryManager } from '../services/memoryManager';
 
 const router = express.Router();
@@ -713,6 +714,12 @@ router.post('/upload/presigned', async (req, res) => {
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
 
+    // V1.8.0：上传为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', authUser.id, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
+    }
+
     const { fileName } = req.body;
 
     if (!fileName) {
@@ -754,6 +761,12 @@ router.post('/upload/complete', async (req, res) => {
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
     const userId = authUser.id;
+
+    // V1.8.0：上传完成落库为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', authUser.id, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
+    }
 
     const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height } = req.body;
 
@@ -901,6 +914,12 @@ router.post('/upload', upload.single('image'), handleUploadError, async (req: ex
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
     const userId = authUser.id;
+
+    // V1.8.0：直传为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', authUser.id, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
+    }
 
     const {
       title,
@@ -1113,6 +1132,12 @@ router.delete('/:id', async (req, res) => {
     // 权限校验：仅上传者本人可删除
     if (photo.user_id !== decoded.userId) {
       return res.status(403).json({ success: false, message: '无权删除此照片' });
+    }
+
+    // V1.8.0：删除照片为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const denied = await ensureHumanVerified('user', decoded.userId, req);
+    if (denied) {
+      return res.status(denied.status).json(denied.payload);
     }
 
     // 从完整 OSS URL 中提取对象 Key（去除域名前缀与查询参数）

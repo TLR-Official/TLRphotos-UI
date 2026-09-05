@@ -178,6 +178,22 @@ const initSchema = async () => {
     CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id ON admin_logs(admin_id);
     CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_admin_logs_action ON admin_logs(action);
+
+    -- 人机验证状态表（V1.8.0）：记录每个主体最近一次通过 Cloudflare Turnstile 人机验证的状态
+    -- subject_type: 'user'（前台用户）| 'admin'（管理后台管理员）
+    -- UNIQUE(subject_type, subject_id)：同一主体仅保留一条记录，重验证时覆盖更新
+    -- 168 小时（7 天）有效期 + IP 绑定：登出或 IP 变更立即失效（见 verificationService）
+    CREATE TABLE IF NOT EXISTS user_verifications (
+      id TEXT PRIMARY KEY,
+      subject_type TEXT NOT NULL DEFAULT 'user',
+      subject_id TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      action TEXT,
+      verified_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      UNIQUE (subject_type, subject_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_verifications_expires_at ON user_verifications(expires_at);
   `);
 
   // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，

@@ -22,6 +22,16 @@ import { db } from '../db';
 import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
 import { deleteUserSessions } from '../services/cookieService';
+import {
+  verifyTurnstileToken,
+  saveVerification,
+  getValidVerification,
+  ensureHumanVerified,
+  getVerificationIp,
+  isTestBypass,
+  VERIFICATION_ACTIONS,
+  type VerificationAction,
+} from '../services/verificationService';
 
 const router = express.Router();
 
@@ -692,6 +702,12 @@ router.post('/users/:id/ban', adminAuthMiddleware, requireRole(['super']), async
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
+  // V1.8.0：封禁用户为高危操作，需管理员人机验证状态（168h 内同 IP 有效）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
   const user = await db.get('SELECT id, username, email, banned_at FROM users WHERE id = ?', [req.params.id]);
   if (!user) {
     return res.status(404).json({ success: false, message: '用户不存在' });
@@ -719,6 +735,12 @@ router.post('/users/:id/unban', adminAuthMiddleware, requireRole(['super']), asy
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
+  // V1.8.0：解封用户为高危操作，需管理员人机验证状态（168h 内同 IP 有效）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
   const user = await db.get('SELECT id, username, email, banned_at FROM users WHERE id = ?', [req.params.id]);
   if (!user) {
     return res.status(404).json({ success: false, message: '用户不存在' });
@@ -744,6 +766,12 @@ router.post('/users/:id/unban', adminAuthMiddleware, requireRole(['super']), asy
 router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // V1.8.0：权限变更为高危操作，需管理员人机验证状态（168h 内同 IP 有效）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
   }
 
   const user = await db.get<{ id: string; username: string | null; can_upload: number; can_view: number; can_download: number; can_like: number }>(
@@ -989,5 +1017,57 @@ setInterval(async () => {
     console.error('[HealthMonitor] 检查失败:', e);
   }
 }, 5 * 60 * 1000); // 5 分钟
+
+/**
+ * 管理员人机验证提交（V1.8.0 新增）。
+ * 管理后台高危操作（封禁/解封/权限变更）被 403 拦截后，
+ * 管理员完成 Turnstile 挑战，携带 token 调用本接口建立 168h 验证状态。
+ * @body turnstile_token Turnstile 挑战令牌
+ * @body action 固定为 admin_user_admin
+ * @body tokens 测试环境专用绕过参数（NODE_ENV=test 且匹配 TEST_BYPASS_TOKEN）
+ */
+router.post('/verification/verify', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+
+    const { turnstile_token, tokens } = req.body;
+    const action: VerificationAction = 'admin_user_admin';
+    const ip = getVerificationIp(req);
+
+    if (!isTestBypass(tokens)) {
+      const verdict = await verifyTurnstileToken(turnstile_token, action, ip);
+      if (!verdict.ok) {
+        return res.status(verdict.status).json({ success: false, code: 'HUMAN_VERIFICATION_FAILED', message: verdict.message });
+      }
+    }
+
+    await saveVerification('admin', req.admin.id, ip, action);
+    const state = await getValidVerification('admin', req.admin.id, ip);
+
+    res.json({ success: true, data: { verified: true, verified_at: state?.verifiedAt, expires_at: state?.expiresAt } });
+  } catch (error) {
+    console.error('Admin verification error:', error);
+    res.status(500).json({ success: false, message: '人机验证失败，请重试' });
+  }
+});
+
+/**
+ * 查询管理员当前人机验证状态（V1.8.0 新增）。
+ * 前端用于决定是否需要弹出验证组件。
+ */
+router.get('/verification/status', adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({ success: false, message: '未授权' });
+    }
+    const state = await getValidVerification('admin', req.admin.id, getVerificationIp(req));
+    res.json({ success: true, data: { verified: !!state, verified_at: state?.verifiedAt, expires_at: state?.expiresAt } });
+  } catch (error) {
+    console.error('Admin verification status error:', error);
+    res.status(500).json({ success: false, message: '查询验证状态失败' });
+  }
+});
 
 export default router;

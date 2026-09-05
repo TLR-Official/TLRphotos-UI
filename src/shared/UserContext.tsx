@@ -21,8 +21,8 @@ interface UserContextType {
   token: string | null;                                           // 当前 Token
   isAuthenticated: boolean;                                       // 是否已认证（user 是否存在）
   isLoading: boolean;                                             // 初始化加载中
-  login: (email: string, password: string, remember?: boolean) => Promise<void>;
-  register: (email: string, password: string, username?: string) => Promise<void>;
+  login: (email: string, password: string, remember?: boolean, turnstileToken?: string) => Promise<void>;
+  register: (email: string, password: string, username?: string, turnstileToken?: string) => Promise<void>;
   logout: () => void;
   updateUserInfo: (data: Partial<User>) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -102,8 +102,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
    * @param remember - 是否启用长期会话（保存 session_token）
    * @throws 登录失败时抛出 Error，由调用方处理
    */
-  const handleLogin = useCallback(async (email: string, password: string, remember?: boolean) => {
-    const result = await login(email, password, remember);
+  const handleLogin = useCallback(async (email: string, password: string, remember?: boolean, turnstileToken?: string) => {
+    const result = await login(email, password, remember, turnstileToken);
     if (result.success && result.data) {
       localStorage.setItem('token', result.data.token);
       setToken(result.data.token);
@@ -126,8 +126,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
    * @param username - 用户名（可选）
    * @throws 注册失败时抛出 Error
    */
-  const handleRegister = useCallback(async (email: string, password: string, username?: string) => {
-    const result = await register(email, password, username);
+  const handleRegister = useCallback(async (email: string, password: string, username?: string, turnstileToken?: string) => {
+    const result = await register(email, password, username, turnstileToken);
     if (!result.success) {
       throw new Error(result.message || '注册失败');
     }

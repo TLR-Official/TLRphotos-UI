@@ -12,6 +12,7 @@ import { Heart, Eye, Download } from 'lucide-react';
 import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
+import { useHumanVerification } from '../../shared/useHumanVerification';
 
 
 /**
@@ -24,6 +25,8 @@ export function PhotoDetailPage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { user, token } = useUser();
+  // V1.8.0：人机验证门（删除照片被 403 拦截时弹出）
+  const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
   // photo：详情数据，null 表示不存在或未加载
   const [photo, setPhoto] = useState<PhotoDetail | null>(null);
   // isLoading：首次加载标识，控制全屏 loading 占位
@@ -125,7 +128,7 @@ export function PhotoDetailPage() {
     if (!id || !token || isDeleting) return;
 
     setIsDeleting(true);
-    const result = await deletePhoto(id, token);
+    const result = await verificationGuard('photo_delete', () => deletePhoto(id, token));
     
     if (result.success) {
       navigate('/gallery');
@@ -248,6 +251,7 @@ export function PhotoDetailPage() {
 
   return (
     <main className="py-8 px-4">
+      {verificationModal}
       <div className="max-w-6xl mx-auto">
         <button
           onClick={(e) => {
