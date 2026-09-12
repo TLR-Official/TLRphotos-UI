@@ -1,0 +1,191 @@
+@startuml
+!theme plain
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam ArrowColor #555555
+skinparam ArrowFontSize 10
+skinparam RectangleBorderColor #6c8ebf
+skinparam RectangleBackgroundColor #dae8fc
+skinparam PackageBorderColor #999999
+skinparam PackageBackgroundColor #f8f9fa
+
+title TLRphotos 系统架构图（详细版）· V1.8.3\n单台 ECS + 阿里云 OSS + Cloudflare 边缘｜62 个 API · 13 张表 · 7 个服务 · 48 个前端组件
+
+' ==================== 用户层 ====================
+package "用户层" #ffffff {
+  package "用户前台 SPA\n（React + Vite + TypeScript + Tailwind）" #ffffff {
+    rectangle "AuthPage\n登录/注册" as P1 #dae8fc
+    rectangle "GalleryPage\n画廊（分区标签）" as P2 #dae8fc
+    rectangle "PhotoDetailPage\n照片详情 + 点赞" as P3 #dae8fc
+    rectangle "PhotoCarousel\n照片轮播" as P4 #dae8fc
+    rectangle "UploadPage\n上传 + 水印预览" as P5 #dae8fc
+    rectangle "ProfilePage\n个人资料/改密/头像" as P6 #dae8fc
+    rectangle "UserProfilePage\n他人主页" as P7 #dae8fc
+    rectangle "ColumnList + ArticleDetail\n专栏文章" as P8 #dae8fc
+    rectangle "TurnstileWidget\n+ HumanVerificationModal\n（V1.8.0 验证门）" as P9 #e1d5e7
+  }
+  package "管理后台 SPA\n（React + Vite + TypeScript + Tailwind）" #ffffff {
+    rectangle "LoginPage\n管理员登录" as A1 #dae8fc
+    rectangle "DashboardPage\n仪表盘 + 健康检查" as A2 #dae8fc
+    rectangle "PhotosPage\n待审/已审照片" as A3 #dae8fc
+    rectangle "PhotoDetailPage\n审核 + 9 项图像分析工具" as A4 #dae8fc
+    rectangle "UsersPage\n用户封禁/权限" as A5 #dae8fc
+    rectangle "AdminsPage\n管理员分区管理" as A6 #dae8fc
+    rectangle "LogsPage\n操作审计日志" as A7 #dae8fc
+  }
+}
+
+' ==================== Cloudflare 边缘层 ====================
+package "Cloudflare 边缘层" #f7f0fa {
+  rectangle "CDN · DNS · TLS\n全站 HTTPS 加速与缓存\ncf-cache-status: DYNAMIC" as CF1 #e1d5e7
+  rectangle "Zero Trust Access\n管理后台统一身份准入\n（admin.tlrphotos.com）" as CF2 #e1d5e7
+  rectangle "Turnstile 人机验证\n无感 / 交互式挑战\nSite Key 内嵌 SPA" as CF3 #e1d5e7
+}
+
+' ==================== 接入层 ====================
+package "接入层 — Nginx（TLS 终止 · 反向代理）\n监听 443 · 证书：tlrphotos.com / admin.tlrphotos.com" #fff8f0 {
+  rectangle "vhost: tlrphotos.com\n• SPA 静态资源\n• /api 反代 → 127.0.0.1:3001\n• /uploads · /articles 反代" as N1 #ffe6cc
+  rectangle "vhost: admin.tlrphotos.com\n• SPA 静态资源\n• /api 反代 → 127.0.0.1:3001" as N2 #ffe6cc
+}
+
+' ==================== 应用层 ====================
+package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeScript · 监听 127.0.0.1:3001 · systemd 托管\n启动流程：initDb → initTagsDb → initSuperAdmin → scheduleCleanup → memoryManager.start → listen" #f5f8ff {
+
+  package "全局中间件链" #ffffff {
+    rectangle "cors()\n跨域放行" as M1 #dae8fc
+    rectangle "express.json({limit:50mb})\n兼容大图 Base64" as M2 #dae8fc
+    rectangle "express.urlencoded({limit:50mb})" as M3 #dae8fc
+    rectangle "请求超时 120s → 504" as M4 #dae8fc
+  }
+
+  package "路由层（7 组 · 62 endpoints）" #ffffff {
+    rectangle "/api/auth (13)\nPOST register · login · logout · refresh\nGET me · users/:id · users/:id/photos · users/:id/stats · me/photos\nPUT me · me/password\nPOST me/avatar" as R1 #dae8fc
+    rectangle "/api/photos (12)\nGET / · search · tags · :id · image/*\nPOST upload/presigned · upload/complete · upload · :id/like · :id/view\nDELETE :id/like · :id" as R2 #dae8fc
+    rectangle "/api/articles (7)\nGET / · :id · :id/content · :id/comments\nPOST :id/like · :id/view · :id/comments\nDELETE :id/like" as R3 #dae8fc
+    rectangle "/api/column (1)\nGET /" as R4 #dae8fc
+    rectangle "/api/tags (4)\nGET / · :categoryId · :categoryId/objects · :categoryId/objects/:objectId/attributes" as R5 #dae8fc
+    rectangle "/api/admin (18)\nPOST login · users · users/:id/ban · users/:id/unban · verification/verify\nGET me · zones · users · users/list · users/:id · photos/pending · photos/stats · photos/:id · logs · stats · dashboard/health · verification/status\nPUT users/:id · photos/:id/approve · photos/:id/reject · users/:id/toggle · users/:id/permissions\nDELETE users/:id" as R6 #dae8fc
+    rectangle "/api/verification (2)\nPOST verify · GET status" as R7 #dae8fc
+  }
+
+  package "中间件 & 鉴权" #ffffff {
+    rectangle "adminAuthMiddleware\nBearer Token 校验 → req.admin" as MW1 #dae8fc
+    rectangle "requireRole(roles[])\n角色白名单：super/zone_master/zone_auditor" as MW2 #dae8fc
+    rectangle "canManageZone(zone, admin)\n分区权限隔离" as MW3 #dae8fc
+    rectangle "loadAuthUser\nJWT 解析 + banned_at 检查" as MW4 #dae8fc
+  }
+
+  package "服务层（7 个服务）" #ffffff {
+    rectangle "authService\nJWT 签发/校验 · bcrypt 密码哈希\n会话管理 · 第三方登录绑定" as S1 #dae8fc
+    rectangle "ossService (8 方法)\ngeneratePresignedUploadUrl\ncompleteUpload · uploadBufferToOSS\ndeleteFromOSS · getPublicUrl" as S2 #dae8fc
+    rectangle "imageService\nsharp 缩略图/预览/水印 webp\nprocessImage · disposeProcessedBuffers\nuploadProcessedImages" as S3 #dae8fc
+    rectangle "memoryManager\nRSS 分级自保护\n60% soft / 75% medium / 90% hard\n30s 采样 · GC + sharp缓存 + vips.shutdown" as S4 #dae8fc
+    rectangle "verificationService (9 方法)\nverifyTurnstileToken (siteverify)\nensureHumanVerified (12 高危端点)\n168h TTL · IP 绑定 · 登出清除\n测试绕过（NODE_ENV=test）" as S5 #e1d5e7
+    rectangle "cookieService\n会话 Cookie CRUD · encrypted_ip\ncleanupExpired（午夜定时）" as S6 #dae8fc
+    rectangle "adminService\n管理员 CRUD · verifyAdminToken\ninitSuperAdmin · 角色/分区权限" as S7 #dae8fc
+  }
+
+  package "工具层" #ffffff {
+    rectangle "crypto.ts\nAES-GCM 加解密（session_token / ip）" as U1 #dae8fc
+    rectangle "url.ts\nURL 构建与路径处理" as U2 #dae8fc
+    rectangle "tagsDb\n标签分类库（独立 SQLite）" as U3 #dae8fc
+  }
+
+  package "定时任务 & 端点" #ffffff {
+    rectangle "午夜清理\ncleanupExpired (sessions)\n+ cleanupExpiredVerifications" as T1 #dae8fc
+    rectangle "GET /api/health\n健康检查探活" as T2 #dae8fc
+    rectangle "GET/POST /api/admin/memory\nsnapshot · release (soft/medium/hard)" as T3 #dae8fc
+  }
+}
+
+' ==================== 数据层 ====================
+package "数据层（ECS 本地 · WAL 模式 · 外键约束）" #f2f9f0 {
+  package "SQLite 数据库（better-sqlite3 / sqlite wrapper）\n13 张业务表" #ffffff {
+    rectangle "users\nid · email · password_hash · username · avatar\n+ banned_at · can_upload · can_view · can_download · can_like" as D1 #d5e8d4
+    rectangle "photos\nid · title · thumbnail_path · original_url\npreview_url · watermarked_url · watermark_config\nuser_id · category · status(pending/approved/rejected)\nEXIF: camera · vehicle · location · focal_length · iso..." as D2 #d5e8d4
+    rectangle "articles · comments\n文章 + 评论（级联删除）" as D3 #d5e8d4
+    rectangle "photo_likes · photo_views\n点赞去重 · 浏览 24h 窗口去重" as D4 #d5e8d4
+    rectangle "article_likes · column_info" as D5 #d5e8d4
+    rectangle "cookie\nsession_token · encrypted_ip · expires_at" as D6 #d5e8d4
+    rectangle "admin_users\nrole(super/zone_master/zone_auditor) · zone" as D7 #d5e8d4
+    rectangle "admin_logs\n审计日志（3 索引）" as D8 #d5e8d4
+    rectangle "user_verifications (V1.8.0)\nsubject_type · subject_id · ip · action\nverified_at · expires_at · UNIQUE(type,id)" as D9 #d5e8d4
+  }
+  rectangle "本地静态存储\n/uploads 头像等 · /articles Markdown" as D10 #d5e8d4
+}
+
+' ==================== 外部服务 ====================
+package "外部服务" #fafafa {
+  rectangle "阿里云 OSS 对象存储（S3 兼容）\n• 原图：浏览器预签名直传 POST\n• 缩略图/预览/水印 webp：imageService 上传\n• 删除：deleteFromOSS" as E1 #f5f5f5
+  rectangle "Cloudflare Turnstile API\nPOST https://challenges.cloudflare.com/turnstile/v0/siteverify\n校验 success · action · hostname 白名单\nfail-closed（网络异常拒绝）" as E2 #e1d5e7
+}
+
+' ==================== 连线：用户 → Cloudflare ====================
+P1 --> CF1 : HTTPS
+P2 --> CF1
+P3 --> CF1
+P4 --> CF1
+P5 --> CF1
+P6 --> CF1
+P7 --> CF1
+P8 --> CF1
+P9 ..> CF3 : Turnstile 挑战（widget 内嵌）
+
+A1 --> CF2 : SSO 登录
+A2 --> CF2
+A3 --> CF2
+A4 --> CF2
+A5 --> CF2
+A6 --> CF2
+A7 --> CF2
+
+' ==================== 连线：Cloudflare → Nginx ====================
+CF1 --> N1 : 回源 · 静态 + API
+CF2 --> N2 : 放行
+
+' ==================== 连线：Nginx → 应用层 ====================
+N1 --> M1 : api / uploads / articles 反代
+N2 --> M1 : api 反代
+
+M1 --> R1
+M1 --> R2
+M1 --> R3
+M1 --> R4
+M1 --> R5
+M1 --> R6
+M1 --> R7
+
+' 路由 → 服务
+R1 --> S1 : 注册/登录/改密
+R1 --> S6 : 会话
+R1 --> U1 : 加密
+R2 --> S2 : OSS 预签名/直传
+R2 --> S3 : 缩略图/水印
+R2 --> S5 : 上传验证门
+R6 --> MW1 : adminAuth
+R6 --> MW2 : requireRole
+R6 --> S7 : 管理员操作
+R6 --> S5 : 管理端验证门
+R7 --> S5
+
+' 服务 → 数据
+S1 --> D1 : users 读写
+S1 --> D6 : cookie 会话
+S2 --> E1 : OSS 操作
+S3 --> E1 : webp 衍生图上传
+S6 --> D6
+S7 --> D7 : admin_users
+S7 --> D8 : admin_logs
+S5 --> D9 : user_verifications
+
+' Turnstile siteverify
+CF3 ..> S5 : canonical siteverify
+S5 ..> E2 : POST siteverify API
+
+' 定时任务
+T1 --> S6 : cleanupExpired
+T1 --> S5 : cleanupExpiredVerifications
+T3 --> S4 : memoryManager
+
+@enduml
