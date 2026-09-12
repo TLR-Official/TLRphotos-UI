@@ -1,0 +1,102 @@
+%% TLRphotos 系统架构图 · V1.8.x（单台 ECS + 阿里云 OSS + Cloudflare 边缘）
+%% 渲染：mmdc -i docs/architecture.mmd -o docs/architecture-mermaid.png -b white -s 2 -p /tmp/puppeteer.json
+flowchart TB
+
+    %% ==================== 用户层 ====================
+    subgraph L1["用户层"]
+        direction LR
+        U["访客 / 注册用户（浏览器）<br/>用户前台 SPA · tlrphotos.com"]
+        ADM["管理员（浏览器）<br/>管理后台 SPA · admin.tlrphotos.com"]
+    end
+
+    %% ==================== Cloudflare 边缘层 ====================
+    subgraph L2["Cloudflare 边缘层"]
+        direction LR
+        CF1["CDN · DNS · TLS<br/>全站 HTTPS 加速与缓存"]
+        CF2["Zero Trust Access<br/>管理后台统一身份准入"]
+        CF3["Turnstile 人机验证<br/>无感 / 交互式挑战"]
+    end
+
+    %% ==================== 接入层 ====================
+    subgraph L3["接入层 — Nginx（TLS 终止 · 反向代理）"]
+        direction LR
+        N1["vhost: tlrphotos.com / www<br/>用户前台 SPA 静态资源<br/>api / uploads / articles 反代"]
+        N2["vhost: admin.tlrphotos.com<br/>管理后台 SPA 静态资源<br/>api 反代"]
+    end
+
+    %% ==================== 应用层 ====================
+    subgraph L4["应用层 — tlrphotos-backend.service（Node.js + Express + TypeScript · 监听 127.0.0.1:3001 · systemd 托管）"]
+        subgraph APIR["REST API（/api/*）"]
+            direction TB
+            R1["用户 API · /api/auth<br/>注册 · 登录 · 改密 · 头像 · 验证门"]
+            R2["照片 API · /api/photos<br/>上传 · 浏览 · 点赞 · 删除 · 图片代理"]
+            R3["内容 API · /api/articles · /api/column · /api/tags<br/>专栏文章 · 标签"]
+            R4["管理 API · /api/admin<br/>审核 · 封禁 · 权限 · 仪表盘 · 审计"]
+            R5["验证 API · /api/verification<br/>人机验证提交与状态查询"]
+        end
+        subgraph SVCR["服务层"]
+            direction TB
+            S1["authService<br/>JWT · bcrypt · 会话管理"]
+            S2["ossService<br/>阿里云 OSS 预签名（S3 协议）"]
+            S3["imageService<br/>sharp 缩略图 / 预览 / 水印 webp"]
+            S4["memoryManager<br/>RSS 分级自保护 · 定时清理"]
+            S5["verificationService<br/>人机验证门 · 12 项高危端点<br/>168h 有效期 · IP 绑定"]
+        end
+    end
+
+    %% ==================== 数据层 ====================
+    subgraph L5["数据层（ECS 本地）"]
+        direction LR
+        D1[("SQLite 数据库（better-sqlite3）<br/>users · photos · likes · views<br/>articles · comments · admin_logs<br/>user_verifications")]
+        D2["本地静态存储<br/>uploads（头像等） · articles"]
+    end
+
+    %% ==================== 外部服务 ====================
+    subgraph L6["外部服务"]
+        E1["阿里云 OSS 对象存储（S3 兼容）<br/>原图（浏览器预签名直传）<br/>缩略图 / 预览 / 水印 webp"]
+    end
+
+    %% ==================== 连线 ====================
+    U -->|"HTTPS"| CF1
+    ADM -->|"SSO 登录"| CF2
+    U -.->|"Turnstile 挑战（widget 内嵌）"| CF3
+    ADM -.->|"Turnstile 挑战"| CF3
+    CF1 -->|"回源 · 静态 + API"| N1
+    CF2 -->|"放行"| N2
+    N1 -->|"api / uploads / articles 反代 → 127.0.0.1:3001"| APIR
+    N2 -->|"api 反代"| APIR
+    R1 --> S1
+    R1 -->|"头像 / 静态文件"| D2
+    R2 --> S2
+    R2 --> S3
+    R4 --> S5
+    R5 --> S5
+    S1 -->|"better-sqlite3 同步读写"| D1
+    S2 -->|"预签名直传"| E1
+    S3 -->|"webp 衍生图上传"| E1
+    CF3 -.->|"canonical siteverify（success · action · hostname 白名单）"| S5
+
+    %% ==================== 样式 ====================
+    classDef frontend fill:#dae8fc,stroke:#6c8ebf,color:#333333
+    classDef security fill:#e1d5e7,stroke:#9673a6,color:#333333
+    classDef gateway fill:#ffe6cc,stroke:#d79b00,color:#333333
+    classDef storage fill:#d5e8d4,stroke:#82b366,color:#333333
+    classDef external fill:#f5f5f5,stroke:#666666,color:#333333,stroke-dasharray:5 5
+
+    class U,ADM frontend
+    class CF1,CF2,CF3 security
+    class N1,N2 gateway
+    class R1,R2,R3,R4,R5 frontend
+    class S1,S2,S3,S4 frontend
+    class S5 security
+    class D1,D2 storage
+    class E1 external
+
+    style L1 fill:#ffffff,stroke:#999999,color:#333333
+    style L2 fill:#f7f0fa,stroke:#9673a6,color:#333333
+    style L3 fill:#fff8f0,stroke:#d79b00,color:#333333
+    style L4 fill:#f5f8ff,stroke:#6c8ebf,color:#333333
+    style L5 fill:#f2f9f0,stroke:#82b366,color:#333333
+    style L6 fill:#fafafa,stroke:#666666,color:#333333
+    style APIR fill:#ffffff,stroke:#b8c9e0,color:#333333
+    style SVCR fill:#ffffff,stroke:#b8c9e0,color:#333333

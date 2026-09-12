@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-09-12 11:23 | [docs] 新增 Mermaid 版中文系统架构图：docs/architecture.mmd 源文件（flowchart TB 六层 subgraph — 用户/Cloudflare 边缘/接入 Nginx/应用 REST API+服务层/数据/外部服务，复核 server.ts 七组 /api 路由挂载）+ architecture-mermaid.png 渲染（mermaid-cli 11.17.0 + puppeteer --no-sandbox + Noto Sans CJK SC），配色与 drawio 版图例一致 (V1.8.2) | docs/architecture.mmd, docs/architecture-mermaid.png |
 | 2026-09-11 21:01 | [docs] 新增系统架构图：docs/architecture.drawio 中文源文件（六层架构 — 用户层/Cloudflare 边缘层/接入层 Nginx/应用层 Express 后端/数据层 SQLite/OSS 与 Turnstile 外部服务，37 节点 15 连线）+ architecture.png 2000px 导出（xvfb-run 虚拟桌面 + Noto Sans CJK SC 字体解决无头环境中文渲染） (V1.8.1) | docs/architecture.drawio, docs/architecture.png |
 | 2026-09-05 19:34 | [release] 版本号升级至 V1.8.0 — 全站高危操作接入 Cloudflare Turnstile 人机验证机制 | 全项目 |
 | 2026-09-05 19:34 | [feat] 后端人机验证：db.ts 新增 user_verifications 表（subject_type/subject_id/ip/action/verified_at/expires_at，168h TTL + IP 绑定）；verificationService 实现 canonical siteverify（success+action+hostname 白名单，fail-closed）+ 验证状态 CRUD + 登出清除 + 测试绕过（仅 NODE_ENV=test 且 tokens=TEST_BYPASS_TOKEN）；验证门覆盖注册/登录/资料修改/改密/头像/上传三接口/删除照片/管理员封禁+解封+权限变更；新增 /api/verification/verify+status、/api/admin/verification/verify+status；server.ts 挂载路由+每日清理过期记录；.env.example 补 TURNSTILE_SECRET/TURNSTILE_HOSTNAMES (V1.8.0) | backend/src/{db.ts,services/verificationService.ts,routes/{auth,photos,admin,verification}.ts,server.ts}, backend/.env.example |
