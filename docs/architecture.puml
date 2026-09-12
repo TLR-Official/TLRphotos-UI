@@ -1,0 +1,90 @@
+@startuml
+!theme plain
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #555555
+skinparam RectangleBorderColor #6c8ebf
+skinparam RectangleBackgroundColor #dae8fc
+skinparam PackageBorderColor #999999
+skinparam PackageBackgroundColor #f8f9fa
+
+title TLRphotos 系统架构图 · V1.8.x（单台 ECS + 阿里云 OSS + Cloudflare 边缘）
+
+' ============ 用户层 ============
+package "用户层" #ffffff {
+  rectangle "访客 / 注册用户（浏览器）\n用户前台 SPA · tlrphotos.com" as U #dae8fc
+  rectangle "管理员（浏览器）\n管理后台 SPA · admin.tlrphotos.com" as ADM #dae8fc
+}
+
+' ============ Cloudflare 边缘层 ============
+package "Cloudflare 边缘层" #f7f0fa {
+  rectangle "CDN · DNS · TLS\n全站 HTTPS 加速与缓存" as CF1 #e1d5e7
+  rectangle "Zero Trust Access\n管理后台统一身份准入" as CF2 #e1d5e7
+  rectangle "Turnstile 人机验证\n无感 / 交互式挑战" as CF3 #e1d5e7
+}
+
+' ============ 接入层 ============
+package "接入层 — Nginx（TLS 终止 · 反向代理）" #fff8f0 {
+  rectangle "vhost: tlrphotos.com / www\n用户前台 SPA 静态资源\napi / uploads / articles 反代" as N1 #ffe6cc
+  rectangle "vhost: admin.tlrphotos.com\n管理后台 SPA 静态资源\napi 反代" as N2 #ffe6cc
+}
+
+' ============ 应用层 ============
+package "应用层 — tlrphotos-backend.service\n（Node.js + Express + TypeScript · 监听 127.0.0.1:3001 · systemd 托管）" #f5f8ff {
+  package "REST API（/api/*）" #ffffff {
+    rectangle "用户 API · /api/auth\n注册 · 登录 · 改密 · 头像 · 验证门" as R1 #dae8fc
+    rectangle "照片 API · /api/photos\n上传 · 浏览 · 点赞 · 删除 · 图片代理" as R2 #dae8fc
+    rectangle "内容 API · /api/articles · /api/column · /api/tags\n专栏文章 · 标签" as R3 #dae8fc
+    rectangle "管理 API · /api/admin\n审核 · 封禁 · 权限 · 仪表盘 · 审计" as R4 #dae8fc
+    rectangle "验证 API · /api/verification\n人机验证提交与状态查询" as R5 #dae8fc
+  }
+  package "服务层" #ffffff {
+    rectangle "authService\nJWT · bcrypt · 会话管理" as S1 #dae8fc
+    rectangle "ossService\n阿里云 OSS 预签名（S3 协议）" as S2 #dae8fc
+    rectangle "imageService\nsharp 缩略图 / 预览 / 水印 webp" as S3 #dae8fc
+    rectangle "memoryManager\nRSS 分级自保护 · 定时清理" as S4 #dae8fc
+    rectangle "verificationService\n人机验证门 · 12 项高危端点\n168h 有效期 · IP 绑定" as S5 #e1d5e7
+  }
+}
+
+' ============ 数据层 ============
+package "数据层（ECS 本地）" #f2f9f0 {
+  rectangle "SQLite 数据库（better-sqlite3）\nusers · photos · likes · views\narticles · comments · admin_logs\nuser_verifications" as D1 #d5e8d4
+  rectangle "本地静态存储\nuploads（头像等） · articles" as D2 #d5e8d4
+}
+
+' ============ 外部服务 ============
+package "外部服务" #fafafa {
+  rectangle "阿里云 OSS 对象存储（S3 兼容）\n原图（浏览器预签名直传）\n缩略图 / 预览 / 水印 webp" as E1 #f5f5f5
+}
+
+' ============ 连线 ============
+U --> CF1 : HTTPS
+ADM --> CF2 : SSO 登录
+U ..> CF3 : Turnstile 挑战（widget 内嵌）
+ADM ..> CF3 : Turnstile 挑战
+
+CF1 --> N1 : 回源 · 静态 + API
+CF2 --> N2 : 放行
+
+N1 --> R1 : api / uploads / articles 反代
+N1 --> R2
+N1 --> R3
+N2 --> R4 : api 反代
+N2 --> R5
+
+R1 --> S1
+R1 --> D2 : 头像 / 静态文件
+R2 --> S2
+R2 --> S3
+R4 --> S5
+R5 --> S5
+
+S1 --> D1 : better-sqlite3 同步读写
+S2 --> E1 : 预签名直传
+S3 --> E1 : webp 衍生图上传
+
+CF3 ..> S5 : canonical siteverify
+
+@enduml

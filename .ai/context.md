@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-09-12 13:59 | [docs] 新增 PlantUML 版中文系统架构图：docs/architecture.puml 源文件（package 分组六层架构 — 用户/Cloudflare 边缘/接入 Nginx/应用 REST API+服务层/数据/外部服务，本地 plantuml.jar 渲染，database/cloud 形状在 rectangle 包内嵌套报错改用 rectangle + skinparam 配色）+ architecture-plantuml.png 渲染（1552×1102，headless 模式 + Noto Sans CJK SC），与 drawio/Mermaid 版图例一致 (V1.8.3) | docs/architecture.puml, docs/architecture-plantuml.png |
 | 2026-09-12 11:23 | [docs] 新增 Mermaid 版中文系统架构图：docs/architecture.mmd 源文件（flowchart TB 六层 subgraph — 用户/Cloudflare 边缘/接入 Nginx/应用 REST API+服务层/数据/外部服务，复核 server.ts 七组 /api 路由挂载）+ architecture-mermaid.png 渲染（mermaid-cli 11.17.0 + puppeteer --no-sandbox + Noto Sans CJK SC），配色与 drawio 版图例一致 (V1.8.2) | docs/architecture.mmd, docs/architecture-mermaid.png |
 | 2026-09-11 21:01 | [docs] 新增系统架构图：docs/architecture.drawio 中文源文件（六层架构 — 用户层/Cloudflare 边缘层/接入层 Nginx/应用层 Express 后端/数据层 SQLite/OSS 与 Turnstile 外部服务，37 节点 15 连线）+ architecture.png 2000px 导出（xvfb-run 虚拟桌面 + Noto Sans CJK SC 字体解决无头环境中文渲染） (V1.8.1) | docs/architecture.drawio, docs/architecture.png |
 | 2026-09-05 19:34 | [release] 版本号升级至 V1.8.0 — 全站高危操作接入 Cloudflare Turnstile 人机验证机制 | 全项目 |
