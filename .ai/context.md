@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-09-18 21:52 | [chore] 生产部署更新：前端 build 写入 dist/（V1.10.0 teal 配色上线）+ 后端 rebuild + 重启 tlrphotos-backend 服务（V1.8.0 Turnstile / V1.9.0 EverOS 路由生效）；验证 verification/status 与 everos/search 均 401 鉴权正常 | dist/, backend/dist/ |
 | 2026-09-18 20:43 | [release] 版本号升级至 V1.10.0 — Hallmark 全站去紫色改 teal 松针青绿 | 全项目 |
 | 2026-09-18 20:43 | [refactor] Hallmark 前端配色重设计（仅色值，不动布局/功能）：(1) 全量替换 purple-* Tailwind 类 116 处/17 文件 → teal 同色阶（text/bg/border/ring/from 渐变），全局 CSS 变量 --accent #aa3bff→#0d9488、暗色 #c084fc→#2dd4bf 及 accent-bg/accent-border rgba，审核网格 SVG 描边同步；(2) 对比度 WCAG AA 修正 — teal-600 小字仅 3.78:1 故文字映射升 teal-700（4.7:1），焦点环/边框升 teal-600（3.8:1），按钮白字 5.6:1；(3) 响应式修复 — TurnstileWidget 新增 size 响应（≤360px 自动 compact 130×120 解决 /auth 320px 下 300px widget 溢出 29px，resize rAF 切换重渲染）；(4) Playwright 实测：桌面 1440 四页（首页/auth/admin/gallery）紫色计算样式扫描 0 残留，375/320 无横向滚动 scrollWidth=视口、输入框不溢出；index.css 盖 Hallmark 印章 + .hallmark/log.json；lint 0 error、build 通过 (V1.10.0) | src/index.css, src/components/TurnstileWidget.tsx, src/features/*, src/admin/*, src/shared/*, .hallmark/log.json |
 | 2026-09-18 20:03 | [release] 版本号升级至 V1.9.0 — 集成 EverOS AI Agent 持久化记忆层 | 全项目 |
