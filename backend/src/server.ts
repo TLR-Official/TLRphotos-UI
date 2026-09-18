@@ -19,6 +19,7 @@ import authRouter from './routes/auth';
 import tagsRouter from './routes/tags';
 import adminRouter from './routes/admin';
 import verificationRouter from './routes/verification';
+import everosRouter from './routes/everos';
 import { initDb } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
@@ -52,6 +53,7 @@ app.use('/api/column', columnRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/verification', verificationRouter);
+app.use('/api/everos', everosRouter);
 
 // 静态资源：文章 Markdown 原文与上传文件目录
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));

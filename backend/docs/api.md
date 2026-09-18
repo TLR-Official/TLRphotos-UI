@@ -1150,6 +1150,85 @@ Authorization: Bearer <admin_token>
 
 ---
 
+## EverOS 记忆层 (V1.9.0)
+
+EverOS 是面向 AI Agent 的持久化结构化记忆层。会话消息写入后由云端**异步抽取**为
+episode（情节记忆）与 atomic_facts（原子事实），自动去重与矛盾消解；生成回答前先检索召回相关上下文。
+
+**配置**：`EVEROS_API_KEY`（必填，未配置时两个接口返回 503）、`EVEROS_PROJECT_ID`（默认 `tlrphotos`，记忆空间隔离，查询不跨空间）、`EVEROS_BASE_URL`（默认云端 `https://api.evermind.ai`，自托管可覆盖）。
+
+**鉴权**：两个接口均需登录（`Authorization: Bearer <jwt>`），记忆按用户隔离——写入时用户轮次的 `sender_id` 为本人用户 ID，检索只能命中本人记忆。
+
+**机制要点**：
+- 写入云端默认异步：返回 `status: "queued"`，通常 5–15 秒后可被检索，无需轮询
+- 时间戳由服务端按 unix 毫秒自动生成
+- 助手轮次（`role: "assistant"`）使用固定 `sender_id=tlrphotos_assistant`
+
+### POST /api/everos/memory — 写入记忆轮次
+
+**请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `content` | string | 是 | 消息文本，1–10000 字符 |
+| `session_id` | string | 否 | 会话标识（≤128 字符），缺省按用户派生 `session_<userId>` |
+| `role` | string | 否 | `user`（默认）/ `assistant` / `tool` |
+| `async_mode` | boolean | 否 | 默认 `true`（云端异步抽取，202 queued） |
+
+**请求示例**：
+```json
+{ "session_id": "chat_2026_09_18", "content": "我喜欢黑白摄影，不喜欢过度饱和", "role": "user" }
+```
+
+**成功响应**：
+```json
+{
+  "success": true,
+  "data": { "message_count": 1, "status": "queued" }
+}
+```
+
+**错误**：未登录 401；未配置 503；参数错误 400；EverOS 侧错误透传其状态码（如 401/429/5xx）与消息。
+
+### POST /api/everos/search — 检索记忆
+
+**请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `query` | string | 是 | 检索文本 |
+| `method` | string | 否 | `hybrid`（默认，关键词+向量 RRF 融合）/ `keyword` / `vector` / `agentic` |
+| `top_k` | integer | 否 | 1–100，默认 5（聊天），研究场景建议 10 |
+| `include_profile` | boolean | 否 | 是否同时返回用户画像条目，默认 false |
+
+**成功响应**：
+```json
+{
+  "success": true,
+  "data": {
+    "episodes": [
+      {
+        "id": "6aad26025a2e15798b4386f1",
+        "session_id": "chat_2026_09_18",
+        "summary": "~200 字摘要",
+        "subject": "摄影偏好",
+        "episode": "完整叙事文本，可直接拼入 LLM prompt",
+        "atomic_facts": [{ "id": "...", "content": "用户偏好黑白摄影" }],
+        "score": 0.87
+      }
+    ],
+    "profiles": [],
+    "unprocessed_messages": []
+  }
+}
+```
+
+`unprocessed_messages`：当前会话尚未完成异步抽取的最新原始消息（避免刚说完就检索出现空档）。
+
+**典型用法**：Agent 在生成回复前先 `search`，把 `episodes[].episode` 与 `atomic_facts` 作为上下文拼入 prompt；对话轮次通过 `memory` 写入。
+
+---
+
 ## 健康检查
 
 **GET** `/api/health`
