@@ -62,7 +62,7 @@ export function AuditToolbar({ activeTools, onToggle, collapsed, onToggleCollaps
               title={`${tool.label} (${tool.shortcut})`}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 active
-                  ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300'
+                  ? 'bg-teal-100 text-teal-700 ring-1 ring-teal-300'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
               }`}
             >
@@ -71,7 +71,7 @@ export function AuditToolbar({ activeTools, onToggle, collapsed, onToggleCollaps
               <kbd
                 className={`text-[10px] font-mono px-1 py-0.5 rounded border transition-colors ${
                   active
-                    ? 'bg-purple-200 text-purple-800 border-purple-300'
+                    ? 'bg-teal-200 text-teal-800 border-teal-300'
                     : 'bg-gray-100 text-gray-500 border-gray-200'
                 }`}
               >

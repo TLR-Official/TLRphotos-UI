@@ -262,7 +262,7 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
 
       {/* 拖拽提示：仅在激活 + 已放大时显示（左上角，避免与右上角徽章重叠） */}
       {active && isZoomed && (
-        <div className="absolute top-3 left-3 px-2 py-1 bg-purple-600/80 text-white text-xs rounded pointer-events-none z-30">
+        <div className="absolute top-3 left-3 px-2 py-1 bg-teal-600/80 text-white text-xs rounded pointer-events-none z-30">
           拖拽移动 | 滚轮缩放
         </div>
       )}

@@ -7,7 +7,16 @@
  *   - sitekey 为公开 key，优先取 .env 的 VITE_TURNSTILE_SITE_KEY，未配置时回退内置站点 key。
  */
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+
+/**
+ * 根据视口宽度选择 widget 尺寸：
+ * normal 为 300×65；窄屏（≤360px）卡片内容区不足 300px，
+ * 改用 compact（130×120），避免验证组件横向溢出。
+ */
+function getWidgetSize(): 'normal' | 'compact' {
+  return typeof window !== 'undefined' && window.innerWidth <= 360 ? 'compact' : 'normal';
+}
 
 /** Turnstile sitekey（公开 key，可经 VITE_TURNSTILE_SITE_KEY 覆盖） */
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '0x4AAAAAAEjANyXSjJckEyBI';
@@ -84,6 +93,21 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
   function TurnstileWidget({ action, onSuccess, onError, onExpire, theme = 'auto', className }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | null>(null);
+    const [size, setSize] = useState<'normal' | 'compact'>(getWidgetSize);
+
+    // 视口宽度跨 360px 阈值时切换 normal/compact（rAF 节流）
+    useEffect(() => {
+      let frame = 0;
+      const onResize = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => setSize(getWidgetSize()));
+      };
+      window.addEventListener('resize', onResize);
+      return () => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener('resize', onResize);
+      };
+    }, []);
 
     // 回调经 ref 中转，避免父组件重渲染导致 widget 重建
     const callbacksRef = useRef({ onSuccess, onError, onExpire });
@@ -112,6 +136,7 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
             sitekey: TURNSTILE_SITE_KEY,
             action,
             theme,
+            size,
             retry: 'never',
             callback: (token: string) => callbacksRef.current.onSuccess(token),
             'error-callback': () => callbacksRef.current.onError?.('人机验证加载异常，请刷新页面重试'),
@@ -135,7 +160,7 @@ export const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidget
           widgetIdRef.current = null;
         }
       };
-    }, [action, theme]);
+    }, [action, theme, size]);
 
     return <div ref={containerRef} className={className} />;
   }

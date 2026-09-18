@@ -121,7 +121,7 @@ export function UserProfilePage() {
               <div className={`w-32 h-32 rounded-full overflow-hidden flex-shrink-0 ${
                 user.avatar_url
                   ? ''
-                  : 'bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center'
+                  : 'bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center'
               }`}>
                 {user.avatar_url ? (
                   <img

@@ -427,8 +427,8 @@ export function ProfilePage() {
             error
               ? 'border-red-500 bg-red-50'
               : theme === 'dark'
-              ? 'bg-white/10 border-white/20 focus:border-purple-500 text-white'
-              : 'bg-gray-50 border-gray-200 focus:border-purple-500 text-gray-800'
+              ? 'bg-white/10 border-white/20 focus:border-teal-600 text-white'
+              : 'bg-gray-50 border-gray-200 focus:border-teal-600 text-gray-800'
           } focus:outline-none`}
         />
         {error && (
@@ -478,7 +478,7 @@ export function ProfilePage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center">
                     {avatarPreview ? (
                       <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
                     ) : user?.avatar_url ? (
@@ -493,7 +493,7 @@ export function ProfilePage() {
                       </svg>
                     )}
                   </div>
-                  <label className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity">
+                  <label className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-gradient-to-r from-teal-600 to-blue-600 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity">
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
@@ -527,8 +527,8 @@ export function ProfilePage() {
                   onClick={() => setViewMode('settings')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     viewMode === 'settings'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
                   }`}
                 >
                   设置
@@ -577,13 +577,13 @@ export function ProfilePage() {
               <div className="rounded-xl p-5 bg-white shadow-sm">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm text-gray-500">过审率</p>
-                  <p className="text-2xl font-bold text-purple-600">
+                  <p className="text-2xl font-bold text-teal-700">
                     {statsLoading ? '-' : `${stats?.approvalRate || 0}%`}
                   </p>
                 </div>
                 <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-teal-500 to-blue-500 transition-all duration-500"
                     style={{ width: statsLoading ? '0%' : `${stats?.approvalRate || 0}%` }}
                   />
                 </div>
@@ -608,7 +608,7 @@ export function ProfilePage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <button
                   onClick={() => navigate('/upload')}
-                  className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+                  className="flex items-center gap-2 p-3 rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -648,8 +648,8 @@ export function ProfilePage() {
 
             {/* 最近动态 */}
             {stats?.recentUploads !== undefined && stats.recentUploads > 0 && (
-              <div className="rounded-xl p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100">
-                <p className="text-sm text-purple-700">
+              <div className="rounded-xl p-4 bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-100">
+                <p className="text-sm text-teal-700">
                   📸 最近 7 天上传了 <span className="font-semibold">{stats.recentUploads}</span> 张照片
                 </p>
               </div>
@@ -665,7 +665,7 @@ export function ProfilePage() {
               onClick={() => setActiveTab('profile')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'profile'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -675,7 +675,7 @@ export function ProfilePage() {
               onClick={() => setActiveTab('password')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'password'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -688,7 +688,7 @@ export function ProfilePage() {
               }}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'preferences'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -701,7 +701,7 @@ export function ProfilePage() {
               }}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'cache'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -711,7 +711,7 @@ export function ProfilePage() {
               onClick={() => setActiveTab('account')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'account'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -721,7 +721,7 @@ export function ProfilePage() {
               onClick={() => setActiveTab('photos')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'photos'
-                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  ? 'text-teal-700 border-b-2 border-teal-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -806,7 +806,7 @@ export function ProfilePage() {
                               theme === 'dark'
                                 ? 'bg-white/10 border-white/20 text-white'
                                 : 'bg-gray-50 border-gray-200 text-gray-800'
-                            } focus:outline-none focus:border-purple-500`}
+                            } focus:outline-none focus:border-teal-600`}
                           />
                           <input
                             type="text"
@@ -817,7 +817,7 @@ export function ProfilePage() {
                               theme === 'dark'
                                 ? 'bg-white/10 border-white/20 text-white'
                                 : 'bg-gray-50 border-gray-200 text-gray-800'
-                            } focus:outline-none focus:border-purple-500`}
+                            } focus:outline-none focus:border-teal-600`}
                           />
                           <button
                             type="button"
@@ -884,8 +884,8 @@ export function ProfilePage() {
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
                         : theme === 'dark'
-                        ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
-                        : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
+                        ? 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500'
+                        : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500'
                     } shadow-lg`}
                   >
                     {isSubmitting ? '保存中...' : '保存资料'}
@@ -922,7 +922,7 @@ export function ProfilePage() {
                           : theme === 'dark'
                           ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
-                      } focus:outline-none focus:border-purple-500`}
+                      } focus:outline-none focus:border-teal-600`}
                     />
                     {passwordErrors.oldPassword && (
                       <p className="mt-1 text-sm text-red-500">{passwordErrors.oldPassword}</p>
@@ -948,7 +948,7 @@ export function ProfilePage() {
                           : theme === 'dark'
                           ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
-                      } focus:outline-none focus:border-purple-500`}
+                      } focus:outline-none focus:border-teal-600`}
                     />
                     {passwordErrors.newPassword && (
                       <p className="mt-1 text-sm text-red-500">{passwordErrors.newPassword}</p>
@@ -974,7 +974,7 @@ export function ProfilePage() {
                           : theme === 'dark'
                           ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
-                      } focus:outline-none focus:border-purple-500`}
+                      } focus:outline-none focus:border-teal-600`}
                     />
                     {passwordErrors.confirmPassword && (
                       <p className="mt-1 text-sm text-red-500">{passwordErrors.confirmPassword}</p>
@@ -990,8 +990,8 @@ export function ProfilePage() {
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
                         : theme === 'dark'
-                        ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
-                        : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
+                        ? 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500'
+                        : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500'
                     } shadow-lg`}
                   >
                     {isSubmitting ? '修改中...' : '修改密码'}
@@ -1062,7 +1062,7 @@ export function ProfilePage() {
                         'bg-gray-200'
                       }`}>
                         <div
-                          className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500"
+                          className="h-full bg-gradient-to-r from-teal-500 to-blue-500 transition-all duration-500"
                           style={{ width: `${Math.min(100, (cacheStats.size / cacheStats.maxSize) * 100)}%` }}
                         />
                       </div>
@@ -1148,7 +1148,7 @@ export function ProfilePage() {
                       <button
                         onClick={() => handlePrefChange('carouselAutoplay', !prefs.carouselAutoplay)}
                         className={`relative w-12 h-6 rounded-full transition-colors ${
-                          prefs.carouselAutoplay ? 'bg-purple-600' : 'bg-gray-300'
+                          prefs.carouselAutoplay ? 'bg-teal-600' : 'bg-gray-300'
                         }`}
                       >
                         <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
@@ -1166,7 +1166,7 @@ export function ProfilePage() {
                       <select
                         value={prefs.carouselInterval}
                         onChange={(e) => handlePrefChange('carouselInterval', parseInt(e.target.value))}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-purple-500"
+                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-teal-600"
                       >
                         <option value={3000}>3 秒</option>
                         <option value={4000}>4 秒</option>
@@ -1184,7 +1184,7 @@ export function ProfilePage() {
                       <button
                         onClick={() => handlePrefChange('imageLazyLoad', !prefs.imageLazyLoad)}
                         className={`relative w-12 h-6 rounded-full transition-colors ${
-                          prefs.imageLazyLoad ? 'bg-purple-600' : 'bg-gray-300'
+                          prefs.imageLazyLoad ? 'bg-teal-600' : 'bg-gray-300'
                         }`}
                       >
                         <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
@@ -1202,7 +1202,7 @@ export function ProfilePage() {
                       <button
                         onClick={() => handlePrefChange('preloadImages', !prefs.preloadImages)}
                         className={`relative w-12 h-6 rounded-full transition-colors ${
-                          prefs.preloadImages ? 'bg-purple-600' : 'bg-gray-300'
+                          prefs.preloadImages ? 'bg-teal-600' : 'bg-gray-300'
                         }`}
                       >
                         <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
@@ -1220,7 +1220,7 @@ export function ProfilePage() {
                       <button
                         onClick={() => handlePrefChange('showTagsInGallery', !prefs.showTagsInGallery)}
                         className={`relative w-12 h-6 rounded-full transition-colors ${
-                          prefs.showTagsInGallery ? 'bg-purple-600' : 'bg-gray-300'
+                          prefs.showTagsInGallery ? 'bg-teal-600' : 'bg-gray-300'
                         }`}
                       >
                         <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
@@ -1240,7 +1240,7 @@ export function ProfilePage() {
                       <select
                         value={prefs.gallerySortBy}
                         onChange={(e) => handlePrefChange('gallerySortBy', e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-purple-500"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-teal-600"
                       >
                         <option value="created_at">上传时间</option>
                         <option value="likes">点赞数</option>
@@ -1253,7 +1253,7 @@ export function ProfilePage() {
                       <select
                         value={prefs.gallerySortOrder}
                         onChange={(e) => handlePrefChange('gallerySortOrder', e.target.value as 'asc' | 'desc')}
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-purple-500"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-teal-600"
                       >
                         <option value="desc">降序（新→旧 / 高→低）</option>
                         <option value="asc">升序（旧→新 / 低→高）</option>
@@ -1273,7 +1273,7 @@ export function ProfilePage() {
                     <select
                       value={prefs.pageSize}
                       onChange={(e) => handlePrefChange('pageSize', parseInt(e.target.value))}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-purple-500"
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 focus:outline-none focus:border-teal-600"
                     >
                       <option value={12}>12 张</option>
                       <option value={24}>24 张</option>
@@ -1348,7 +1348,7 @@ export function ProfilePage() {
                   <div className="space-y-3">
                     <button
                       onClick={() => setActiveTab('password')}
-                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white border border-gray-200 hover:border-purple-400 transition-colors"
+                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white border border-gray-200 hover:border-teal-400 transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1366,7 +1366,7 @@ export function ProfilePage() {
 
                     <button
                       onClick={() => setActiveTab('cache')}
-                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white border border-gray-200 hover:border-purple-400 transition-colors"
+                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white border border-gray-200 hover:border-teal-400 transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1415,7 +1415,7 @@ export function ProfilePage() {
                       onClick={() => setPhotoFilter(key)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         photoFilter === key
-                          ? 'bg-purple-600 text-white'
+                          ? 'bg-teal-600 text-white'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >

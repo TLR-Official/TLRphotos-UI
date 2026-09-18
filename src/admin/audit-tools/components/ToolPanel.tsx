@@ -252,7 +252,7 @@ export function ReferenceBar({
         style={{ left: `${highPct}%` }}
       />
       <div
-        className="absolute top-0 w-1 h-full bg-purple-600 rounded-full shadow-lg"
+        className="absolute top-0 w-1 h-full bg-teal-600 rounded-full shadow-lg"
         style={{ left: `${percent}%` }}
       />
     </div>

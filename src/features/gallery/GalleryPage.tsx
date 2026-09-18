@@ -164,7 +164,7 @@ export function GalleryPage() {
                   }}
                   className={`px-6 py-3 font-medium transition-all border-b-2 ${
                     selectedCategory === cat.id
-                      ? 'border-purple-600 text-purple-600'
+                      ? 'border-teal-600 text-teal-700'
                       : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -184,7 +184,7 @@ export function GalleryPage() {
                     placeholder="搜索标题或描述..."
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                    className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                   />
                 </div>
                 {selectedCategory && (
@@ -205,7 +205,7 @@ export function GalleryPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-medium">共 {photos.length} 张照片</span>
                     {selectedTags.length > 0 && (
-                      <span className="px-2 py-0.5 text-sm rounded-full bg-purple-100 text-purple-700">
+                      <span className="px-2 py-0.5 text-sm rounded-full bg-teal-100 text-teal-700">
                         {selectedTags.length} 个标签
                       </span>
                     )}
@@ -216,7 +216,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('created_at')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'created_at'
-                          ? 'bg-purple-600 text-white'
+                          ? 'bg-teal-600 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -230,7 +230,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('likes')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'likes'
-                          ? 'bg-purple-600 text-white'
+                          ? 'bg-teal-600 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -244,7 +244,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('views')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'views'
-                          ? 'bg-purple-600 text-white'
+                          ? 'bg-teal-600 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -259,7 +259,7 @@ export function GalleryPage() {
 
                 {isLoading ? (
                   <div className="flex items-center justify-center py-16">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent" />
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-600 border-t-transparent" />
                   </div>
                 ) : photos.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-gray-500">

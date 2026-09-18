@@ -107,7 +107,7 @@ export function AuthPage() {
   return (
     <div className="flex items-center justify-center py-8">
       <div className="relative w-full max-w-md">
-        <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-500 rounded-3xl blur-xl opacity-30 animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-500 rounded-3xl blur-xl opacity-30 animate-pulse" />
         
         <div className={`relative backdrop-blur-lg rounded-3xl p-8 border shadow-2xl transition-all duration-500 ${
           isDark 
@@ -117,8 +117,8 @@ export function AuthPage() {
           <div className="flex justify-center mb-8">
             <div className={`text-4xl font-bold ${
               isDark 
-                ? 'bg-gradient-to-r from-purple-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent' 
-                : 'bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent'
+                ? 'bg-gradient-to-r from-teal-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent' 
+                : 'bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent'
             }`}>
               TLRphotos
             </div>
@@ -132,7 +132,7 @@ export function AuthPage() {
                 onClick={() => setIsLogin(true)}
                 className={`absolute inset-y-0 left-0 right-1/2 flex items-center justify-center rounded-full transition-all duration-500 ease-out ${
                   isLogin 
-                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg transform scale-105' 
+                    ? 'bg-gradient-to-r from-teal-600 to-blue-600 text-white shadow-lg transform scale-105' 
                     : isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -163,7 +163,7 @@ export function AuthPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="邮箱地址"
-                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 ${
+                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition-all duration-300 ${
                   isDark 
                     ? 'bg-white/10 border border-white/20 text-white placeholder-white/40' 
                     : 'bg-white border border-gray-200 text-gray-900 placeholder-gray-400'
@@ -182,7 +182,7 @@ export function AuthPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="密码"
-                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 ${
+                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition-all duration-300 ${
                   isDark 
                     ? 'bg-white/10 border border-white/20 text-white placeholder-white/40' 
                     : 'bg-white border border-gray-200 text-gray-900 placeholder-gray-400'
@@ -197,10 +197,10 @@ export function AuthPage() {
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className={`w-5 h-5 rounded border-2 transition-all duration-300 focus:ring-2 focus:ring-purple-500 ${
+                    className={`w-5 h-5 rounded border-2 transition-all duration-300 focus:ring-2 focus:ring-teal-600 ${
                       isDark 
-                        ? 'border-white/30 text-purple-600 bg-white/10' 
-                        : 'border-gray-300 text-purple-600 bg-white'
+                        ? 'border-white/30 text-teal-700 bg-white/10' 
+                        : 'border-gray-300 text-teal-700 bg-white'
                     }`}
                   />
                   <span className={`ml-2 text-sm ${isDark ? 'text-white/70' : 'text-gray-600'}`}>
@@ -225,7 +225,7 @@ export function AuthPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="确认密码"
-                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 ${
+                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition-all duration-300 ${
                   isDark 
                     ? 'bg-white/10 border border-white/20 text-white placeholder-white/40' 
                     : 'bg-white border border-gray-200 text-gray-900 placeholder-gray-400'
@@ -248,7 +248,7 @@ export function AuthPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="用户名"
-                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 ${
+                className={`w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition-all duration-300 ${
                   isDark 
                     ? 'bg-white/10 border border-white/20 text-white placeholder-white/40' 
                     : 'bg-white border border-gray-200 text-gray-900 placeholder-gray-400'
@@ -287,7 +287,7 @@ export function AuthPage() {
               className={`w-full py-4 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] ${
                 isLoading 
                   ? isDark ? 'bg-white/20 cursor-not-allowed' : 'bg-gray-200 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 hover:from-purple-500 hover:via-blue-500 hover:to-cyan-500 shadow-lg hover:shadow-xl'
+                  : 'bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-600 hover:from-teal-500 hover:via-blue-500 hover:to-cyan-500 shadow-lg hover:shadow-xl'
               }`}
             >
               {isLoading ? (
@@ -352,7 +352,7 @@ export function AuthPage() {
               <button
                 onClick={() => setIsLogin(!isLogin)}
                 className={`ml-2 font-semibold transition-colors duration-300 ${
-                  isDark ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-500'
+                  isDark ? 'text-teal-400 hover:text-teal-300' : 'text-teal-700 hover:text-teal-500'
                 }`}
               >
                 {isLogin ? '立即注册' : '立即登录'}

@@ -180,7 +180,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                   </span>
                 </div>
                 {photo.watermark_config && (
-                  <span className="flex items-center gap-1 text-purple-600">
+                  <span className="flex items-center gap-1 text-teal-700">
                     <ImageIcon className="w-4 h-4" />
                     已添加水印
                   </span>
@@ -268,7 +268,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                     {photo.tags.map((tag, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs"
+                        className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs"
                       >
                         {tag}
                       </span>
@@ -532,7 +532,7 @@ function ThumbButton({
     <button
       onClick={onClick}
       className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
-        active ? 'border-purple-500 ring-2 ring-purple-200' : 'border-gray-200 hover:border-gray-300'
+        active ? 'border-teal-600 ring-2 ring-teal-200' : 'border-gray-200 hover:border-gray-300'
       }`}
     >
       <CachedImage

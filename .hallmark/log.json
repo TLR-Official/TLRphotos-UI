@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2026-09-18",
+    "scope": "app",
+    "macrostructure": "existing (preserved)",
+    "theme": "redesign: purple → teal (#0d9488)",
+    "enrichment": "none",
+    "brief": "全站移除紫色主色改 teal 松针青绿 + Turnstile 窄屏 compact 响应式 + 对比度 AA 修正"
+  }
+]

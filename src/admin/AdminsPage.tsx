@@ -228,7 +228,7 @@ export function AdminsPage({ currentAdmin }: AdminsPageProps) {
                   <td className="px-4 py-3 text-gray-600">{admin.email || '-'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-sm ${
-                      admin.role === 'super' ? 'bg-purple-50 text-purple-600' :
+                      admin.role === 'super' ? 'bg-teal-50 text-teal-700' :
                       admin.role === 'zone_master' ? 'bg-blue-50 text-blue-600' :
                       'bg-green-50 text-green-600'
                     }`}>

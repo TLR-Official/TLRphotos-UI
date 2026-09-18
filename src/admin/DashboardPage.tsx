@@ -73,7 +73,7 @@ export function DashboardPage() {
     { icon: Users, label: '用户总数', value: stats?.userCount ?? 0, color: 'bg-blue-600' },
     { icon: Image, label: '照片总数', value: stats?.photoCount ?? 0, color: 'bg-green-600' },
     { icon: Clock, label: '待审核', value: photoStats?.pending ?? 0, color: 'bg-yellow-600' },
-    { icon: TrendingUp, label: '今日上传', value: stats?.todayUploads ?? 0, color: 'bg-purple-600' },
+    { icon: TrendingUp, label: '今日上传', value: stats?.todayUploads ?? 0, color: 'bg-teal-600' },
   ];
 
   if (loading) {

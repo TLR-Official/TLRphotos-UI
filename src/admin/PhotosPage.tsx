@@ -86,7 +86,7 @@ export function PhotosPage() {
               <div
                 key={photo.id}
                 onClick={() => handlePhotoClick(photo.id)}
-                className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-purple-300 hover:shadow-md transition-all"
+                className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-teal-300 hover:shadow-md transition-all"
               >
                 <div className="relative">
                   <CachedImage
@@ -98,7 +98,7 @@ export function PhotosPage() {
                   />
                   <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
                     <div className="opacity-0 hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2">
-                      <Eye className="w-5 h-5 text-purple-600" />
+                      <Eye className="w-5 h-5 text-teal-700" />
                     </div>
                   </div>
                 </div>

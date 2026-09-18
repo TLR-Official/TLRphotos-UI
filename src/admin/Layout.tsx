@@ -75,7 +75,7 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
               onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 currentPage === item.id
-                  ? 'bg-purple-100 text-purple-700 font-medium'
+                  ? 'bg-teal-100 text-teal-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
               }`}
             >

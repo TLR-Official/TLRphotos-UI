@@ -296,7 +296,7 @@ export function PhotoDetailPage() {
                 <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
                   photo.uploader?.avatar_url
                     ? ''
-                    : 'bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center'
+                    : 'bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center'
                 }`}>
                   {photo.uploader?.avatar_url ? (
                     <img
