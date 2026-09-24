@@ -23,6 +23,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { getProxyUrl } from '../utils/url';
+import { createRateLimiter } from '../middleware/rateLimit';
+
+// V1.10.1：认证口限速，按 IP 每窗口 10 次，抑制凭据爆破与类型探测
+const authLimiter = createRateLimiter({ max: 10, message: '尝试过于频繁，请稍后再试' });
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 // JWT 有效期：固定 24 小时，过期后通过 refresh 接口续签
@@ -79,12 +83,23 @@ const router = express.Router();
  * @body username 用户名（可选）
  * @returns 新用户基础信息
  */
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const { email, password, username, turnstile_token, tokens } = req.body;
 
-    if (!email || !password) {
+    // V1.10.1：严格入口校验 —— 必须为字符串（拦截对象/数组等类型混淆，
+    // 防止非字符串进入 ORM 绑定位置触发引擎错误外泄）
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ success: false, message: '请求参数格式不正确' });
+    }
+    if (!email.trim() || !password) {
       return res.status(400).json({ success: false, message: '邮箱和密码不能为空' });
+    }
+    if (email.length > 254 || password.length > 200) {
+      return res.status(400).json({ success: false, message: '请求参数格式不正确' });
+    }
+    if (username !== undefined && (typeof username !== 'string' || username.length > 50)) {
+      return res.status(400).json({ success: false, message: '请求参数格式不正确' });
     }
 
     // V1.8.0 人机验证：注册必须先通过 Turnstile（action=register；测试环境可用 tokens 绕过）
@@ -124,12 +139,19 @@ router.post('/register', async (req, res) => {
  * @body remember 是否记住登录（影响 Session 有效期）
  * @returns 用户信息 + JWT + Session Token
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password, remember, turnstile_token, tokens } = req.body;
 
-    if (!email || !password) {
+    // V1.10.1：严格入口校验（同注册），拦截类型混淆导致的引擎错误外泄
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ success: false, message: '请求参数格式不正确' });
+    }
+    if (!email.trim() || !password) {
       return res.status(400).json({ success: false, message: '邮箱和密码不能为空' });
+    }
+    if (email.length > 254 || password.length > 200) {
+      return res.status(400).json({ success: false, message: '请求参数格式不正确' });
     }
 
     const ipAddress = getClientIp(req);

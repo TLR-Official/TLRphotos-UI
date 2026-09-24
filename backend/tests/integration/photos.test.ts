@@ -560,3 +560,34 @@ describe('V1.7.0 精细化功能权限', () => {
     expect(res.body.data.is_liked).toBe(true);
   });
 });
+
+// V1.10.1 安全回归（ID:4 / ID:2 部分）
+describe('V1.10.1 上传口认证前置（ID:4）', () => {
+  it('匿名 POST /upload 应在 multer 前返回 401，而非 multer 的 400', async () => {
+    const res = await request(app).post('/api/photos/upload');
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.code).toBe('AUTH_REQUIRED');
+    expect(JSON.stringify(res.body)).not.toMatch(/Unexpected field|multer/i);
+  });
+
+  it('匿名携带 multipart 也应 401，不进入文件解析', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload')
+      .field('probe', '1')
+      .attach('image', Buffer.from('not-a-real-image'), { filename: 'probe.txt', contentType: 'text/plain' });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('匿名不得读取未审核照片详情（ID:3/7 状态隔离回归）', async () => {
+    // 插入一条匿名不可见的 pending 照片
+    const pendingId = `pending-${Date.now()}`;
+    await db.run(
+      "INSERT INTO photos (id, title, status, user_id, thumbnail_path, original_url, created_at) VALUES (?, 'pending-probe', 'pending', ?, 'photos/thumbnails/pending-probe.webp', 'photos/original/pending-probe.jpg', ?)",
+      pendingId, TEST_USER_A, new Date().toISOString()
+    );
+    const res = await request(app).get(`/api/photos/${pendingId}`);
+    expect(res.status).toBe(404);
+  });
+});

@@ -16,6 +16,18 @@
 
 ---
 
+## 安全约束 (V1.10.1)
+
+- **CORS 白名单**：仅允许本站来源（默认 `https://tlrphotos.com` / `www.tlrphotos.com` / `admin.tlrphotos.com`，经环境变量 `CORS_ALLOWED_ORIGINS` 逗号分隔配置）；非白名单来源返回 403 `CORS_BLOCKED`；允许方法仅 `GET/POST/PUT/DELETE`，不携带凭证。同源前端与无 Origin 的服务端请求不受影响。
+- **对象级访问控制**：照片列表/搜索/详情对匿名访客仅返回 `approved` 照片；未审核（pending/rejected）照片仅属主与管理员可访问，匿名直取返回 404。
+- **上传认证顺序**：`POST /api/photos/upload` 先 JWT 认证 + `can_upload` 权限校验，通过后才进入 multipart 解析；未认证返回 401 `AUTH_REQUIRED`。
+- **入口类型校验**：认证接口的 email/password 必须为字符串（长度上限 email 254 / password 200），非法类型返回 400；数据库引擎与 ORM 错误细节不回显。
+- **速率限制**：登录/注册 10 次/分、照片公开读取 120 次/分（按 IP），超限返回 429 `RATE_LIMITED` + `Retry-After`。
+- **指纹隐藏**：不返回 `X-Powered-By`；边缘（nginx）拒绝重复/非标准 `Transfer-Encoding` 及 CL+TE 共存请求（HTTP 请求走私防护）。
+- 完整修复说明见 [security-fix-2026-09-24.md](./security-fix-2026-09-24.md)。
+
+---
+
 ## 照片接口 (Photos)
 
 ### 获取照片列表

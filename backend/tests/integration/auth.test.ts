@@ -253,3 +253,37 @@ describe('POST /api/auth/logout', () => {
     expect(res.body.success).toBe(true);
   });
 });
+
+// V1.10.1 安全回归（ID:5）：非字符串字段不得进入 ORM 绑定，
+// 响应不得回显 SQLITE_* 等引擎错误细节
+describe('V1.10.1 入口类型校验（ID:5）', () => {
+  const badPayloads = [
+    { label: 'email 对象', body: { email: { $ne: 'x' }, password: 'x' } },
+    { label: 'email 数组', body: { email: ['a@b.com'], password: 'x' } },
+    { label: 'email null', body: { email: null, password: 'x' } },
+    { label: 'password 对象', body: { email: `x-${Date.now()}@example.com`, password: { x: 1 } } },
+  ];
+
+  for (const { label, body } of badPayloads) {
+    it(`login 应拒绝${label}且不泄露引擎信息`, async () => {
+      const res = await request(app).post('/api/auth/login').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(JSON.stringify(res.body)).not.toMatch(/SQLITE|column index|errno/i);
+    });
+
+    it(`register 应拒绝${label}且不泄露引擎信息`, async () => {
+      const res = await request(app).post('/api/auth/register').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(JSON.stringify(res.body)).not.toMatch(/SQLITE|column index|errno/i);
+    });
+  }
+
+  it('应拒绝超长 email/password', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: `${'a'.repeat(260)}@b.com`, password: 'x' });
+    expect(res.status).toBe(400);
+  });
+});

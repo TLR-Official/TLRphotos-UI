@@ -16,8 +16,13 @@ import { verifyAdminToken } from '../services/adminService';
 import { loadAuthUser } from '../services/authService';
 import { ensureHumanVerified } from '../services/verificationService';
 import { memoryManager } from '../services/memoryManager';
+import { requireAuth } from '../middleware/requireAuth';
+import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = express.Router();
+
+// V1.10.1：公开读取（搜索/列表/详情）按 IP 限速 120 次/分，抑制批量枚举
+const photoReadLimiter = createRateLimiter({ max: 120, message: '浏览过于频繁，请稍后再试' });
 
 // JWT 密钥：用于校验上传/删除接口的 Bearer Token
 const JWT_SECRET = process.env.JWT_SECRET || '';
@@ -157,7 +162,7 @@ const handleUploadError = (err: any, req: express.Request, res: express.Response
  * @query sortBy 排序字段（白名单校验，防 SQL 注入）
  * @query sortOrder 排序方向 asc/desc
  */
-router.get('/search', async (req, res) => {
+router.get('/search', photoReadLimiter, async (req, res) => {
   try {
     const { keyword, tag, category, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
@@ -258,7 +263,7 @@ router.get('/tags', async (req, res) => {
  * 支持分页参数 page（页码，从 1 开始）和 limit（每页条数，默认 50）。
  * 仅返回列表展示所需的最小字段集，并转换代理 URL。
  */
-router.get('/', async (req, res) => {
+router.get('/', photoReadLimiter, async (req, res) => {
   try {
     // 解析分页参数：page 从 1 开始，limit 默认 50，上限 100 防止滥用
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
@@ -304,7 +309,7 @@ router.get('/', async (req, res) => {
  * 否则仅返回已审核照片。访问后自动累加浏览量并附带上传者信息。
  * @param id 照片 ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', photoReadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -875,7 +880,21 @@ router.post('/upload/complete', async (req, res) => {
  * 在 finally 中显式释放，避免 OOM。
  * @multipart image 图片文件
  */
-router.post('/upload', upload.single('image'), handleUploadError, async (req: express.Request, res: express.Response) => {
+router.post(
+  '/upload',
+  // V1.10.1：认证与上传权限必须在 multer 解析前完成，
+  // 未认证请求直接 401，不再先进入文件解析/缓冲层
+  requireAuth,
+  (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (!req.authUser?.can_upload) {
+      res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
+      return;
+    }
+    next();
+  },
+  upload.single('image'),
+  handleUploadError,
+  async (req: express.Request, res: express.Response) => {
   let processedImages: Awaited<ReturnType<typeof processImage>> | null = null;
   try {
     const file = req.file;

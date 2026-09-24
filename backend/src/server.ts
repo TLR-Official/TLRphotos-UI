@@ -10,7 +10,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
-import cors from 'cors';
 import path from 'path';
 import photosRouter from './routes/photos';
 import articlesRouter from './routes/articles';
@@ -26,13 +25,18 @@ import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
 import { initSuperAdmin } from './services/adminService';
 import { memoryManager } from './services/memoryManager';
+import { notFoundHandler, errorHandler } from './middleware/errorHandler';
+import { corsWhitelist } from './middleware/corsWhitelist';
 
 const app = express();
+// 隐藏 Express 指纹头（V1.10.1：X-Powered-By 不再回传）
+app.disable('x-powered-by');
 // 服务端口：优先读取环境变量，默认 3001
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-// 全局中间件：跨域、JSON 解析（50MB 上限兼容大图 Base64 上传）、URL 编码解析
-app.use(cors());
+// 全局中间件：跨域白名单（V1.10.1：由 * 收紧为本站域名白名单）、
+// JSON 解析（50MB 上限兼容大图 Base64 上传）、URL 编码解析
+app.use(corsWhitelist);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -96,6 +100,10 @@ app.post('/api/admin/memory/release', express.json(), async (req: any, res) => {
     res.status(500).json({ success: false, message: (err as Error).message });
   }
 });
+
+// V1.10.1：未匹配的 /api 路径返回规范 404 JSON；全局错误处理统一脱敏
+app.use('/api', notFoundHandler);
+app.use(errorHandler);
 
 // 定时清理任务句柄：保存以便进程退出时清理，避免句柄泄漏阻止优雅退出
 let cleanupTimer: NodeJS.Timeout | null = null;
