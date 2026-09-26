@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-09-26 21:28 | [docs] 同步版本管理规则文件：补齐 V1.8.1~V1.10.1 共 7 条缺失版本历史、更新当前版本标识至 V1.10.1 基线，并在 3.2 更新位置中将该文件纳入每次版本发布的强制同步范围 (V1.10.2) | .trae/rules/版本管理规则.md, package.json |
 | 2026-09-24 19:58 | [release] 版本号升级至 V1.10.1 — 修复扫描确认的6项安全漏洞（HTTP走私/未授权上传/错误泄露/CORS） | 全项目 |
 | 2026-09-24 19:58 | [fix] 安全漏洞修复：(1) ID:2 HTTP Desync — nginx 新增 conf.d/desync.conf map（仅空/精确chunked合法，重复TE逗号合并值判非法）+ snippets/smuggling-guard.conf（非法TE 400、CL+TE共存 400），两个 vhost 引入并 nginx -t reload；双TE探针源站/经CF均400单响应，合法chunked透传正常；(2) ID:4 未授权上传 — 新增 requireAuth 中间件，/upload 路由链改为认证+can_upload前置→multer，匿名 401 不再进入解析缓冲；(3) ID:5 错误泄露 — login/register 严格入口类型校验（string/长度254/200）+ 全局 errorHandler 脱敏（SQLITE_*/errno/SQL片段不落客户端）+ app.disable(x-powered-by) 与 nginx proxy_hide_header；(4) ID:3/6/7 — CORS 由 * 收紧白名单（corsWhitelist，CORS_ALLOWED_ORIGINS env，方法仅GET/POST/PUT/DELETE），公开读取限速120/min、认证口10/min（无依赖内存固定窗口）；新增20个回归用例（类型9+上传3+CORS5+限速3），162项全部通过；修复报告见 backend/docs/security-fix-2026-09-24.md，api.md 新增安全约束章节 (V1.10.1) | backend/src/middleware/*, backend/src/server.ts, backend/src/routes/auth.ts, backend/src/routes/photos.ts, backend/docs/*, /etc/nginx/ |
 | 2026-09-18 20:43 | [release] 版本号升级至 V1.10.0 — Hallmark 全站去紫色改 teal 松针青绿 | 全项目 |
