@@ -616,7 +616,7 @@ export function ProfilePage() {
                   <span className="text-sm font-medium">上传照片</span>
                 </button>
                 <button
-                  onClick={() => navigate(`/users/${user?.id}`)}
+                  onClick={() => navigate('/my-works')}
                   className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

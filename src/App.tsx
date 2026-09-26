@@ -17,6 +17,7 @@ import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
+import { MyWorksPage } from './features/profile/MyWorksPage';
 import { UserProfilePage } from './features/profile/UserProfilePage';
 import { UploadPage } from './features/upload/UploadPage';
 import { AdminApp } from './admin/AdminApp';
@@ -80,6 +81,7 @@ function AppRouterContent() {
           <Route path="/articles/:id" element={<ArticleDetailPage />} />
           <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/my-works" element={<MyWorksPage />} />
           <Route path="/users/:userId" element={<UserProfilePage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/gallery" element={<GalleryPage />} />

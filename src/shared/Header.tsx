@@ -133,7 +133,7 @@ export function Header() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowDropdown(false);
-                      navigate('/gallery');
+                      navigate('/my-works');
                     }}
                     className="w-full px-4 py-2 text-left text-sm transition-colors text-gray-700 hover:bg-gray-100"
                   >
