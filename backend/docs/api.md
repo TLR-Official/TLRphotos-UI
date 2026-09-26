@@ -28,6 +28,23 @@
 
 ---
 
+## 安全约束 (V1.11.0)
+
+验证码体系（Spug 通道，登录/注册/绑定手机号强制）：
+
+- **验证码规格**：6 位纯数字；有效期 10 分钟；同一验证码最多 5 次错误尝试，超限锁定需重新获取
+- **存储安全**：入库仅存 HMAC-SHA256 哈希，明文码仅在内存中传递给 Spug 发送通道，绝不落库、不落日志；发送失败时作废旧记录，避免残留死码
+- **发送限速**（三层独立叠加，任一超限返回 `429 RATE_LIMITED` + `Retry-After`）：
+  - 同一 target 60 秒冷却（提示"发送过于频繁，请 60 秒后再试"）
+  - 同一 target 每小时最多 5 次
+  - 同一 IP 每小时最多 20 次
+- **隐私脱敏**：接口响应与日志中的手机号/邮箱均脱敏返回（手机号中间 4 位 `*` 替换，如 `138****8000`）
+- **login_ticket**：两步登录中间票据，HMAC-SHA256 签名（恒时比较），绑定 userId + 客户端 IP（XFF 首段），10 分钟有效，IP 变更立即失效
+- **校验目标防伪造**：`/login/verify` 的验证目标由服务端按通道从用户记录取，客户端不可传入 target
+- **配置依赖**：`SPUG_SMS_TEMPLATE` / `SPUG_MAIL_TEMPLATE` 未配置时验证码发送接口返回 503（fail-closed）
+
+---
+
 ## 照片接口 (Photos)
 
 ### 获取照片列表
@@ -533,56 +550,197 @@ Content-Type: multipart/form-data
 
 ## 认证接口 (Auth)
 
-### 用户注册
+> **V1.11.0 账号体系升级**：支持手机号 / 邮箱双账号（`identifier` 自动识别）；登录改造为「密码校验 → 验证码确认」两段式；注册与绑定手机号强制一次性验证码（OTP）。
 
-**POST** `/api/auth/register`
+### 发送验证码（V1.11.0 新增）
+
+**POST** `/api/auth/otp/send`
+
+向手机号（短信）或邮箱（邮件）发送 6 位数字验证码，用于登录、注册、绑定手机号三个场景。
+
+**限速**：三层叠加（同一 target 60s 冷却 / 同一 target 5 次每小时 / 同一 IP 20 次每小时），任一超限返回 `429 RATE_LIMITED` + `Retry-After`。
 
 **请求体**:
 ```json
 {
-  "email": "user@example.com",
-  "password": "password123",
-  "username": "用户名",
+  "target": "13800138000",
+  "scene": "login",
   "turnstile_token": "0.zzAAA..."
 }
 ```
 
-**V1.8.0 人机验证**：注册为高危操作，请求体必须携带 Turnstile 挑战令牌 `turnstile_token`（action=register），服务端 siteverify 校验（success + action + hostname 白名单）通过后方可注册，fail-closed。
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| target | string | 是 | 手机号或邮箱（≤254 字符），自动识别通道：手机号→sms，其余按邮箱格式校验→mail |
+| scene | string | 是 | 业务场景：`login` / `register` / `bind_phone` |
+| turnstile_token | string | 是 | Turnstile 挑战令牌（register 场景 action=register，其余 action=login） |
+
+**场景规则**:
+- `login`：target 必须已注册，否则 404 `PHONE_NOT_REGISTERED` / `EMAIL_NOT_REGISTERED`
+- `register`：target 必须未注册，否则 409 `ALREADY_REGISTERED`
+- `bind_phone`：需登录（`Authorization: Bearer <token>`），target 必须为手机号且未被他人绑定（冲突 409 `ALREADY_REGISTERED`）
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
-    "id": "user_1234567890123",
-    "email": "user@example.com",
-    "username": "用户名"
+    "channel": "sms",
+    "cooldown": 60,
+    "expires_minutes": 10,
+    "target": "138****8000"
   }
 }
 ```
 
-### 用户登录
+**字段说明**：`channel` 为实际发送通道（`sms`/`mail`）；`cooldown` 为冷却秒数；`target` 已脱敏。
 
-**POST** `/api/auth/login`
+**错误码**:
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | INVALID_PARAMS | 参数格式错误 / 手机号或邮箱格式不正确 / 不支持的场景 |
+| 401 | UNAUTHORIZED | bind_phone 场景未登录 |
+| 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用（fail-closed） |
+| 404 | PHONE_NOT_REGISTERED / EMAIL_NOT_REGISTERED | login 场景 target 未注册 |
+| 409 | ALREADY_REGISTERED | register 场景已注册 / bind_phone 手机号被他人绑定 |
+| 429 | RATE_LIMITED | 触发三层限速之一 |
+| 500 | OTP_SEND_FAILED | 验证码发送失败（通道侧错误） |
+| 502/503 | Spug 透传码 | Spug 服务发送失败（502）或模板未配置（503） |
+
+### 用户注册（V1.11.0 验证码改造）
+
+**POST** `/api/auth/register`
 
 **请求体**:
 ```json
 {
-  "email": "user@example.com",
+  "identifier": "13800138000",
   "password": "password123",
-  "remember": false
+  "username": "用户名",
+  "code": "123456",
+  "turnstile_token": "0.zzAAA..."
 }
 ```
 
 **参数说明**:
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| email | string | 是 | - | 邮箱地址 |
-| password | string | 是 | - | 密码 |
-| remember | boolean | 否 | false | 是否保存登录状态（30天有效） |
-| turnstile_token | string | 条件 | - | V1.8.0 人机验证令牌：当前无有效验证状态（168h 内同 IP）时必传（action=login），已有有效验证状态可省略 |
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| identifier | string | 是 | 手机号或邮箱（自动识别；兼容旧字段 `email`，identifier 缺失时回退读取） |
+| password | string | 是 | 密码（≤200 字符） |
+| username | string | 否 | 用户名（≤50 字符）；手机号注册缺省自动设为「用户+手机后4位」 |
+| code | string | 是 | 6 位数字验证码（scene=register），须先调用 `/api/auth/otp/send` 获取 |
+| turnstile_token | string | 是 | Turnstile 挑战令牌（action=register），fail-closed |
 
-**响应**:
+**账号写入规则**：
+- 手机号注册：`email=NULL`、`phone=手机号`、`phone_verified=1`
+- 邮箱注册：`email=邮箱`、`phone_verified=0`
+
+**响应**（201，注册成功视同完成登录，直接签发双令牌）:
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "user_1234567890123",
+      "email": null,
+      "username": "用户8000",
+      "avatar_url": null
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "abc123def456..."
+  }
+}
+```
+
+**错误码**:
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | INVALID_PARAMS | 参数格式错误 / identifier 非合法手机号或邮箱 |
+| 400 | OTP_REQUIRED | 验证码缺失或非 6 位数字 |
+| 400 | OTP_EXPIRED | 验证码不存在 / 已使用 / 已过期（提示重新获取） |
+| 400 | OTP_MISMATCH | 验证码错误 |
+| 400 | OTP_LOCKED | 错误次数超过 5 次被锁定，需重新获取 |
+| 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
+| 409 | ALREADY_REGISTERED | 手机号 / 邮箱已被注册 |
+| 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
+| 500 | REGISTER_FAILED | 注册失败 |
+
+### 用户登录 · 第一步：密码校验（V1.11.0 两段式）
+
+**POST** `/api/auth/login`
+
+> ⚠️ **契约变更**：V1.11.0 起登录为两段式。第一步仅校验密码，**不再直接签发 JWT**；成功后返回 `login_ticket` 与可用验证码通道，客户端须继续调用 [`POST /api/auth/login/verify`](#用户登录--第二步验证码确认v1110-新增) 完成确认。旧版「一次请求直接返回 token」契约**已废弃**（仅测试环境 `TEST_BYPASS_TOKEN` 兼容路径保留原行为）。
+
+**请求体**:
+```json
+{
+  "identifier": "13800138000",
+  "password": "password123",
+  "turnstile_token": "0.zzAAA..."
+}
+```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| identifier | string | 是 | 手机号或邮箱（自动识别；兼容旧字段 `email`） |
+| password | string | 是 | 密码（≤200 字符） |
+| turnstile_token | string | 条件 | 人机验证令牌（action=login）：该用户 168h 内已有有效验证状态（同 IP）时可省略，否则必传 |
+
+**响应**（密码校验通过，进入第二步）:
+```json
+{
+  "success": true,
+  "data": {
+    "otp_required": true,
+    "login_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...",
+    "channels": ["email", "phone"],
+    "expires_minutes": 10
+  }
+}
+```
+
+**字段说明**:
+- `otp_required`：固定 `true`，提示客户端进入验证码确认步骤
+- `login_ticket`：HMAC-SHA256 签名票据（绑定 userId + 过期时间 + 客户端 IP），10 分钟有效，第二步必须原样回传
+- `channels`：该账号可用的验证码通道列表——`email`（用户 email 非空时提供）、`phone`（phone 非空且 `phone_verified=1` 时提供）；客户端据此引导用户调 `/api/auth/otp/send`（scene=login）获取验证码
+
+**错误码**:
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | INVALID_PARAMS | 参数格式错误 / identifier 非合法手机号或邮箱 |
+| 401 | AUTH_FAILED | 密码错误 |
+| 401 | AUTH_REJECTED | 账号已被封禁 / 禁用 |
+| 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
+| 404 | PHONE_NOT_REGISTERED | 手机号未注册（前端可引导"继续登录将注册新账号"流程） |
+| 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
+
+### 用户登录 · 第二步：验证码确认（V1.11.0 新增）
+
+**POST** `/api/auth/login/verify`
+
+校验 `login_ticket`（签名 + 过期 + IP 匹配）后，按指定通道验证一次性验证码；通过后签发 JWT + 会话并建立 168h 人机验证状态。
+
+**限速**：10 次/分/IP，抑制验证码爆破。
+
+**请求体**:
+```json
+{
+  "login_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...",
+  "channel": "phone",
+  "code": "123456"
+}
+```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| login_ticket | string | 是 | 第一步返回的登录票据（≤2048 字符） |
+| channel | string | 是 | 验证通道：`email` / `phone`；验证目标由服务端按通道从用户记录取（客户端不可伪造 target） |
+| code | string | 是 | 6 位数字验证码（scene=login） |
+
+**响应**（与旧登录契约一致）:
 ```json
 {
   "success": true,
@@ -599,11 +757,77 @@ Content-Type: multipart/form-data
 }
 ```
 
-**说明**: 
-- 当 `remember` 为 `true` 时，返回 `session_token`，用于自动登录
+**错误码**:
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | INVALID_TICKET | 票据格式非法 |
+| 400 | INVALID_PARAMS | channel 非 email/phone |
+| 400 | OTP_REQUIRED | 验证码缺失或非 6 位数字 |
+| 400 | OTP_EXPIRED / OTP_MISMATCH / OTP_LOCKED | 验证码过期 / 错误 / 锁定（语义同注册） |
+| 400 | CHANNEL_UNAVAILABLE | 该账号无此通道（如未绑定/未验证手机号） |
+| 401 | INVALID_TICKET | 票据签名无效 / 已过期 / IP 变更（需重新走第一步） |
+| 401 | USER_BANNED / USER_DISABLED | 出票后账号被封禁 / 禁用（签发前复核） |
+| 404 | USER_NOT_FOUND | 用户不存在 |
+| 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
+| 500 | LOGIN_FAILED | 登录失败 |
+
+**说明**:
 - `session_token` 有效期为 30 天，或连续 7 天无活动自动过期
-- **V1.7.0 封禁检查**：被封禁用户（`banned_at` 非空）尝试登录时返回 `400 { success: false, message: "该账号已被封禁" }`，无法成功登录；被封禁用户的现有 JWT 也会在所有需鉴权接口（上传/点赞/查看/下载）被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
-- **V1.8.0 人机验证**：登录前先做人机验证门——若该用户已有有效验证状态（168h 内且 IP 未变）则直接放行；否则校验请求体 `turnstile_token`（action=login），未通过返回 `403/503 { code: "HUMAN_VERIFICATION_REQUIRED" }`。登录成功即建立/刷新 168h 验证状态
+- **V1.7.0 封禁检查**：被封禁用户的现有 JWT 在所有需鉴权接口被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
+- **V1.8.0 人机验证**：登录成功（第二步通过）即建立/刷新 168h 验证状态
+
+### 绑定手机号（V1.11.0 新增）
+
+**POST** `/api/auth/phone/bind`
+
+为当前登录账号绑定手机号并通过验证码完成验证（`phone_verified=1`）。
+
+**请求头**:
+```
+Authorization: Bearer <token>
+```
+
+**请求体**:
+```json
+{
+  "phone": "13800138000",
+  "code": "123456",
+  "turnstile_token": "0.zzAAA..."
+}
+```
+
+**参数说明**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| phone | string | 是 | 中国大陆手机号（`1[3-9]` 开头 11 位） |
+| code | string | 是 | 6 位数字验证码（scene=bind_phone，调 `/api/auth/otp/send` 获取） |
+| turnstile_token | string | 是 | Turnstile 挑战令牌（action=login） |
+
+**响应**（更新后的用户公开资料）:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "email": "user@example.com",
+    "username": "用户名",
+    "avatar_url": null,
+    "phone": "13800138000",
+    "phone_verified": 1
+  }
+}
+```
+
+**错误码**:
+| HTTP | code | 说明 |
+|------|------|------|
+| 400 | INVALID_PARAMS | 手机号格式不正确 |
+| 400 | OTP_REQUIRED / OTP_EXPIRED / OTP_MISMATCH / OTP_LOCKED | 验证码相关错误（语义同注册） |
+| 401 | UNAUTHORIZED | 未登录 |
+| 401 | USER_BANNED / USER_DISABLED | 账号被封禁 / 禁用（loadAuthUser 拦截） |
+| 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
+| 409 | ALREADY_REGISTERED | 该手机号已被其他账号绑定 |
+| 500 | BIND_FAILED | 绑定失败 |
 
 ### 自动登录（刷新令牌）
 

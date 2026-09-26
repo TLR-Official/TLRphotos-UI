@@ -17,6 +17,17 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 
+// V1.11.0：注册需验证码；Spug 通道打桩捕获明文码，不占用 fetchMock 也不触达真实网络
+const otpCapture = vi.hoisted(() => ({ codes: new Map<string, string>() }));
+vi.mock('../../src/services/spugService', () => ({
+  sendSmsCode: vi.fn(async (to: string, code: string) => {
+    otpCapture.codes.set(to, code);
+  }),
+  sendMailCode: vi.fn(async (to: string, code: string) => {
+    otpCapture.codes.set(to, code);
+  }),
+}));
+
 const BYPASS_TOKEN = 'test-everos-bypass';
 
 let app: express.Application;
@@ -74,11 +85,13 @@ beforeAll(async () => {
   // 已配置 Key 的应用共用同一路由模块；未配置场景通过临时清空环境变量验证
   appNoKey = app;
 
-  // 注册并登录获取真实 JWT
+  // 注册并登录获取真实 JWT（V1.11.0：先经 otp/send 取码，再携带验证码注册）
   const email = `everos-${Date.now()}@example.com`;
+  const send = await request(app).post('/api/auth/otp/send').send({ target: email, scene: 'register' });
+  expect(send.status).toBe(200);
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ email, password: 'Test123456', username: 'everosuser' });
+    .send({ email, password: 'Test123456', username: 'everosuser', code: otpCapture.codes.get(email) });
   expect(reg.status).toBe(201);
 
   const login = await request(app)

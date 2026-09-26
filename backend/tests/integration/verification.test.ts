@@ -8,11 +8,22 @@
  *              5. IP 绑定：IP 变更后验证状态立即失效
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+
+// V1.11.0：注册需验证码；Spug 通道打桩捕获明文码，不触达真实网络
+const otpCapture = vi.hoisted(() => ({ codes: new Map<string, string>() }));
+vi.mock('../../src/services/spugService', () => ({
+  sendSmsCode: vi.fn(async (to: string, code: string) => {
+    otpCapture.codes.set(to, code);
+  }),
+  sendMailCode: vi.fn(async (to: string, code: string) => {
+    otpCapture.codes.set(to, code);
+  }),
+}));
 
 const BYPASS_TOKEN = 'test-verification-bypass';
 
@@ -59,11 +70,21 @@ beforeAll(async () => {
   appBypass.use('/api/verification', verificationRoutes);
 });
 
+/** V1.11.0：经绕过应用完成「取码 + 注册」全流程（appBypass 注入 tokens 跳过 Turnstile） */
+async function registerViaBypass(email: string, username?: string) {
+  const send = await request(appBypass).post('/api/auth/otp/send').send({ target: email, scene: 'register' });
+  expect(send.status).toBe(200);
+  return request(appBypass)
+    .post('/api/auth/register')
+    .send({ email, password: 'Test123456', username, code: otpCapture.codes.get(email) });
+}
+
 describe('高危操作 fail-closed 验证门', () => {
   it('注册未携带 tokens 且 Turnstile 未配置时应被拦截（fail-closed）', async () => {
+    // V1.11.0：携带格式合法的验证码才能越过入口格式校验，抵达 Turnstile 验证门
     const res = await request(appGate)
       .post('/api/auth/register')
-      .send({ email: `gate-${Date.now()}@example.com`, password: 'Test123456' });
+      .send({ email: `gate-${Date.now()}@example.com`, password: 'Test123456', code: '123456' });
 
     expect(res.body.success).toBe(false);
     expect(res.body.code).toBe('HUMAN_VERIFICATION_REQUIRED');
@@ -72,11 +93,13 @@ describe('高危操作 fail-closed 验证门', () => {
   });
 
   it('登录在无验证状态且未携带 tokens 时应被拦截（fail-closed）', async () => {
-    // 先经绕过通道准备用户（注册不建立验证状态）
-    const reg = await request(appBypass)
-      .post('/api/auth/register')
-      .send({ email: 'gate-login@example.com', password: 'Test123456', username: 'gateuser' });
+    // 先经绕过通道准备用户（V1.11.0：注册需验证码）
+    const reg = await registerViaBypass('gate-login@example.com', 'gateuser');
     expect(reg.status).toBe(201);
+
+    // V1.11.0：注册成功即建立 168h 验证状态；为还原「无验证状态」前置条件，直接清除该用户状态
+    const dbModule = await import('../../src/db');
+    await dbModule.db.run('DELETE FROM user_verifications');
 
     const res = await request(appGate)
       .post('/api/auth/login')
@@ -89,9 +112,8 @@ describe('高危操作 fail-closed 验证门', () => {
 
 describe('tokens 绕过与验证状态生命周期', () => {
   it('携带 tokens 注册并登录成功，登录即建立 168h 验证状态', async () => {
-    const reg = await request(appBypass)
-      .post('/api/auth/register')
-      .send({ email: 'bypass@example.com', password: 'Test123456', username: 'bypassuser' });
+    // V1.11.0：注册需验证码（otp/send 与 register 均走 tokens 绕过通道）
+    const reg = await registerViaBypass('bypass@example.com', 'bypassuser');
     expect(reg.status).toBe(201);
 
     const login = await request(appBypass)

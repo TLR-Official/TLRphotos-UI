@@ -28,7 +28,8 @@ export interface User {
   username: string | null;
   avatar_url: string | null;
   bio: string | null;
-  phone: string | null;
+  phone?: string | null;
+  phone_verified?: number;   // V1.11.0：手机号是否已通过验证码绑定（1=已验证）
   website: string | null;
   location: string | null;
   custom_fields: Record<string, CustomField> | null;
@@ -41,35 +42,70 @@ export interface LoginData {
   token: string;
 }
 
-/** 登录接口响应（含可选 session_token 用于 remember 模式） */
-export interface LoginResponse {
-  success: boolean;
-  message?: string;
-  code?: string;      // 业务错误码（人机验证拦截时为 HUMAN_VERIFICATION_REQUIRED）
-  data?: {
-    user: User;
-    token: string;
-    session_token?: string;
-  };
+/** 登录成功返回的业务数据（V1.11.0：注册成功 / 验证码确认后签发，结构一致） */
+export interface LoginSuccessData {
+  user: User;
+  token: string;
+  session_token?: string;
 }
 
-/** 注册接口响应 */
+/** 登录第一步返回的验证码挑战数据（otp_required=true） */
+export interface LoginOtpData {
+  otp_required: true;
+  login_ticket: string;                       // HMAC 签名票据，10 分钟有效
+  channels: Array<'email' | 'phone'>;         // 可用验证码通道
+  expires_minutes: number;
+}
+
+/** 登录成功响应（直接签发 token） */
+export interface LoginSuccessResponse {
+  success: boolean;
+  message?: string;
+  code?: string;
+  data?: LoginSuccessData;
+}
+
+/** 登录需验证码响应（进入第二段确认） */
+export interface LoginOtpResponse {
+  success: boolean;
+  message?: string;
+  code?: string;
+  data?: LoginOtpData;
+}
+
+/** 登录接口响应联合类型：otp_required=true 为前者，否则为后者 */
+export type LoginResponse = LoginOtpResponse | LoginSuccessResponse;
+
+/** 注册接口响应（V1.11.0：注册成功视同登录，直接签发 token + 会话） */
 export interface RegisterResponse {
   success: boolean;
   message?: string;
   code?: string;      // 业务错误码（人机验证拦截时为 HUMAN_VERIFICATION_REQUIRED）
-  data?: {
-    id: string;
-    email: string;
-    username: string | null;
-  };
+  data?: LoginSuccessData;
 }
 
-/** 注册成功返回的业务数据 */
-export interface RegisterData {
+/** 注册成功返回的业务数据（与登录成功结构一致） */
+export type RegisterData = LoginSuccessData;
+
+/** 验证码业务场景 */
+export type OtpScene = 'login' | 'register' | 'bind_phone';
+
+/** 发送验证码接口返回的业务数据 */
+export interface SendOtpData {
+  channel: 'sms' | 'mail';   // 实际发送通道
+  cooldown: number;          // 重发冷却秒数（60）
+  expires_minutes: number;   // 验证码有效期（分钟）
+  target: string;            // 脱敏后的目标（如 138****5678 / a***@x.com）
+}
+
+/** 绑定手机号接口返回的业务数据 */
+export interface BindPhoneData {
   id: string;
-  email: string;
+  email: string | null;
   username: string | null;
+  avatar_url: string | null;
+  phone: string | null;
+  phone_verified: number;
 }
 
 /** 头像上传成功返回的业务数据 */
@@ -89,14 +125,16 @@ export interface RefreshResponse {
 }
 
 /**
- * 登录（直连 fetch，未经 request 客户端）
- * @param email - 邮箱
+ * 登录第一步（直连 fetch，未经 request 客户端）
+ * @description V1.11.0 两段式登录：密码校验通过后返回 login_ticket + 可用验证码通道，
+ *              须继续调用 verifyLogin 完成验证码确认（测试 bypass 场景直接签发 token）。
+ * @param identifier - 邮箱或手机号（后端自动识别）
  * @param password - 密码
- * @param remember - 是否启用长期会话（返回 session_token）
+ * @param remember - 是否启用长期会话（保留兼容，后端当前固定创建长期会话）
  * @param turnstileToken - Turnstile 人机验证令牌（V1.8.0，验证门要求时必传）
- * @returns LoginResponse，含 user、token 与可选 session_token
+ * @returns LoginResponse 联合：otp_required=true 含 login_ticket/channels；否则含 user/token/session_token
  */
-export async function login(email: string, password: string, remember?: boolean, turnstileToken?: string): Promise<LoginResponse> {
+export async function login(identifier: string, password: string, remember?: boolean, turnstileToken?: string): Promise<LoginResponse> {
   // 超时控制：登录涉及 bcrypt 校验，留 30s 余量；超时后 abort 中断 fetch
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -107,7 +145,7 @@ export async function login(email: string, password: string, remember?: boolean,
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, password, remember, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+      body: JSON.stringify({ identifier, password, remember, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
       signal: controller.signal,
     });
 
@@ -227,6 +265,50 @@ export async function refresh(sessionToken: string): Promise<RefreshResponse> {
 }
 
 /**
+ * 登录第二步：验证码确认
+ * @description 凭 login_ticket + 通道 + 6 位验证码完成登录，成功签发 token 与会话。
+ * @param loginTicket - 登录第一步返回的 HMAC 签名票据（10 分钟有效）
+ * @param channel - 验证通道（email / phone），目标由服务端按用户记录取值
+ * @param code - 6 位数字验证码
+ * @returns ApiResponse<LoginSuccessData>
+ */
+export async function verifyLogin(loginTicket: string, channel: 'email' | 'phone', code: string): Promise<ApiResponse<LoginSuccessData>> {
+  return request<LoginSuccessData>('/auth/login/verify', {
+    method: 'POST',
+    body: JSON.stringify({ login_ticket: loginTicket, channel, code }),
+  });
+}
+
+/**
+ * 发送验证码（登录 / 注册 / 绑定手机号）
+ * @description target 自动识别手机号（短信）或邮箱（邮件）；三层限速（60s 冷却 / 目标每小时 5 次 / IP 每小时 20 次）。
+ * @param target - 手机号或邮箱
+ * @param scene - 业务场景（login / register / bind_phone）
+ * @param turnstileToken - Turnstile 人机验证令牌（必传，action 与场景对应）
+ * @returns ApiResponse<SendOtpData>，含脱敏目标与冷却秒数
+ */
+export async function sendOtp(target: string, scene: OtpScene, turnstileToken?: string): Promise<ApiResponse<SendOtpData>> {
+  return request<SendOtpData>('/auth/otp/send', {
+    method: 'POST',
+    body: JSON.stringify({ target, scene, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+  });
+}
+
+/**
+ * 绑定手机号（需登录）
+ * @param phone - 手机号
+ * @param code - 6 位短信验证码（scene=bind_phone）
+ * @param turnstileToken - Turnstile 人机验证令牌（action=login）
+ * @returns ApiResponse<BindPhoneData>，含更新后的手机号与验证状态
+ */
+export async function bindPhone(phone: string, code: string, turnstileToken?: string): Promise<ApiResponse<BindPhoneData>> {
+  return request<BindPhoneData>('/auth/phone/bind', {
+    method: 'POST',
+    body: JSON.stringify({ phone, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+  });
+}
+
+/**
  * 登录（经 requestManager 去重版本）
  * @description 同一邮箱的并发登录请求会被合并为一次实际调用
  * @param email - 邮箱
@@ -246,18 +328,21 @@ export async function loginWithManager(email: string, password: string): Promise
 
 /**
  * 注册（经 requestManager 去重）
- * @param email - 邮箱
+ * @description V1.11.0 验证码注册：identifier 自动识别邮箱 / 手机号，
+ *              需先通过 sendOtp 获取验证码；注册成功视同登录，直接签发 token + 会话。
+ * @param identifier - 邮箱或手机号
  * @param password - 密码
- * @param username - 用户名（可选）
- * @param turnstileToken - Turnstile 人机验证令牌（V1.8.0，验证门要求时必传）
+ * @param username - 用户名（可选，手机号注册缺省「用户+手机后4位」）
+ * @param code - 6 位数字验证码（scene=register）
+ * @param turnstileToken - Turnstile 人机验证令牌（action=register）
  * @returns ApiResponse<RegisterData>
  */
-export async function register(email: string, password: string, username?: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
-  const key = `register:${email}`;
+export async function register(identifier: string, password: string, username: string | undefined, code: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
+  const key = `register:${identifier}`;
   return deduplicatedRequest(key, () =>
     request<RegisterData>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, username, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+      body: JSON.stringify({ identifier, password, username, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
     })
   );
 }

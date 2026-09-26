@@ -10,8 +10,19 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { login, register, getCurrentUser, updateUser, refresh } from '../api/auth';
+import { login, register, verifyLogin, getCurrentUser, updateUser, refresh } from '../api/auth';
 import type { User } from '../api/auth';
+
+/**
+ * 登录流程结果（V1.11.0 两段式登录）
+ * - success：直接登录成功（测试 bypass 场景）
+ * - otp_required：密码校验通过，需凭 login_ticket 完成验证码确认
+ * - phone_not_registered：手机号未注册，引导「继续登录将注册新账号」流程
+ */
+export type LoginFlowResult =
+  | { status: 'success' }
+  | { status: 'otp_required'; loginTicket: string; channels: Array<'email' | 'phone'> }
+  | { status: 'phone_not_registered'; message: string };
 
 /**
  * 用户上下文类型
@@ -21,8 +32,9 @@ interface UserContextType {
   token: string | null;                                           // 当前 Token
   isAuthenticated: boolean;                                       // 是否已认证（user 是否存在）
   isLoading: boolean;                                             // 初始化加载中
-  login: (email: string, password: string, remember?: boolean, turnstileToken?: string) => Promise<void>;
-  register: (email: string, password: string, username?: string, turnstileToken?: string) => Promise<void>;
+  login: (identifier: string, password: string, turnstileToken?: string) => Promise<LoginFlowResult>;
+  verifyLogin: (loginTicket: string, channel: 'email' | 'phone', code: string) => Promise<void>;
+  register: (identifier: string, password: string, username: string | undefined, code: string, turnstileToken?: string) => Promise<void>;
   logout: () => void;
   updateUserInfo: (data: Partial<User>) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -96,42 +108,91 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * 登录
-   * @param email - 邮箱
-   * @param password - 密码
-   * @param remember - 是否启用长期会话（保存 session_token）
-   * @throws 登录失败时抛出 Error，由调用方处理
+   * 持久化登录结果：写入 token / session_token 并更新用户状态，
+   * 随后异步拉取完整用户资料（登录签发接口仅返回 id/email/username/avatar_url 基础字段）。
    */
-  const handleLogin = useCallback(async (email: string, password: string, remember?: boolean, turnstileToken?: string) => {
-    const result = await login(email, password, remember, turnstileToken);
-    if (result.success && result.data) {
-      localStorage.setItem('token', result.data.token);
-      setToken(result.data.token);
-      // remember 模式：持久化 session_token；否则清除已有的 session_token
-      if (result.data.session_token) {
-        localStorage.setItem('session_token', result.data.session_token);
-      } else {
-        localStorage.removeItem('session_token');
-      }
-      setUser(result.data.user);
+  const persistAuth = useCallback((data: { user: User; token: string; session_token?: string }) => {
+    localStorage.setItem('token', data.token);
+    setToken(data.token);
+    if (data.session_token) {
+      localStorage.setItem('session_token', data.session_token);
     } else {
-      throw new Error(result.message || '登录失败');
+      localStorage.removeItem('session_token');
     }
+    setUser(data.user);
+    // 补全完整用户资料（bio / phone / custom_fields 等），失败静默不影响登录态
+    getCurrentUser().then((res) => {
+      if (res.success && res.data) setUser(res.data);
+    }).catch(() => {});
   }, []);
 
   /**
-   * 注册
-   * @param email - 邮箱
+   * 登录第一步：密码校验
+   * @param identifier - 邮箱或手机号
+   * @param password - 密码
+   * @param turnstileToken - Turnstile 人机验证令牌
+   * @returns LoginFlowResult（otp_required 时需继续 verifyLogin）
+   * @throws 密码错误 / 验证拦截等失败时抛出 Error（携带 code）
+   */
+  const handleLogin = useCallback(async (identifier: string, password: string, turnstileToken?: string): Promise<LoginFlowResult> => {
+    const result = await login(identifier, password, undefined, turnstileToken);
+    if (result.success && result.data) {
+      const data = result.data;
+      // 两段式：密码通过，返回票据与可用通道，进入验证码确认段
+      if ('otp_required' in data && data.otp_required) {
+        return { status: 'otp_required', loginTicket: data.login_ticket, channels: data.channels };
+      }
+      // 直接签发（测试 bypass 场景）
+      persistAuth(data as { user: User; token: string; session_token?: string });
+      return { status: 'success' };
+    }
+    // 手机号未注册：不抛错，交由界面引导注册流程
+    if (result.code === 'PHONE_NOT_REGISTERED') {
+      return { status: 'phone_not_registered', message: result.message || '该手机号未注册，继续登录将注册新账号' };
+    }
+    const err = new Error(result.message || '登录失败') as Error & { code?: string };
+    err.code = result.code;
+    throw err;
+  }, [persistAuth]);
+
+  /**
+   * 登录第二步：验证码确认
+   * @param loginTicket - 登录第一步返回的票据
+   * @param channel - 验证通道（email / phone）
+   * @param code - 6 位数字验证码
+   * @throws 验证码错误 / 票据失效等失败时抛出 Error（携带 code）
+   */
+  const handleVerifyLogin = useCallback(async (loginTicket: string, channel: 'email' | 'phone', code: string) => {
+    const result = await verifyLogin(loginTicket, channel, code);
+    if (result.success && result.data) {
+      persistAuth(result.data);
+      return;
+    }
+    const err = new Error(result.message || '登录失败') as Error & { code?: string };
+    err.code = result.code;
+    throw err;
+  }, [persistAuth]);
+
+  /**
+   * 注册（V1.11.0 验证码注册，注册成功即完成登录）
+   * @param identifier - 邮箱或手机号
    * @param password - 密码
    * @param username - 用户名（可选）
-   * @throws 注册失败时抛出 Error
+   * @param code - 6 位数字验证码
+   * @param turnstileToken - Turnstile 人机验证令牌
+   * @throws 注册失败时抛出 Error（携带 code）
    */
-  const handleRegister = useCallback(async (email: string, password: string, username?: string, turnstileToken?: string) => {
-    const result = await register(email, password, username, turnstileToken);
-    if (!result.success) {
-      throw new Error(result.message || '注册失败');
+  const handleRegister = useCallback(async (identifier: string, password: string, username: string | undefined, code: string, turnstileToken?: string) => {
+    const result = await register(identifier, password, username, code, turnstileToken);
+    if (result.success && result.data) {
+      // 注册成功视同登录：直接持久化 token 与会话
+      persistAuth(result.data);
+      return;
     }
-  }, []);
+    const err = new Error(result.message || '注册失败') as Error & { code?: string };
+    err.code = result.code;
+    throw err;
+  }, [persistAuth]);
 
   /**
    * 退出登录：清除 token / session_token 与用户状态
@@ -175,6 +236,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isLoading,
         login: handleLogin,
+        verifyLogin: handleVerifyLogin,
         register: handleRegister,
         logout: handleLogout,
         updateUserInfo: handleUpdateUserInfo,

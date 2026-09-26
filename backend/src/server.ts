@@ -23,6 +23,7 @@ import { initDb } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
+import { cleanupExpiredCodes } from './services/otpService';
 import { initSuperAdmin } from './services/adminService';
 import { memoryManager } from './services/memoryManager';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
@@ -124,6 +125,8 @@ function scheduleCleanup() {
       if (verifiedDeleted > 0) {
         console.log(`[Cleanup] Deleted ${verifiedDeleted} expired verifications at ${new Date().toISOString()}`);
       }
+      // 同步清理 7 天前的登录验证码记录（含过期与已消费），防止 verification_codes 表膨胀
+      await cleanupExpiredCodes();
     } catch (error) {
       console.error('[Cleanup] Failed to clean up expired sessions:', error);
     }

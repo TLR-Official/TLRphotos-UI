@@ -3,12 +3,13 @@
  * 提供仪表盘（统计概览/快捷操作）与设置（个人资料/修改密码/偏好设置/缓存管理/账户安全）两大视图，
  * 支持头像上传、自定义字段、本地偏好持久化、图片缓存清理与退出登录等操作。
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
-import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser } from '../../api/auth';
+import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser, sendOtp, bindPhone } from '../../api/auth';
 import { useHumanVerification } from '../../shared/useHumanVerification';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '../../components/TurnstileWidget';
 import type { User, UserStats, MyPhoto } from '../../api/auth';
 import { getCacheStats, clearCache, formatBytes, type CacheStats } from '../../utils/imageCache';
 import { CachedImage } from '../../components/CachedImage';
@@ -58,6 +59,16 @@ export function ProfilePage() {
   const [prefsMessage, setPrefsMessage] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // V1.11.0：绑定手机号
+  const [bindPhoneNum, setBindPhoneNum] = useState('');
+  const [bindCode, setBindCode] = useState('');
+  const [bindCooldown, setBindCooldown] = useState(0);
+  const [bindSending, setBindSending] = useState(false);
+  const [bindError, setBindError] = useState('');
+  const [bindSuccess, setBindSuccess] = useState('');
+  const [bindToken, setBindToken] = useState('');
+  const bindTurnstileRef = useRef<TurnstileWidgetHandle>(null);
+
   // 未登录跳转至登录页；已登录则用用户信息初始化表单
   useEffect(() => {
     if (!isAuthenticated) {
@@ -90,6 +101,69 @@ export function ProfilePage() {
         .finally(() => setStatsLoading(false));
     }
   }, [user?.id]);
+
+  // 绑定手机号发送验证码 60s 倒计时
+  useEffect(() => {
+    if (bindCooldown <= 0) return;
+    const timer = setInterval(() => setBindCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [bindCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 手机号脱敏显示（如 138****5678） */
+  const maskPhone = (p: string) => (p.length === 11 ? `${p.slice(0, 3)}****${p.slice(7)}` : p);
+
+  /** 发送绑定手机号验证码（scene=bind_phone） */
+  const handleSendBindCode = async () => {
+    setBindError('');
+    setBindSuccess('');
+    const phone = bindPhoneNum.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      setBindError('请输入正确的手机号');
+      return;
+    }
+    if (!bindToken) {
+      setBindError('请先完成安全验证');
+      return;
+    }
+    setBindSending(true);
+    const res = await sendOtp(phone, 'bind_phone', bindToken);
+    setBindSending(false);
+    // Turnstile 令牌一次性：发送后重置挑战，绑定提交需使用新令牌
+    setBindToken('');
+    bindTurnstileRef.current?.reset();
+    if (res.success && res.data) {
+      setBindCooldown(res.data.cooldown || 60);
+      setBindSuccess(`验证码已发送至 ${res.data.target}，10 分钟内有效`);
+    } else {
+      setBindError(res.message || '验证码发送失败，请稍后再试');
+    }
+  };
+
+  /** 提交绑定手机号 */
+  const handleBindPhone = async () => {
+    setBindError('');
+    setBindSuccess('');
+    const phone = bindPhoneNum.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      setBindError('请输入正确的手机号');
+      return;
+    }
+    if (!/^\d{6}$/.test(bindCode)) {
+      setBindError('请输入 6 位验证码');
+      return;
+    }
+    const res = await bindPhone(phone, bindCode, bindToken || undefined);
+    if (res.success) {
+      setBindSuccess('手机号绑定成功');
+      setBindPhoneNum('');
+      setBindCode('');
+      setBindCooldown(0);
+      // 刷新用户信息（更新 phone / phone_verified 展示）
+      await refreshUser();
+    } else {
+      setBindError(res.message || '绑定手机号失败，请稍后再试');
+    }
+  };
 
   // 加载我的照片列表
   const [myPhotos, setMyPhotos] = useState<MyPhoto[]>([]);
@@ -1331,6 +1405,12 @@ export function ProfilePage() {
                         {user?.created_at ? new Date(user.created_at).toLocaleDateString('zh-CN') : '-'}
                       </span>
                     </div>
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-sm text-gray-500">手机号</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {user?.phone && user?.phone_verified === 1 ? maskPhone(user.phone) : '未绑定'}
+                      </span>
+                    </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-sm text-gray-500">登录状态</span>
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
@@ -1339,6 +1419,101 @@ export function ProfilePage() {
                       </span>
                     </div>
                   </div>
+                </div>
+
+                {/* 绑定手机号 */}
+                <div className="rounded-lg p-5 bg-gray-50">
+                  <h3 className="text-base font-semibold mb-4 text-gray-800">绑定手机号</h3>
+                  {user?.phone && user?.phone_verified === 1 ? (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">已绑定手机号</p>
+                        <p className="text-sm text-gray-500">{maskPhone(user.phone)}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        已验证
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex gap-3">
+                        <div className="relative flex-1">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={11}
+                            value={bindPhoneNum}
+                            onChange={(e) => setBindPhoneNum(e.target.value.replace(/\D/g, ''))}
+                            placeholder="请输入手机号"
+                            className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <div className="relative flex-1">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={bindCode}
+                            onChange={(e) => setBindCode(e.target.value.replace(/\D/g, ''))}
+                            placeholder="6 位验证码"
+                            className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          disabled={bindCooldown > 0 || bindSending}
+                          onClick={handleSendBindCode}
+                          className={`flex-shrink-0 px-4 rounded-lg text-sm font-medium transition-all duration-300 ${
+                            bindCooldown > 0 || bindSending
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg'
+                          }`}
+                        >
+                          {bindSending ? '发送中...' : bindCooldown > 0 ? `${bindCooldown}s` : '发送验证码'}
+                        </button>
+                      </div>
+
+                      <TurnstileWidget
+                        ref={bindTurnstileRef}
+                        action="login"
+                        theme="light"
+                        onSuccess={setBindToken}
+                        onExpire={() => setBindToken('')}
+                        onError={() => setBindToken('')}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleBindPhone}
+                        className="w-full py-2.5 rounded-lg font-medium bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg transition-all duration-300"
+                      >
+                        绑定
+                      </button>
+
+                      {bindError && (
+                        <p className="text-sm text-red-500 text-center">{bindError}</p>
+                      )}
+                      {bindSuccess && (
+                        <p className="text-sm text-green-500 text-center">{bindSuccess}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* 安全操作 */}

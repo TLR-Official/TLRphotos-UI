@@ -9,6 +9,7 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import path from 'path';
+import fs from 'fs';
 
 // 数据库文件存放路径：backend/data/database.db
 // V1.5.1：支持通过 DB_PATH 环境变量覆盖，测试套件用它指向隔离的测试库，
@@ -26,9 +27,11 @@ export let db: Database;
 const initSchema = async () => {
   await db.exec(`
     -- 用户主表：存储注册用户基本信息与第三方登录绑定状态
+    -- email 可空（支持手机号+验证码无邮箱注册场景），phone_verified 标记手机号是否已通过验证码校验；
+    -- 存量库的 email NOT NULL 约束通过 initSchema 末尾的表重建迁移消除，此处仅约束全新库
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
       password_hash TEXT NOT NULL,
       username TEXT,
       avatar_url TEXT,
@@ -41,7 +44,8 @@ const initSchema = async () => {
       qq_openid TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      phone_verified INTEGER DEFAULT 0
     );
 
     -- 照片主表：thumbnail_path 为缩略图、original_url 指向 OSS 原图
@@ -194,6 +198,26 @@ const initSchema = async () => {
       UNIQUE (subject_type, subject_id)
     );
     CREATE INDEX IF NOT EXISTS idx_user_verifications_expires_at ON user_verifications(expires_at);
+
+    -- 登录验证码表：存储一次性验证码（OTP）的哈希与生命周期状态
+    -- target: 接收目标（手机号或邮箱）；channel: 发送通道（sms/email）；scene: 业务场景（login/register/reset 等）
+    -- code_hash 仅存哈希不存明文；attempts 计数防暴力破解；used_at 标记一次性消费；expires_at 控制有效期
+    CREATE TABLE IF NOT EXISTS verification_codes (
+      id TEXT PRIMARY KEY,
+      target TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      scene TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      ip TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    -- (target, scene) 复合索引：校验验证码时按目标+场景检索最新记录
+    CREATE INDEX IF NOT EXISTS idx_verification_codes_target_scene ON verification_codes(target, scene);
+    -- expires_at 索引：定时清理过期验证码记录时使用
+    CREATE INDEX IF NOT EXISTS idx_verification_codes_expires_at ON verification_codes(expires_at);
   `);
 
   // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，
@@ -236,6 +260,67 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE users ADD COLUMN can_like INTEGER DEFAULT 1');
   } catch {}
+
+  // 登录验证码功能：手机号验证标记（表重建路径已含该列，此处覆盖未触发重建的存量库）
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN phone_verified INTEGER DEFAULT 0');
+  } catch {}
+
+  // users 表 email 可空化迁移：SQLite 不支持 ALTER COLUMN 修改约束，需整表重建。
+  // 幂等检测：仅当 email 列仍带 NOT NULL 约束（notnull=1）时执行，否则跳过。
+  const userTableInfo = await db.all('PRAGMA table_info(users)') as Array<{ name: string; notnull: number }>;
+  const emailColumn = userTableInfo.find((col) => col.name === 'email');
+  if (emailColumn && emailColumn.notnull === 1) {
+    // 迁移前备份数据库文件，失败可人工回滚
+    const backupPath = `${dbPath}.bak-otp-${Date.now()}`;
+    fs.copyFileSync(dbPath, backupPath);
+
+    // 重建期间必须关闭外键检查，避免 DROP TABLE users 触发 cookie 等子表级联删除；
+    // PRAGMA foreign_keys 不能在事务内修改，故在 BEGIN 前设置
+    await db.exec('PRAGMA foreign_keys=OFF');
+    try {
+      await db.exec('BEGIN');
+      // users_new 结构与现 users 完全一致，仅 email 去除 NOT NULL，并新增 phone_verified
+      await db.exec(`
+        CREATE TABLE users_new (
+          id TEXT PRIMARY KEY,
+          email TEXT UNIQUE,
+          password_hash TEXT NOT NULL,
+          username TEXT,
+          avatar_url TEXT,
+          bio TEXT,
+          phone TEXT,
+          website TEXT,
+          location TEXT,
+          custom_fields TEXT,
+          wechat_openid TEXT,
+          qq_openid TEXT,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          banned_at TEXT,
+          can_upload INTEGER DEFAULT 1,
+          can_view INTEGER DEFAULT 1,
+          can_download INTEGER DEFAULT 1,
+          can_like INTEGER DEFAULT 1,
+          phone_verified INTEGER DEFAULT 0
+        );
+      `);
+      // 全量列复制（phone_verified 为新列，补默认值 0）
+      await db.exec(`
+        INSERT INTO users_new (id, email, password_hash, username, avatar_url, bio, phone, website, location, custom_fields, wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, can_upload, can_view, can_download, can_like, phone_verified)
+        SELECT id, email, password_hash, username, avatar_url, bio, phone, website, location, custom_fields, wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, can_upload, can_view, can_download, can_like, 0 FROM users
+      `);
+      await db.exec('DROP TABLE users');
+      await db.exec('ALTER TABLE users_new RENAME TO users');
+      await db.exec('COMMIT');
+    } catch (migrationError) {
+      await db.exec('ROLLBACK');
+      throw migrationError;
+    } finally {
+      await db.exec('PRAGMA foreign_keys=ON');
+    }
+  }
 };
 
 /**
