@@ -95,3 +95,5 @@ docker-compose.yml
 
 # AI context backups
 .ai/backups/
+.trae/documents/v1.4-stats-and-like.md
+.trae/specs/zone-gallery-permissions/checklist.md
