@@ -41,7 +41,7 @@
 - **隐私脱敏**：接口响应与日志中的手机号/邮箱均脱敏返回（手机号中间 4 位 `*` 替换，如 `138****8000`）
 - **login_ticket**：两步登录中间票据，HMAC-SHA256 签名（恒时比较），绑定 userId + 客户端 IP（XFF 首段），10 分钟有效，IP 变更立即失效
 - **校验目标防伪造**：`/login/verify` 的验证目标由服务端按通道从用户记录取，客户端不可传入 target
-- **配置依赖**：`SPUG_SMS_TEMPLATE` / `SPUG_MAIL_TEMPLATE` 未配置时验证码发送接口返回 503（fail-closed）
+- **配置依赖**：短信走 Spug 通道（`SPUG_SMS_TEMPLATE`），邮件走阿里云 DirectMail SMTP（`ALIYUN_SMTP_HOST/PORT/USER/PASSWORD/FROM_NAME`）；任一通道未配置时对应验证码发送返回 503（fail-closed）
 
 ---
 

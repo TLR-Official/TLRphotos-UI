@@ -27,6 +27,9 @@ vi.mock('../../src/services/spugService', () => ({
   sendSmsCode: vi.fn(async (to: string, code: string) => {
     otpCapture.codes.set(to, code);
   }),
+}));
+
+vi.mock('../../src/services/aliMailService', () => ({
   sendMailCode: vi.fn(async (to: string, code: string) => {
     otpCapture.codes.set(to, code);
   }),
@@ -158,9 +161,9 @@ describe('POST /api/auth/otp/send', () => {
     expect(res.body.code).toBe('UNAUTHORIZED');
   });
 
-  it('Spug 模板未配置时返回 503 OTP_SERVICE_NOT_CONFIGURED 且作废旧记录', async () => {
+  it('阿里云邮件服务未配置时返回 503 OTP_SERVICE_NOT_CONFIGURED 且作废旧记录', async () => {
     const email = `nosvc-${Date.now()}@example.com`;
-    const { sendMailCode } = await import('../../src/services/spugService');
+    const { sendMailCode } = await import('../../src/services/aliMailService');
     vi.mocked(sendMailCode).mockRejectedValueOnce(
       Object.assign(new Error('验证码服务未配置'), { status: 503, code: 'OTP_SERVICE_NOT_CONFIGURED' })
     );

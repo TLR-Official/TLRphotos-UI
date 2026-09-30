@@ -34,14 +34,19 @@ import {
 } from '../services/verificationService';
 import { createCodeRecord, verifyCode, maskTarget } from '../services/otpService';
 import type { OtpChannel, OtpScene } from '../services/otpService';
-import { sendSmsCode, sendMailCode } from '../services/spugService';
-import type { OtpServiceError } from '../services/spugService';
+import { sendSmsCode } from '../services/spugService';
+import type { OtpServiceError as SpugOtpError } from '../services/spugService';
+import { sendMailCode } from '../services/aliMailService';
+import type { OtpServiceError as MailOtpError } from '../services/aliMailService';
 import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { getProxyUrl } from '../utils/url';
 import { createRateLimiter } from '../middleware/rateLimit';
+
+/** 两个 OTP 通道（短信 / 邮件）的统一服务错误类型 */
+type OtpServiceError = SpugOtpError | MailOtpError;
 
 // V1.10.1：认证口限速，按 IP 每窗口 10 次，抑制凭据爆破与类型探测
 const authLimiter = createRateLimiter({ max: 10, message: '尝试过于频繁，请稍后再试' });

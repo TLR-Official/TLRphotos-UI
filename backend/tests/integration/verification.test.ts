@@ -20,6 +20,9 @@ vi.mock('../../src/services/spugService', () => ({
   sendSmsCode: vi.fn(async (to: string, code: string) => {
     otpCapture.codes.set(to, code);
   }),
+}));
+
+vi.mock('../../src/services/aliMailService', () => ({
   sendMailCode: vi.fn(async (to: string, code: string) => {
     otpCapture.codes.set(to, code);
   }),

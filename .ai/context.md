@@ -187,6 +187,8 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-09-30 20:17 | [release] 版本号升级至 V1.12.0 — 邮件验证码通道由 Spug 切换为阿里云 DirectMail SMTP | backend, 全项目 |
+| 2026-09-30 20:17 | [feat] 邮件发送改用阿里云 DirectMail SMTP：新建 aliMailService（nodemailer 连接 smtpdm.aliyun.com:465 SSL，发信地址 main@mail.tlrphotos.com，传输器惰性单例+配置变更自动重建，15s 连接/ greeting/套接字超时，发件人名支持中文 RFC 2047 自动编码，HTML+纯文本双正文 teal 配色，未配置/占位密码 503、认证失败/超时 502 统一脱敏）；auth.ts 改为 sendSmsCode 走 spugService、sendMailCode 走 aliMailService（联合 OtpServiceError 类型），spugService 收敛为短信专用并移除 sendMailCode；.env/.env.example 新增 ALIYUN_SMTP_* 五项、api.md 配置依赖同步；4 个集成测试套件 mock 拆分适配（otp.test 503 用例改指 aliMailService）；196 测试全部通过，SMTP verify 认证成功，服务已重启 (V1.12.0) | backend/src/services/{aliMailService,spugService}.ts, backend/src/routes/auth.ts, backend/.env.example, backend/docs/api.md, backend/tests/integration/{otp,auth,verification,everos}.test.ts, package.json, .trae/rules/版本管理规则.md |
 | 2026-09-30 19:15 | [fix] 修复个人资料页更改手机号未绑定账号：提交资料时检测手机号变更，其余字段正常保存、新手机号从直存数据中剥离；立即弹出验证码换绑弹窗，Turnstile 通过后自动向新号发送验证码（60s 重发倒计时、10 分钟有效、冲突/错误提示），输入正确验证码确认后调用换绑接口完成绑定并刷新用户信息，取消则恢复原号码；拒绝直接清空手机号 (V1.11.2) | src/features/profile/ProfilePage.tsx, package.json, .trae/rules/版本管理规则.md |
 | 2026-09-30 19:03 | [fix] 修复编辑资料输入框每输入一个字符即失焦：根因是 FieldRow 定义在 ProfilePage 组件体内，每次按键触发渲染都产生新组件类型导致输入框重挂载；将 FieldRow 提取到模块作用域（组件类型稳定），同时按全站浅色规范移除其 dark 分支 (V1.11.1) | src/features/profile/ProfilePage.tsx |
 | 2026-09-26 23:35 | [release] 版本号升级至 V1.11.0 — 登录验证码（OTP）体系正式发布（Spug 短信/邮件通道、两段式登录、验证码注册、手机号绑定 + 完整测试套件）[push-deferred] | 全项目 |

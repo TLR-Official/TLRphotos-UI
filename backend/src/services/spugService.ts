@@ -1,10 +1,11 @@
 /**
  * @file spugService.ts
- * @description Spug 推送平台验证码服务。
- *              封装 push.spug.cc 官方验证码模板接口（短信 /sms、邮件 /mail），
- *              为登录 / 注册 / 绑定手机号等场景提供一次性验证码（OTP）发送能力。
+ * @description Spug 推送平台短信验证码服务。
+ *              封装 push.spug.cc 官方验证码短信模板接口（/sms），
+ *              为登录 / 注册 / 绑定手机号等场景提供一次性验证码（OTP）短信发送能力。
+ *              邮件通道自 V1.12.0 起改由 aliMailService（阿里云 DirectMail SMTP）承担。
  *
- *              模板编码经 SPUG_SMS_TEMPLATE / SPUG_MAIL_TEMPLATE 环境变量注入，禁止硬编码；
+ *              模板编码经 SPUG_SMS_TEMPLATE 环境变量注入，禁止硬编码；
  *              未配置时抛出 503 型错误（OTP_SERVICE_NOT_CONFIGURED，与 EverOS 未配置策略一致），
  *              由路由层捕获后转换为规范响应。
  *
@@ -98,19 +99,4 @@ export async function sendSmsCode(to: string, code: string, minutes: number): Pr
     throw createOtpError(503, 'OTP_SERVICE_NOT_CONFIGURED', '验证码服务未配置');
   }
   await postSpugTemplate(`/sms/${template}`, { to, code, number: String(minutes) });
-}
-
-/**
- * 发送邮件验证码。
- * @param to 接收邮箱
- * @param code 6 位明文验证码（仅用于发送，本服务不落日志）
- * @param minutes 有效分钟数（透传给模板变量 minute，字符串形式）
- * @param scene 业务场景名（模板变量 scene，默认「登录验证」）
- */
-export async function sendMailCode(to: string, code: string, minutes: number, scene = '登录验证'): Promise<void> {
-  const template = process.env.SPUG_MAIL_TEMPLATE;
-  if (!template) {
-    throw createOtpError(503, 'OTP_SERVICE_NOT_CONFIGURED', '验证码服务未配置');
-  }
-  await postSpugTemplate(`/mail/${template}`, { to, scene, code, minute: String(minutes) });
 }
