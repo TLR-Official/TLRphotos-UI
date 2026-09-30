@@ -150,6 +150,19 @@ export function ProfilePage() {
   const [bindToken, setBindToken] = useState('');
   const bindTurnstileRef = useRef<TurnstileWidgetHandle>(null);
 
+  // V1.11.2：资料页修改手机号 → 验证码换绑弹窗
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [phoneModalNum, setPhoneModalNum] = useState('');
+  const [phoneModalCode, setPhoneModalCode] = useState('');
+  const [phoneModalCooldown, setPhoneModalCooldown] = useState(0);
+  const [phoneModalSending, setPhoneModalSending] = useState(false);
+  const [phoneModalError, setPhoneModalError] = useState('');
+  const [phoneModalInfo, setPhoneModalInfo] = useState('');
+  const [phoneModalToken, setPhoneModalToken] = useState('');
+  const phoneModalTurnstileRef = useRef<TurnstileWidgetHandle>(null);
+  // 防止同一开/关周期内自动发码被 effect 重复触发
+  const phoneModalAutoSentRef = useRef(false);
+
   // 未登录跳转至登录页；已登录则用用户信息初始化表单
   useEffect(() => {
     if (!isAuthenticated) {
@@ -189,6 +202,20 @@ export function ProfilePage() {
     const timer = setInterval(() => setBindCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [bindCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 换绑弹窗发送验证码 60s 倒计时
+  useEffect(() => {
+    if (phoneModalCooldown <= 0) return;
+    const timer = setInterval(() => setPhoneModalCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [phoneModalCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 弹窗打开后 Turnstile 令牌就绪即自动发送一次验证码
+  useEffect(() => {
+    if (!phoneModalOpen || !phoneModalToken || phoneModalAutoSentRef.current) return;
+    phoneModalAutoSentRef.current = true;
+    void handleSendPhoneModalCode();
+  }, [phoneModalOpen, phoneModalToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 手机号脱敏显示（如 138****5678） */
   const maskPhone = (p: string) => (p.length === 11 ? `${p.slice(0, 3)}****${p.slice(7)}` : p);
@@ -244,6 +271,89 @@ export function ProfilePage() {
     } else {
       setBindError(res.message || '绑定手机号失败，请稍后再试');
     }
+  };
+
+  /**
+   * 打开换绑手机号弹窗（资料表单检测到手机号变更时调用）
+   * 重置弹窗状态并重新挂载 Turnstile，令牌就绪后由 effect 自动发码。
+   * @param phone 新手机号
+   */
+  const openPhoneBindModal = (phone: string) => {
+    setPhoneModalNum(phone);
+    setPhoneModalCode('');
+    setPhoneModalCooldown(0);
+    setPhoneModalError('');
+    setPhoneModalInfo('');
+    setPhoneModalToken('');
+    phoneModalAutoSentRef.current = false;
+    setPhoneModalOpen(true);
+  };
+
+  /** 发送换绑验证码（自动触发与手动重发共用） */
+  const handleSendPhoneModalCode = async () => {
+    setPhoneModalError('');
+    const phone = phoneModalNum.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      setPhoneModalError('请输入正确的手机号');
+      return;
+    }
+    if (!phoneModalToken) {
+      setPhoneModalError('安全验证未就绪，请稍候');
+      return;
+    }
+    setPhoneModalSending(true);
+    const res = await sendOtp(phone, 'bind_phone', phoneModalToken);
+    setPhoneModalSending(false);
+    // Turnstile 令牌一次性：发送后重置挑战
+    setPhoneModalToken('');
+    phoneModalTurnstileRef.current?.reset();
+    if (res.success && res.data) {
+      setPhoneModalCooldown(res.data.cooldown || 60);
+      setPhoneModalInfo(`验证码已发送至 ${res.data.target}，10 分钟内有效`);
+    } else {
+      setPhoneModalError(res.message || '验证码发送失败，请稍后再试');
+    }
+  };
+
+  /** 确认换绑：校验验证码通过后完成新手机号绑定 */
+  const handleConfirmPhoneBind = async () => {
+    setPhoneModalError('');
+    const phone = phoneModalNum.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      setPhoneModalError('请输入正确的手机号');
+      return;
+    }
+    if (!/^\d{6}$/.test(phoneModalCode)) {
+      setPhoneModalError('请输入 6 位验证码');
+      return;
+    }
+    if (!phoneModalToken) {
+      setPhoneModalError('请先完成安全验证');
+      return;
+    }
+    const res = await bindPhone(phone, phoneModalCode, phoneModalToken);
+    if (res.success) {
+      setPhoneModalOpen(false);
+      setPhoneModalCooldown(0);
+      setPhoneModalCode('');
+      // 刷新用户信息，同步资料表单中的手机号展示
+      await refreshUser();
+      setMessage('手机号换绑成功');
+    } else {
+      setPhoneModalError(res.message || '换绑失败，请稍后再试');
+      // 令牌已消费：重置挑战以便用户重试
+      setPhoneModalToken('');
+      phoneModalTurnstileRef.current?.reset();
+    }
+  };
+
+  /** 关闭弹窗：未完成绑定时将表单手机号恢复为当前已绑定号码 */
+  const handleClosePhoneBindModal = () => {
+    setPhoneModalOpen(false);
+    setPhoneModalCooldown(0);
+    setPhoneModalCode('');
+    setPhoneModalError('');
+    setFormData((prev) => ({ ...prev, phone: user?.phone || '' }));
   };
 
   // 加载我的照片列表
@@ -428,6 +538,15 @@ export function ProfilePage() {
     e.preventDefault();
     if (!validateProfileForm()) return;
 
+    // V1.11.2：检测手机号变更——新手机号必须走验证码换绑流程，禁止直接写入
+    const newPhone = (formData.phone || '').trim();
+    const currentPhone = user?.phone || '';
+    const phoneChanged = newPhone !== currentPhone;
+    if (phoneChanged && !newPhone) {
+      setMessage('不支持直接清空手机号，请输入新手机号进行换绑');
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage('');
 
@@ -448,10 +567,11 @@ export function ProfilePage() {
       const updateData: Partial<User> = {
         username: formData.username,
         bio: formData.bio,
-        phone: formData.phone,
         website: formData.website,
         location: formData.location,
         custom_fields: formData.custom_fields,
+        // 手机号有变更时不随本次更新直存，待验证码校验通过后由换绑接口写入
+        ...(phoneChanged ? {} : { phone: formData.phone }),
       };
       // V1.8.0：资料修改为高危操作，经验证门包裹（用原始 API 以便 403 拦截可被识别）
       const updated = await verificationGuard('update_profile', () => updateUser(updateData));
@@ -459,7 +579,13 @@ export function ProfilePage() {
         throw new Error(updated.message || '更新用户信息失败');
       }
       await refreshUser();
-      setMessage('资料更新成功');
+      if (phoneChanged) {
+        // 其他资料已保存：弹出验证码框并自动向新手机号发码
+        openPhoneBindModal(newPhone);
+        setMessage('其他资料已保存，请完成新手机号验证');
+      } else {
+        setMessage('资料更新成功');
+      }
     } catch (error) {
       setMessage((error as Error).message || '更新失败');
     } finally {
@@ -543,6 +669,96 @@ export function ProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {verificationModal}
+      {/* 手机号换绑验证码弹窗 */}
+      {phoneModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+          <div className="rounded-2xl p-6 max-w-md w-full bg-white shadow-xl">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">验证新手机号</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  验证码将发送至 {maskPhone(phoneModalNum)}，10 分钟内有效
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClosePhoneBindModal}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                title="取消换绑"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 mt-4">
+              {/* 验证码输入 + 重发 */}
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={phoneModalCode}
+                  onChange={(e) => setPhoneModalCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="请输入 6 位验证码"
+                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
+                />
+                <button
+                  type="button"
+                  disabled={phoneModalCooldown > 0 || phoneModalSending || !phoneModalToken}
+                  onClick={handleSendPhoneModalCode}
+                  className={`flex-shrink-0 px-4 rounded-lg text-sm font-medium transition-all ${
+                    phoneModalCooldown > 0 || phoneModalSending || !phoneModalToken
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-teal-600 text-white hover:bg-teal-700'
+                  }`}
+                >
+                  {phoneModalSending
+                    ? '发送中...'
+                    : phoneModalCooldown > 0
+                    ? `${phoneModalCooldown}s`
+                    : '重新发送'}
+                </button>
+              </div>
+
+              {/* 人机验证（打开后自动通过即触发发码） */}
+              <TurnstileWidget
+                ref={phoneModalTurnstileRef}
+                action="login"
+                theme="light"
+                onSuccess={setPhoneModalToken}
+                onExpire={() => setPhoneModalToken('')}
+                onError={() => setPhoneModalToken('')}
+              />
+
+              {phoneModalError && (
+                <p className="text-sm text-red-500">{phoneModalError}</p>
+              )}
+              {phoneModalInfo && (
+                <p className="text-sm text-green-600">{phoneModalInfo}</p>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={handleClosePhoneBindModal}
+                  className="flex-1 py-2.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPhoneBind}
+                  className="flex-1 py-2.5 rounded-lg font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                >
+                  确认绑定
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* 头部：用户信息 */}
         <div className="rounded-2xl shadow-xl overflow-hidden bg-white mb-6">
