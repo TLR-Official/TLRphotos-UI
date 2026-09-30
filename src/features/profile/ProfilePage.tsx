@@ -22,6 +22,87 @@ import {
 } from '../../utils/preferences';
 
 /**
+ * 表单字段行（模块作用域展示组件）
+ * V1.11.1：从 ProfilePage 内部提取到模块作用域。
+ * 原内联定义每次渲染都产生新的组件类型，导致输入框每输入一个字符就被重新挂载、
+ * 焦点丢失；提取后组件类型稳定，输入不再中断。
+ * @param label 标签文本
+ * @param type 输入框类型，默认 text
+ * @param placeholder 占位文本
+ * @param value 当前值
+ * @param onChange 值变更回调
+ * @param error 错误提示文本
+ * @param isPrivate 是否私密
+ * @param onTogglePrivate 切换私密状态回调
+ */
+function FieldRow({
+  label,
+  type = 'text',
+  placeholder,
+  value,
+  onChange,
+  error,
+  isPrivate,
+  onTogglePrivate,
+}: {
+  label: string;
+  type?: string;
+  placeholder?: string;
+  value?: string | null;
+  onChange: (value: string) => void;
+  error?: string;
+  isPrivate?: boolean;
+  onTogglePrivate?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <label className="w-24 text-sm font-medium flex-shrink-0 text-gray-700">
+        {label}
+      </label>
+      <div className="flex-1 relative">
+        <input
+          type={type}
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`w-full px-4 py-2 rounded-lg border transition-all duration-300 ${
+            error
+              ? 'border-red-500 bg-red-50'
+              : 'bg-gray-50 border-gray-200 focus:border-teal-600 text-gray-800'
+          } focus:outline-none`}
+        />
+        {error && (
+          <p className="mt-1 text-sm text-red-500">{error}</p>
+        )}
+      </div>
+      {onTogglePrivate && (
+        <button
+          type="button"
+          onClick={onTogglePrivate}
+          className={`p-2 rounded-lg transition-colors ${
+            isPrivate
+              ? 'bg-red-100 text-red-600 hover:bg-red-200'
+              : 'bg-green-100 text-green-600 hover:bg-green-200'
+          }`}
+          title={isPrivate ? '设为公开' : '设为私密'}
+        >
+          {isPrivate ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * 个人设置页组件
  * 通过 viewMode 在仪表盘与设置之间切换；设置区再以 activeTab 切分五个子模块。
  * @returns 个人设置页 JSX；未登录时返回 null
@@ -454,89 +535,6 @@ export function ProfilePage() {
       setIsSubmitting(false);
     }
   };
-
-  /**
-   * 表单字段行（内部展示组件）
-   * @param label 标签文本
-   * @param type 输入框类型，默认 text
-   * @param placeholder 占位文本
-   * @param value 当前值
-   * @param onChange 值变更回调
-   * @param error 错误提示文本
-   * @param isPrivate 是否私密
-   * @param onTogglePrivate 切换私密状态回调
-   */
-  const FieldRow = ({
-    label,
-    type = 'text',
-    placeholder,
-    value,
-    onChange,
-    error,
-    isPrivate,
-    onTogglePrivate,
-  }: {
-    label: string;
-    type?: string;
-    placeholder?: string;
-    value?: string | null;
-    onChange: (value: string) => void;
-    error?: string;
-    isPrivate?: boolean;
-    onTogglePrivate?: () => void;
-  }) => (
-    <div className="flex items-center gap-4">
-      <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-        'text-gray-700'
-      }`}>
-        {label}
-      </label>
-      <div className="flex-1 relative">
-        <input
-          type={type}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className={`w-full px-4 py-2 rounded-lg border transition-all duration-300 ${
-            error
-              ? 'border-red-500 bg-red-50'
-              : theme === 'dark'
-              ? 'bg-white/10 border-white/20 focus:border-teal-600 text-white'
-              : 'bg-gray-50 border-gray-200 focus:border-teal-600 text-gray-800'
-          } focus:outline-none`}
-        />
-        {error && (
-          <p className="mt-1 text-sm text-red-500">{error}</p>
-        )}
-      </div>
-      {onTogglePrivate && (
-        <button
-          onClick={onTogglePrivate}
-          className={`p-2 rounded-lg transition-colors ${
-            isPrivate
-              ? theme === 'dark'
-                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                : 'bg-red-100 text-red-600 hover:bg-red-200'
-              : theme === 'dark'
-              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-              : 'bg-green-100 text-green-600 hover:bg-green-200'
-          }`}
-          title={isPrivate ? '设为公开' : '设为私密'}
-        >
-          {isPrivate ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          )}
-        </button>
-      )}
-    </div>
-  );
 
   if (!isAuthenticated) {
     return null;
