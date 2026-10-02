@@ -24,8 +24,8 @@ const CLEANUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** 发送通道：短信 / 邮件 */
 export type OtpChannel = 'sms' | 'mail';
-/** 业务场景：登录 / 注册 / 绑定手机号 */
-export type OtpScene = 'login' | 'register' | 'bind_phone';
+/** 业务场景：登录 / 注册 / 绑定手机号 / 超管登录第二因素 */
+export type OtpScene = 'login' | 'register' | 'bind_phone' | 'admin_login';
 /** 校验失败原因码（供路由层映射 HTTP 响应与文案） */
 export type OtpVerifyError = 'OTP_INVALID' | 'OTP_EXPIRED' | 'OTP_LOCKED' | 'OTP_MISMATCH' | 'OTP_NOT_FOUND';
 

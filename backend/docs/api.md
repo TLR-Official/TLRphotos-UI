@@ -1140,6 +1140,170 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 
 **统一请求头**: `Authorization: Bearer <admin_token>`（除登录接口外均需管理员鉴权）
 
+### 管理员登录（第一阶段）
+
+**POST** `/api/admin/login`
+
+**说明**: 登录入口全链路防护：IP 限速（10 次/分钟）→ 严格输入校验 → Turnstile 人机验证 → 失败锁定检查 → bcrypt 常量时间校验。失败提示统一为「用户名或密码错误」，不可枚举用户。登录按角色分流：
+- **审核员（zone_master/zone_auditor）**：第一阶段直接签发 JWT，登录流程零变化；
+- **超管（super）**：第一阶段**不签发 JWT**，返回 5 分钟有效的短信票据，须再完成「发送短信验证码」与「校验短信验证码」两步；超管手机号经服务器配置 `SUPER_ADMIN_PHONES` 预绑定，未绑手机一律拒绝。
+
+**请求体**:
+```json
+{
+  "username": "admin",
+  "password": "明文密码",
+  "turnstile_token": "Turnstile 令牌（action=admin_login）"
+}
+```
+
+**参数约束**: `username` 为字符串、trim 后 1–64 字符；`password` 为字符串、1–128 字符；`turnstile_token` 必填（测试环境可用 `tokens=TEST_BYPASS_TOKEN` 绕过）。
+
+**成功响应（审核员）** `200`:
+```json
+{
+  "success": true,
+  "token": "管理员 JWT（8h，含 iss/aud/tv 声明）",
+  "admin": {
+    "id": "zone-auditor-id",
+    "username": "zoneauditor",
+    "name": "分区审核员",
+    "role": "zone_auditor",
+    "zone": "landscape",
+    "must_change_password": 0
+  }
+}
+```
+
+**成功响应（超管：短信第二因素票据）** `200`:
+```json
+{
+  "success": true,
+  "sms_required": true,
+  "ticket": "短信登录票据（5 分钟有效，HMAC 签名，绑定用户名与 IP）"
+}
+```
+
+**失败响应**:
+
+| 状态码 | code | 触发条件 |
+|--------|------|----------|
+| 400 | — | 缺失/类型错误/超长入参 |
+| 429 | RATE_LIMITED | 同 IP 超过 10 次/分钟（含 Retry-After） |
+| 403 | HUMAN_VERIFICATION_FAILED | Turnstile 缺失/无效/action 不符 |
+| 403 | ADMIN_LOGIN_LOCKED | 同用户名+同 IP 连续 5 次失败，锁定 15 分钟（`data.retry_after_seconds`） |
+| 403 | SUPER_PHONE_NOT_VERIFIED | 超管未绑定/未验证手机号（手机号只能经 `SUPER_ADMIN_PHONES` 配置） |
+| 401 | — | 用户名或密码错误 |
+
+### 超管登录发送短信验证码（第二阶段）
+
+**POST** `/api/admin/login/sms/send`
+
+**说明**: 凭第一阶段票据请求发送短信验证码（复用 Spug 短信通道，`scene=admin_login`），无需再次 Turnstile。受三层短信限速：同账号 60 秒冷却 + 同账号每小时 5 条 + 同 IP 每小时 20 条。验证码 10 分钟有效、哈希入库，明文不入库不落日志。
+
+**请求体**:
+```json
+{
+  "username": "admin",
+  "ticket": "第一阶段返回的短信票据"
+}
+```
+
+**成功响应** `200`:
+```json
+{
+  "success": true,
+  "message": "验证码已发送",
+  "cooldown_seconds": 60
+}
+```
+
+**失败响应**:
+
+| 状态码 | code | 触发条件 |
+|--------|------|----------|
+| 400 | — | 缺失/类型错误/超长入参 |
+| 401 | INVALID_LOGIN_TICKET | 票据缺失/篡改/过期/用户名或 IP 不符 |
+| 403 | ADMIN_LOGIN_LOCKED | 账号处于失败锁定期 |
+| 429 | RATE_LIMITED | 触发任一层短信限速 |
+| 503 | — | 短信通道未配置 |
+| 502 | — | 短信发送失败（对客户端脱敏） |
+
+### 超管登录校验短信验证码（第二阶段）
+
+**POST** `/api/admin/login/sms/verify`
+
+**说明**: 票据 + 6 位短信验证码均通过才签发 JWT。验证码错误计入失败锁定（与密码失败同口径，5 次锁定 15 分钟）；验证码自身另有 5 次错误尝试作废机制。
+
+**请求体**:
+```json
+{
+  "username": "admin",
+  "ticket": "第一阶段返回的短信票据",
+  "code": "6 位短信验证码"
+}
+```
+
+**成功响应** `200`:
+```json
+{
+  "success": true,
+  "token": "管理员 JWT（8h，含 iss/aud/tv 声明）",
+  "admin": {
+    "id": "super_admin_initial",
+    "username": "admin",
+    "name": "系统管理员",
+    "role": "super",
+    "zone": null,
+    "must_change_password": 0
+  }
+}
+```
+
+**失败响应**:
+
+| 状态码 | code | 触发条件 |
+|--------|------|----------|
+| 400 | — | 缺失/类型错误/超长入参 |
+| 401 | INVALID_LOGIN_TICKET | 票据缺失/篡改/过期/用户名或 IP 不符 |
+| 401 | — | 验证码不正确 |
+| 401 | — | 验证码已过期（重新获取） |
+| 403 | ADMIN_LOGIN_LOCKED | 验证码或密码连续失败达 5 次锁定（`data.retry_after_seconds`） |
+
+### 修改当前管理员密码
+
+**POST** `/api/admin/me/password`
+
+**鉴权**: Bearer Token（管理员）
+
+**说明**: 凭当前密码与 Turnstile 设置新密码。成功后 `password_hash` 更新、`token_version+1`——**改密前所有已签发 JWT 立即失效**，响应携带新 JWT；同时 `must_change_password=0`，强制改密状态解除。
+
+**请求体**:
+```json
+{
+  "current_password": "当前密码",
+  "new_password": "新密码",
+  "confirm_password": "新密码确认",
+  "turnstile_token": "Turnstile 令牌（action=admin_change_password）"
+}
+```
+
+**新密码口径**: trim 后 12–128 位、不等于已公开默认密码、不与用户名相同；两次输入必须一致。
+
+**成功响应** `200`:
+```json
+{
+  "success": true,
+  "message": "密码修改成功",
+  "token": "携带新 tv 的 JWT",
+  "admin": { "must_change_password": 0 }
+}
+```
+
+**强制改密状态说明（PASSWORD_CHANGE_REQUIRED）**: `must_change_password=1` 的账号仅允许 `GET /api/admin/me` 与 `POST /api/admin/me/password`，访问其他任何接口返回 `403` 与 code `PASSWORD_CHANGE_REQUIRED`。超管引导、旧哈希替换、新建管理员均会初始置 1；超管暴露默认密码检测命中时（`ADMIN_FORCE_CHANGE_PASSWORD=on`）置 1。
+
+---
+
 ### 获取分区列表
 
 **GET** `/api/admin/zones`

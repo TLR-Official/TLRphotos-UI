@@ -12,17 +12,59 @@ export interface AdminUser {
   role: 'super' | 'zone_master' | 'zone_auditor';
   zone: string;
   is_active: number;
+  /** V1.13.0：1=必须完成改密后才能访问其他后台接口 */
+  must_change_password?: number;
   created_by?: string;
   created_at: string;
   updated_at?: string;
 }
 
-/** 登录接口响应 */
+/** 登录第一阶段响应 */
 export interface LoginResponse {
   success: boolean;
   token?: string;
   admin?: AdminUser;
   message?: string;
+  /** 超管密码通过：需进入短信验证码第二阶段 */
+  sms_required?: boolean;
+  /** 短信登录票据（5 分钟有效，绑定用户名与 IP） */
+  ticket?: string;
+  /** 人机验证失败 / 登录锁定 / 超管未绑手机等机器可识别错误码 */
+  code?:
+    | 'HUMAN_VERIFICATION_FAILED'
+    | 'ADMIN_LOGIN_LOCKED'
+    | 'SUPER_PHONE_NOT_VERIFIED'
+    | 'INVALID_LOGIN_TICKET'
+    | string;
+  data?: { retry_after_seconds?: number };
+}
+
+/** 超管短信验证码发送响应 */
+export interface AdminSmsSendResponse {
+  success: boolean;
+  message?: string;
+  code?: string;
+  /** 重新发送冷却秒数 */
+  cooldown_seconds?: number;
+}
+
+/** 超管短信验证码校验响应（通过即签发 JWT） */
+export interface AdminSmsVerifyResponse {
+  success: boolean;
+  token?: string;
+  admin?: AdminUser;
+  message?: string;
+  code?: 'ADMIN_LOGIN_LOCKED' | string;
+  data?: { retry_after_seconds?: number };
+}
+
+/** 修改自身密码接口响应 */
+export interface ChangePasswordResponse {
+  success: boolean;
+  message?: string;
+  /** 改密成功后签发的新 JWT（旧 JWT 已失效） */
+  token?: string;
+  admin?: AdminUser;
 }
 
 /** 后台审核列表中的照片项 */

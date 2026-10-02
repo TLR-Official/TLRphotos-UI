@@ -159,6 +159,10 @@ const initSchema = async () => {
       role TEXT NOT NULL DEFAULT 'zone_auditor',
       zone TEXT DEFAULT 'default',
       is_active INTEGER DEFAULT 1,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      token_version INTEGER NOT NULL DEFAULT 0,
+      phone TEXT,
+      phone_verified INTEGER NOT NULL DEFAULT 0,
       created_by TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -264,6 +268,21 @@ const initSchema = async () => {
   // 登录验证码功能：手机号验证标记（表重建路径已含该列，此处覆盖未触发重建的存量库）
   try {
     await db.run('ALTER TABLE users ADD COLUMN phone_verified INTEGER DEFAULT 0');
+  } catch {}
+
+  // V1.13.0 管理员安全：强制改密标记 + JWT 版本号（改密即作废旧 JWT）
+  try {
+    await db.run('ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE admin_users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  // V1.13.0 超管短信第二因素：绑定手机号与验证标记（由服务器配置引导，不经应用界面）
+  try {
+    await db.run('ALTER TABLE admin_users ADD COLUMN phone TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE admin_users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0');
   } catch {}
 
   // users 表 email 可空化迁移：SQLite 不支持 ALTER COLUMN 修改约束，需整表重建。

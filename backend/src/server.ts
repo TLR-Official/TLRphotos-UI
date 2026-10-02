@@ -24,12 +24,19 @@ import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
 import { cleanupExpiredCodes } from './services/otpService';
-import { initSuperAdmin } from './services/adminService';
+import {
+  initSuperAdmin,
+  bootstrapSuperAdminPhones,
+  checkAdminJwtConfig,
+  detectExposedSuperPassword,
+} from './services/adminService';
 import { memoryManager } from './services/memoryManager';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 import { corsWhitelist } from './middleware/corsWhitelist';
 
 const app = express();
+// 信任 nginx 代理写入的 X-Forwarded-For（nginx 已覆写为不可伪造的 CF-Connecting-IP）
+app.set('trust proxy', true);
 // 隐藏 Express 指纹头（V1.10.1：X-Powered-By 不再回传）
 app.disable('x-powered-by');
 // 服务端口：优先读取环境变量，默认 3001
@@ -179,10 +186,21 @@ const startServer = async () => {
     await initDb();
     await initTagsDb();
     await initSuperAdmin();
+    // 超管短信第二因素：按服务器配置绑定手机号（必须在强制改密开关前就绪）
+    await bootstrapSuperAdminPhones();
+    // 管理员 JWT 配置自检：密钥缺失/过短直接拒绝启动
+    checkAdminJwtConfig();
+    // V1.13.0：仅在超管短信验证码闸门验证通过后置 on，对超管执行公开默认密码暴露检测
+    if (process.env.ADMIN_FORCE_CHANGE_PASSWORD === 'on') {
+      const exposed = await detectExposedSuperPassword();
+      if (exposed) {
+        console.warn('[Admin] 检测到超级管理员仍使用已公开默认密码，已置强制改密标记');
+      }
+    }
     scheduleCleanup();
     // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
     memoryManager.start();
-    // 仅监听 127.0.0.1：外部访问统一经由 Nginx 反向代理（HTTPS + Cloudflare Zero Trust），
+    // 仅监听 127.0.0.1：外部访问统一经由 Nginx 反向代理（HTTPS），
     // 避免后端 API 直接暴露在公网，绕过管理后台的访问控制
     app.listen(PORT, '127.0.0.1', () => {
       console.log(`TLRphotos backend server running on http://127.0.0.1:${PORT}`);

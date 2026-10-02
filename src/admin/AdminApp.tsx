@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
+import { ForceChangePassword } from './ForceChangePassword';
 import { Layout } from './Layout';
 import { DashboardPage } from './DashboardPage';
 import { PhotosPage } from './PhotosPage';
@@ -14,7 +15,7 @@ import { PhotoDetailPage } from './PhotoDetailPage';
 import { AdminsPage } from './AdminsPage';
 import { UsersPage } from './UsersPage';
 import { LogsPage } from './LogsPage';
-import { getCurrentAdmin, getAdminToken } from './api';
+import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
 import type { AdminUser } from './types';
 
 /**
@@ -79,8 +80,12 @@ export function AdminApp() {
     checkAuth();
   };
 
-  /** 退出登录：重置登录态、管理员信息并跳转登录页 */
+  /**
+   * 退出登录：清除本地凭据、重置登录态与管理员信息。
+   * 供 Layout 退出按钮与强制改密页「放弃登录」复用。
+   */
   const handleLogout = () => {
+    setAdminToken(null);
     setIsLoggedIn(false);
     setAdmin(null);
   };
@@ -95,6 +100,11 @@ export function AdminApp() {
 
   if (!admin) {
     return <div className="min-h-screen bg-white flex items-center justify-center text-gray-800">未获取到管理员信息</div>;
+  }
+
+  // 强制改密门：未完成改密不渲染任何后台业务页面
+  if (admin.must_change_password === 1) {
+    return <ForceChangePassword onDone={handleLogin} onLogout={handleLogout} />;
   }
 
   // 基于 URL 路径计算当前页面标识和照片 ID

@@ -40,6 +40,22 @@ export async function adminAuthMiddleware(req: express.Request, res: express.Res
   }
 
   req.admin = admin;
+
+  // 强制改密门：must_change_password=1 时，除查询自身信息与改密接口外一律拦截。
+  // req.path 为相对 admin 路由挂载点的路径（如 /me、/me/password）。
+  if (admin.must_change_password === 1) {
+    const allowed =
+      (req.method === 'GET' && req.path === '/me') ||
+      (req.method === 'POST' && req.path === '/me/password');
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        code: 'PASSWORD_CHANGE_REQUIRED',
+        message: '请先完成密码修改',
+      });
+    }
+  }
+
   next();
 }
 

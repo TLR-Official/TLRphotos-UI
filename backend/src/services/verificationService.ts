@@ -34,6 +34,8 @@ export const VERIFICATION_ACTIONS = [
   'photo_upload',
   'photo_delete',
   'admin_user_admin',
+  'admin_login',
+  'admin_change_password',
 ] as const;
 export type VerificationAction = (typeof VERIFICATION_ACTIONS)[number];
 
