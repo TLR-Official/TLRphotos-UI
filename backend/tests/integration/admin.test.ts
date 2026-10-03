@@ -665,3 +665,52 @@ describe('V1.13.0 超管登录短信第二因素', () => {
     expect(fifth.body.data.retry_after_seconds).toBeGreaterThan(0);
   });
 });
+
+// ============================================================================
+// V1.13.1 短信第二因素紧急开关（ADMIN_SMS_REQUIRED=off 停用短信门，缺省安全）
+// ============================================================================
+
+describe('V1.13.1 ADMIN_SMS_REQUIRED 紧急开关', () => {
+  it('off 时超管密码通过直接签发 JWT，不再返回短信票据', async () => {
+    process.env.ADMIN_SMS_REQUIRED = 'off';
+    try {
+      const res = await request(app)
+        .post('/api/admin/login')
+        .send({ username: 'superadmin', password: 'Admin123456' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sms_required).toBeUndefined();
+      expect(res.body.ticket).toBeUndefined();
+      expect(typeof res.body.token).toBe('string');
+      expect(res.body.admin.role).toBe('super');
+    } finally {
+      delete process.env.ADMIN_SMS_REQUIRED;
+    }
+  });
+
+  it('off 时 off 前签发的短信票据立即失效（/login/sms/send 拒绝 401）', async () => {
+    process.env.ADMIN_SMS_REQUIRED = 'off';
+    try {
+      // off 模式下 /login 不再签发票据，用伪造票据验证短信端点已不可用
+      const res = await request(app)
+        .post('/api/admin/login/sms/send')
+        .send({ username: 'superadmin', ticket: 'forged.body.signature' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('INVALID_LOGIN_TICKET');
+    } finally {
+      delete process.env.ADMIN_SMS_REQUIRED;
+    }
+  });
+
+  it('默认（未配置）保持短信门开启：超管仍走两阶段', async () => {
+    delete process.env.ADMIN_SMS_REQUIRED;
+    const res = await request(app)
+      .post('/api/admin/login')
+      .send({ username: 'superadmin', password: 'Admin123456' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.sms_required).toBe(true);
+  });
+});

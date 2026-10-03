@@ -1184,6 +1184,8 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 }
 ```
 
+**紧急开关说明**：`ADMIN_SMS_REQUIRED=off` 时超管短信第二因素整体停用，超管成功响应与审核员相同（直接返回 `token`，无 `sms_required`/`ticket` 字段）；默认未配置时短信门开启。
+
 **失败响应**:
 
 | 状态码 | code | 触发条件 |

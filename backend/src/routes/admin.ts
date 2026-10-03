@@ -83,6 +83,8 @@ const adminSmsIpHourLimiter = createRateLimiter({
  * - 审核员（zone_master/zone_auditor）：直接签发 JWT，登录流程零变化；
  * - 超管（super）：不签发 JWT，返回短信第二因素票据（sms_required），
  *   须再经 /login/sms/send + /login/sms/verify 完成；手机号未绑定的超管一律拒绝。
+ *   紧急开关：ADMIN_SMS_REQUIRED=off 时停用短信门，超管与审核员同路径直接签发 JWT
+ *   （默认开启，缺省安全；停用前提：无任何超管持有已泄露密码）。
  * 成功清零失败计数并审计；失败写 login_failed 审计（命中已知账号时）。
  * @body username 用户名（1–64 字符）
  * @body password 密码（1–128 字符）
@@ -176,8 +178,12 @@ router.post('/login', adminLoginLimiter, async (req, res) => {
 
     const admin = result.admin!;
 
+    // 超管短信第二因素紧急开关：逐请求读取 env，默认开启（缺省安全），
+    // ADMIN_SMS_REQUIRED=off 时停用短信门——超管与审核员同路径直接签发 JWT。
+    const smsGateEnabled = (process.env.ADMIN_SMS_REQUIRED ?? 'on').trim().toLowerCase() !== 'off';
+
     // 超管第二因素门：未绑定手机号的超管一律拒绝（手机号只能经服务器配置绑定）
-    if (admin.role === 'super') {
+    if (admin.role === 'super' && smsGateEnabled) {
       if (admin.phone_verified !== 1 || !admin.phone) {
         return res.status(403).json({
           success: false,
