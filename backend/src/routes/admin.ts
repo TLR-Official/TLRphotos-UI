@@ -12,8 +12,6 @@ import { createRateLimiter } from '../middleware/rateLimit';
 import {
   verifyAdminCredentials,
   signAdminToken,
-  signAdminSmsTicket,
-  verifyAdminSmsTicket,
   changeAdminPassword,
   createAdminUser,
   getAdminUsers,
@@ -21,12 +19,10 @@ import {
   updateAdminUser,
   deleteAdminUser,
   logAdminAction,
-  getAdminLogs,
   type AdminRole,
 } from '../services/adminService';
 import { getLockRemaining, recordFailure, clearFailures } from '../services/adminLoginGuard';
-import { createCodeRecord, verifyCode } from '../services/otpService';
-import { sendSmsCode } from '../services/spugService';
+import { isValidEmail } from '../services/authService';
 import { db } from '../db';
 import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
@@ -38,7 +34,6 @@ import {
   ensureHumanVerified,
   getVerificationIp,
   isTestBypass,
-  VERIFICATION_ACTIONS,
   type VerificationAction,
 } from '../services/verificationService';
 
@@ -55,36 +50,9 @@ const adminLoginLimiter = createRateLimiter({
 });
 
 /**
- * 超管短信验证码发送限速（口径与用户侧一致）：
- * 每账号 60s 冷却 1 条 + 每账号每小时 5 条 + 每 IP 每小时 20 条，
- * 三层叠加，杜绝短信轰炸与验证码穷举。
- */
-const adminSmsCooldownLimiter = createRateLimiter({
-  windowMs: 60_000,
-  max: 1,
-  message: '发送过于频繁，请 60 秒后再试',
-  keyFn: (req) => `admin:${typeof req.body?.username === 'string' ? req.body.username.trim() : ''}`,
-});
-const adminSmsTargetHourLimiter = createRateLimiter({
-  windowMs: 60 * 60_000,
-  max: 5,
-  message: '该账号获取验证码过于频繁，请稍后再试',
-  keyFn: (req) => `admin:${typeof req.body?.username === 'string' ? req.body.username.trim() : ''}`,
-});
-const adminSmsIpHourLimiter = createRateLimiter({
-  windowMs: 60 * 60_000,
-  max: 20,
-  message: '验证码请求过于频繁，请稍后再试',
-});
-
-/**
- * 管理员登录第一阶段（全链路防护）：
+ * 管理员登录（V2.0.0：全角色单阶段，移除超管短信第二因素）：
  * IP 限速 → 严格输入校验 → Turnstile 人机验证 → 失败锁定检查 → 常量时间口令校验。
- * - 审核员（zone_master/zone_auditor）：直接签发 JWT，登录流程零变化；
- * - 超管（super）：不签发 JWT，返回短信第二因素票据（sms_required），
- *   须再经 /login/sms/send + /login/sms/verify 完成；手机号未绑定的超管一律拒绝。
- *   紧急开关：ADMIN_SMS_REQUIRED=off 时停用短信门，超管与审核员同路径直接签发 JWT
- *   （默认开启，缺省安全；停用前提：无任何超管持有已泄露密码）。
+ * 密码校验通过即直接签发 JWT。
  * 成功清零失败计数并审计；失败写 login_failed 审计（命中已知账号时）。
  * @body username 用户名（1–64 字符）
  * @body password 密码（1–128 字符）
@@ -178,29 +146,7 @@ router.post('/login', adminLoginLimiter, async (req, res) => {
 
     const admin = result.admin!;
 
-    // 超管短信第二因素紧急开关：逐请求读取 env，默认开启（缺省安全），
-    // ADMIN_SMS_REQUIRED=off 时停用短信门——超管与审核员同路径直接签发 JWT。
-    const smsGateEnabled = (process.env.ADMIN_SMS_REQUIRED ?? 'on').trim().toLowerCase() !== 'off';
-
-    // 超管第二因素门：未绑定手机号的超管一律拒绝（手机号只能经服务器配置绑定）
-    if (admin.role === 'super' && smsGateEnabled) {
-      if (admin.phone_verified !== 1 || !admin.phone) {
-        return res.status(403).json({
-          success: false,
-          code: 'SUPER_PHONE_NOT_VERIFIED',
-          message: '超管账号未完成手机绑定，请联系系统管理员',
-        });
-      }
-
-      // 密码门通过：签发短期短信票据，进入第二因素阶段（此刻不签 JWT）
-      return res.json({
-        success: true,
-        sms_required: true,
-        ticket: signAdminSmsTicket(admin, clientIp),
-      });
-    }
-
-    // 审核员：登录成功，清零失败计数、审计并直接签发 JWT（流程零变化）
+    // 全部角色：登录成功，清零失败计数、审计并直接签发 JWT
     clearFailures(normalizedUsername, clientIp);
     await logAdminAction(admin, 'login', 'admin', admin.id, undefined, clientIp);
 
@@ -218,157 +164,6 @@ router.post('/login', adminLoginLimiter, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin login error:', error);
-    res.status(500).json({ success: false, message: '登录服务异常，请稍后重试' });
-  }
-});
-
-/**
- * 超管登录第二阶段-发送短信验证码。
- * 凭第一阶段票据（已含密码+Turnstile 通过证明）发送，受三层短信限速约束。
- * @body username 超管用户名
- * @body ticket 短信登录票据
- */
-router.post(
-  '/login/sms/send',
-  adminSmsCooldownLimiter,
-  adminSmsTargetHourLimiter,
-  adminSmsIpHourLimiter,
-  async (req, res) => {
-    try {
-      res.setHeader('Cache-Control', 'no-store');
-
-      const { username, ticket } = req.body;
-      if (typeof username !== 'string' || username.trim().length === 0 || username.length > 64) {
-        return res.status(400).json({ success: false, message: '请求参数不合法' });
-      }
-      const normalizedUsername = username.trim();
-      const clientIp = req.ip ?? 'unknown';
-
-      const admin = await verifyAdminSmsTicket(ticket, normalizedUsername, clientIp);
-      if (!admin) {
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_LOGIN_TICKET',
-          message: '登录状态已过期，请重新登录',
-        });
-      }
-
-      // 失败锁定同样适用于第二阶段
-      const lockedMs = getLockRemaining(normalizedUsername, clientIp);
-      if (lockedMs !== null) {
-        return res.status(403).json({
-          success: false,
-          code: 'ADMIN_LOGIN_LOCKED',
-          message: '尝试次数过多，请稍后再试',
-          data: { retry_after_seconds: Math.ceil(lockedMs / 1000) },
-        });
-      }
-
-      // 生成验证码（哈希入库）并经 Spug 短信通道下发，明文不入库不落日志
-      const code = await createCodeRecord(admin.phone!, 'sms', 'admin_login', clientIp);
-      await sendSmsCode(admin.phone!, code, 10);
-
-      res.json({ success: true, message: '验证码已发送', cooldown_seconds: 60 });
-    } catch (error) {
-      console.error('Admin sms send error:', error);
-      // 上游服务错误（未配置 503 / 发送失败 502）透传状态码，其余统一 500
-      const status = (error as { status?: number })?.status;
-      if (status === 503 || status === 502) {
-        return res.status(status).json({
-          success: false,
-          message: status === 503 ? '验证码服务未配置' : '验证码发送失败，请稍后再试',
-        });
-      }
-      res.status(500).json({ success: false, message: '验证码发送异常，请稍后重试' });
-    }
-  }
-);
-
-/**
- * 超管登录第二阶段-校验短信验证码。
- * 票据 + 验证码均通过才签发 JWT；验证码错误计入失败锁定（与密码失败同口径）。
- * @body username 超管用户名
- * @body ticket 短信登录票据
- * @body code 6 位短信验证码
- */
-router.post('/login/sms/verify', adminLoginLimiter, async (req, res) => {
-  try {
-    res.setHeader('Cache-Control', 'no-store');
-
-    const { username, ticket, code } = req.body;
-    if (
-      typeof username !== 'string' ||
-      username.trim().length === 0 ||
-      username.length > 64 ||
-      typeof code !== 'string'
-    ) {
-      return res.status(400).json({ success: false, message: '请求参数不合法' });
-    }
-    const normalizedUsername = username.trim();
-    const clientIp = req.ip ?? 'unknown';
-
-    const admin = await verifyAdminSmsTicket(ticket, normalizedUsername, clientIp);
-    if (!admin) {
-      return res.status(401).json({
-        success: false,
-        code: 'INVALID_LOGIN_TICKET',
-        message: '登录状态已过期，请重新登录',
-      });
-    }
-
-    const lockedMs = getLockRemaining(normalizedUsername, clientIp);
-    if (lockedMs !== null) {
-      return res.status(403).json({
-        success: false,
-        code: 'ADMIN_LOGIN_LOCKED',
-        message: '尝试次数过多，请稍后再试',
-        data: { retry_after_seconds: Math.ceil(lockedMs / 1000) },
-      });
-    }
-
-    const verdict = await verifyCode(admin.phone!, code, 'admin_login');
-    if (!verdict.ok) {
-      const failure = recordFailure(normalizedUsername, clientIp);
-      console.warn(
-        `[Admin] 超管短信验证码失败 username=${normalizedUsername} reason=${verdict.error} failures=${failure.failures}`
-      );
-
-      // 验证码自身 5 次锁定，或失败计数触发锁定：统一锁定响应
-      if (verdict.error === 'OTP_LOCKED' || failure.lockedMs !== null) {
-        const retryMs = failure.lockedMs ?? 15 * 60_000;
-        return res.status(403).json({
-          success: false,
-          code: 'ADMIN_LOGIN_LOCKED',
-          message: '验证失败次数过多，请稍后再试',
-          data: { retry_after_seconds: Math.ceil(retryMs / 1000) },
-        });
-      }
-
-      const message =
-        verdict.error === 'OTP_EXPIRED'
-          ? '验证码已过期，请重新获取'
-          : '验证码不正确，请重新输入';
-      return res.status(401).json({ success: false, message });
-    }
-
-    // 全部通过：清零失败计数、审计并签发 JWT
-    clearFailures(normalizedUsername, clientIp);
-    await logAdminAction(admin, 'login', 'admin', admin.id, undefined, clientIp);
-
-    res.json({
-      success: true,
-      token: signAdminToken(admin),
-      admin: {
-        id: admin.id,
-        username: admin.username,
-        name: admin.name,
-        role: admin.role,
-        zone: admin.zone,
-        must_change_password: admin.must_change_password,
-      },
-    });
-  } catch (error) {
-    console.error('Admin sms verify error:', error);
     res.status(500).json({ success: false, message: '登录服务异常，请稍后重试' });
   }
 });
@@ -1198,6 +993,71 @@ router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super'])
 });
 
 /**
+ * 变更站点用户邮箱（V2.0.0，仅 super 可访问）。
+ * 超管为用户设置新邮箱后置 email_verified=0，用户下次登录须完成邮箱验证码确权。
+ * @param id 用户 ID
+ * @body email 新邮箱地址
+ */
+router.put('/users/:id/email', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // 高危操作，需管理员人机验证状态（168h 内同 IP 有效）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
+  const incomingEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!incomingEmail || !isValidEmail(incomingEmail)) {
+    return res.status(400).json({ success: false, message: '请输入正确的邮箱地址' });
+  }
+
+  const user = await db.get<{ id: string; username: string | null; email: string | null }>(
+    'SELECT id, username, email FROM users WHERE id = ?',
+    [req.params.id]
+  );
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  // 邮箱已被其他账号占用
+  const conflict = await db.get<{ id: string }>('SELECT id FROM users WHERE email = ? AND id != ?', [
+    incomingEmail,
+    req.params.id,
+  ]);
+  if (conflict) {
+    return res.status(409).json({ success: false, code: 'ALREADY_REGISTERED', message: '该邮箱已被其他账号绑定' });
+  }
+
+  if (user.email === incomingEmail) {
+    return res.json({ success: true, message: '邮箱未变更', data: { email: incomingEmail } });
+  }
+
+  await db.run('UPDATE users SET email = ?, email_verified = 0, updated_at = ? WHERE id = ?', [
+    incomingEmail,
+    new Date().toISOString(),
+    req.params.id,
+  ]);
+
+  await logAdminAction(
+    req.admin,
+    'update_user_email',
+    'user',
+    req.params.id,
+    { username: user.username },
+    req.ip
+  );
+
+  res.json({
+    success: true,
+    message: '邮箱已更新，用户须在下次登录时完成邮箱验证',
+    data: { email: incomingEmail, email_verified: 0 },
+  });
+});
+
+/**
  * 查询审计日志（分页）。
  * super 可查看全部日志；zone_master 仅能查看自己的操作日志。
  * @query page 页码
@@ -1259,7 +1119,6 @@ router.get('/stats', adminAuthMiddleware, requireRole(['super', 'zone_master', '
   const zoneFilter = (req.admin.role === 'zone_master' || req.admin.role === 'zone_auditor')
     ? req.admin.zone
     : null;
-  const zoneWhere = zoneFilter ? 'AND category = ?' : '';
 
   // 五个独立统计查询并行执行，allSettled 隔离失败避免整体 500
   const queries: { key: string; sql: string; params: (string | number)[] }[] = [

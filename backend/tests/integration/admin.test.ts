@@ -9,52 +9,11 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 
-// 短信通道整体 mock：第二因素不发真实短信，验证码从 mock 调用参数中读取
-vi.mock('../../src/services/spugService');
-import { sendSmsCode } from '../../src/services/spugService';
-
 let app: express.Application;
 /** 不注入测试绕过令牌的裸应用：用于验证 Turnstile 强制校验 */
 let rawApp: express.Application;
 let superAdminToken: string;
 let zoneAuditorToken: string;
-
-/**
- * 超管两阶段登录助手：
- * 第一阶段取短信票据 → 请求发送验证码 → 从 Spug mock 调用中读取本次明文码
- * → 第二阶段校验换取 JWT。
- * @param username 超管用户名
- * @param password 超管密码
- * @returns JWT、票据与第二阶段响应体
- */
-async function completeSuperLogin(username: string, password: string) {
-  const stage1 = await request(app)
-    .post('/api/admin/login')
-    .send({ username, password });
-  expect(stage1.status).toBe(200);
-  expect(stage1.body.sms_required).toBe(true);
-  expect(stage1.body.token).toBeUndefined();
-  const ticket = stage1.body.ticket as string;
-  expect(typeof ticket).toBe('string');
-
-  const send = await request(app)
-    .post('/api/admin/login/sms/send')
-    .send({ username, ticket });
-  expect(send.status).toBe(200);
-
-  const lastCall = vi.mocked(sendSmsCode).mock.calls.at(-1);
-  if (!lastCall) throw new Error('短信通道 mock 未被调用');
-  const code = lastCall[1] as string;
-  expect(code).toMatch(/^\d{6}$/);
-
-  const verify = await request(app)
-    .post('/api/admin/login/sms/verify')
-    .send({ username, ticket, code });
-  expect(verify.status).toBe(200);
-  expect(typeof verify.body.token).toBe('string');
-
-  return { token: verify.body.token as string, ticket, body: verify.body };
-}
 
 beforeAll(async () => {
   // V1.5.1：测试库隔离，避免 admin_users/测试照片写进生产 database.db
@@ -79,33 +38,9 @@ beforeAll(async () => {
   const superAdminHash = await bcrypt.hash('Admin123456', 10);
 
   await dbModule.db.run(
-    `INSERT OR REPLACE INTO admin_users (id, username, password_hash, name, role, zone, is_active, must_change_password, token_version, phone, phone_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'super', NULL, 1, 0, 0, ?, 1, datetime('now'), datetime('now'))`,
-    superAdminId, 'superadmin', superAdminHash, '超级管理员', '13800000001'
-  );
-
-  // V1.13.0：超管短信第二因素专用账号
-  // 未绑手机超管：第一阶段必须被拒
-  await dbModule.db.run(
-    `INSERT OR REPLACE INTO admin_users (id, username, password_hash, name, role, zone, is_active, must_change_password, token_version, phone, phone_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'super', NULL, 1, 0, 0, NULL, 0, datetime('now'), datetime('now'))`,
-    'test-super-unbound', 'superunbound', superAdminHash, '未绑手机超管'
-  );
-
-  // 已绑手机超管：验证码错误 / 票据篡改测试（不跑满锁定次数）
-  const smsFailHash = await bcrypt.hash('SmsFail12345', 10);
-  await dbModule.db.run(
-    `INSERT OR REPLACE INTO admin_users (id, username, password_hash, name, role, zone, is_active, must_change_password, token_version, phone, phone_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'super', NULL, 1, 0, 0, ?, 1, datetime('now'), datetime('now'))`,
-    'test-sms-fail', 'smsfailuser', smsFailHash, '短信失败测试员', '13800000003'
-  );
-
-  // 已绑手机超管：短信验证码连续错误锁定测试（专用，锁定后不再使用）
-  const smsLockHash = await bcrypt.hash('SmsLock12345', 10);
-  await dbModule.db.run(
-    `INSERT OR REPLACE INTO admin_users (id, username, password_hash, name, role, zone, is_active, must_change_password, token_version, phone, phone_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'super', NULL, 1, 0, 0, ?, 1, datetime('now'), datetime('now'))`,
-    'test-sms-lock', 'smslockuser', smsLockHash, '短信锁定测试员', '13800000004'
+    `INSERT OR REPLACE INTO admin_users (id, username, password_hash, name, role, zone, is_active, must_change_password, token_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'super', NULL, 1, 0, 0, datetime('now'), datetime('now'))`,
+    superAdminId, 'superadmin', superAdminHash, '超级管理员'
   );
 
   const zoneAuditorId = 'test-zone-auditor';
@@ -138,9 +73,6 @@ beforeAll(async () => {
     'test-must-user', 'mustuser', mustUserHash, '强制改密测试员'
   );
 
-  // 短信 mock：直接放行，参数中的验证码供测试读取
-  vi.mocked(sendSmsCode).mockResolvedValue(undefined);
-
   const adminRoutes = (await import('../../src/routes/admin')).default;
 
   app = express();
@@ -160,9 +92,12 @@ beforeAll(async () => {
   rawApp.use(express.json());
   rawApp.use('/api/admin', adminRoutes);
 
-  // 超管：走两阶段登录（密码 → 短信验证码）换取 JWT
-  const superLogin = await completeSuperLogin('superadmin', 'Admin123456');
-  superAdminToken = superLogin.token;
+  // V2.0.0：超管单阶段登录（密码 + Turnstile 通过即签发 JWT）
+  const superLogin = await request(app)
+    .post('/api/admin/login')
+    .send({ username: 'superadmin', password: 'Admin123456' });
+  expect(superLogin.status).toBe(200);
+  superAdminToken = superLogin.body.token as string;
 
   const zoneLogin = await request(app)
     .post('/api/admin/login')
@@ -459,12 +394,9 @@ describe('V1.13.0 修改密码后旧 JWT 立即失效', () => {
   });
 
   it('当前密码错误时拒绝改密', async () => {
-    // 超管需先完成两阶段登录换取 JWT
-    const { token } = await completeSuperLogin('superadmin', 'Admin123456');
-
     const res = await request(app)
       .post('/api/admin/me/password')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
       .send({
         current_password: 'IncorrectCurrent',
         new_password: 'AnotherStrong789',
@@ -540,177 +472,103 @@ describe('V1.13.0 强制改密门（PASSWORD_CHANGE_REQUIRED）', () => {
 });
 
 // ============================================================================
-// V1.13.0 超管短信第二因素（复用 Spug 短信通道，审核员登录流程零变化）
+// V2.0.0 超管代改用户邮箱 PUT /users/:id/email
+// 旧超管短信第二因素（/login/sms/*、ADMIN_SMS_REQUIRED）已随手机验证码体系物理删除
 // ============================================================================
 
-describe('V1.13.0 超管登录短信第二因素', () => {
-  it('超管第一阶段只返回短信票据，不签发 JWT', async () => {
-    const res = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'superadmin', password: 'Admin123456' });
+describe('V2.0.0 PUT /api/admin/users/:id/email', () => {
+  let targetUserId: string;
+  let otherUserId: string;
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.sms_required).toBe(true);
-    expect(typeof res.body.ticket).toBe('string');
-    expect(res.body.token).toBeUndefined();
-    expect(res.body.admin).toBeUndefined();
+  beforeAll(async () => {
+    const { db } = await import('../../src/db');
+    targetUserId = 'test-email-target';
+    otherUserId = 'test-email-other';
+    const now = new Date().toISOString();
+    await db.run(
+      `INSERT INTO users (id, email, username, password_hash, email_verified, can_upload, can_view, can_download, can_like, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', 1, 1, 1, 1, 1, ?, ?)`,
+      targetUserId, 'target@example.com', 'targetuser', now, now
+    );
+    await db.run(
+      `INSERT INTO users (id, email, username, password_hash, email_verified, can_upload, can_view, can_download, can_like, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', 1, 1, 1, 1, 1, ?, ?)`,
+      otherUserId, 'other@example.com', 'otheruser', now, now
+    );
   });
 
-  it('未绑手机号的超管第一阶段返回 403 SUPER_PHONE_NOT_VERIFIED', async () => {
+  it('未携带 token 时返回 401', async () => {
     const res = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'superunbound', password: 'Admin123456' });
+      .put(`/api/admin/users/${targetUserId}/email`)
+      .send({ email: 'new@example.com' });
+    expect(res.status).toBe(401);
+  });
 
+  it('分区审核员（非 super）调用返回 403', async () => {
+    const res = await request(app)
+      .put(`/api/admin/users/${targetUserId}/email`)
+      .set('Authorization', `Bearer ${zoneAuditorToken}`)
+      .send({ email: 'new@example.com' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('SUPER_PHONE_NOT_VERIFIED');
-    expect(res.body.token).toBeUndefined();
   });
 
-  it('凭篡改票据请求发送验证码返回 401 INVALID_LOGIN_TICKET', async () => {
+  it('非法邮箱格式返回 400', async () => {
     const res = await request(app)
-      .post('/api/admin/login/sms/send')
-      .send({ username: 'smsfailuser', ticket: 'forged.body.signature' });
-
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_LOGIN_TICKET');
-  });
-
-  it('缺少票据时发送验证码返回 401', async () => {
-    const res = await request(app)
-      .post('/api/admin/login/sms/send')
-      .send({ username: 'smsfailuser' });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('凭篡改票据校验验证码返回 401', async () => {
-    const res = await request(app)
-      .post('/api/admin/login/sms/verify')
-      .send({ username: 'smsfailuser', ticket: 'forged.body', code: '123456' });
-
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_LOGIN_TICKET');
-  });
-
-  it('短信验证码错误返回 401（专用账号，仅试 1 次避免锁定）', async () => {
-    // 先合法取得票据并触发验证码下发
-    const stage1 = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'smsfailuser', password: 'SmsFail12345' });
-    const ticket = stage1.body.ticket as string;
-    await request(app)
-      .post('/api/admin/login/sms/send')
-      .send({ username: 'smsfailuser', ticket });
-
-    const res = await request(app)
-      .post('/api/admin/login/sms/verify')
-      .send({ username: 'smsfailuser', ticket, code: '000000' });
-
-    expect(res.status).toBe(401);
+      .put(`/api/admin/users/${targetUserId}/email`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ email: 'not-an-email' });
+    expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
 
-  it('正确短信验证码换取的 JWT 可访问业务接口', async () => {
-    const { token } = await completeSuperLogin('smsfailuser', 'SmsFail12345');
-
-    const pending = await request(app)
-      .get('/api/admin/photos/pending')
-      .set('Authorization', `Bearer ${token}`);
-    expect(pending.status).toBe(200);
-  });
-
-  it('审核员登录不触发短信门：直接返回 JWT 且无 sms_required', async () => {
+  it('目标用户不存在时返回 404', async () => {
     const res = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'zoneauditor', password: 'Auditor123456' });
-
-    expect(res.status).toBe(200);
-    expect(res.body.sms_required).toBeUndefined();
-    expect(typeof res.body.token).toBe('string');
-    expect(res.body.admin.role).toBe('zone_auditor');
+      .put('/api/admin/users/no-such-user/email')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ email: 'new@example.com' });
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
   });
 
-  it('短信验证码连续错误 5 次后锁定（专用账号，锁定后不再使用）', async () => {
-    for (let i = 0; i < 4; i++) {
-      // 每次重新取票据并下发新验证码（旧码被作废），再故意输错
-      const stage1 = await request(app)
-        .post('/api/admin/login')
-        .send({ username: 'smslockuser', password: 'SmsLock12345' });
-      const ticket = stage1.body.ticket as string;
-      await request(app)
-        .post('/api/admin/login/sms/send')
-        .send({ username: 'smslockuser', ticket });
-
-      const wrong = await request(app)
-        .post('/api/admin/login/sms/verify')
-        .send({ username: 'smslockuser', ticket, code: '000000' });
-      expect(wrong.status).toBe(401);
-    }
-
-    // 第 5 次：OTP 锁定与失败计数锁定同时生效
-    const stage1 = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'smslockuser', password: 'SmsLock12345' });
-    const ticket = stage1.body.ticket as string;
-    await request(app)
-      .post('/api/admin/login/sms/send')
-      .send({ username: 'smslockuser', ticket });
-
-    const fifth = await request(app)
-      .post('/api/admin/login/sms/verify')
-      .send({ username: 'smslockuser', ticket, code: '000000' });
-    expect(fifth.status).toBe(403);
-    expect(fifth.body.code).toBe('ADMIN_LOGIN_LOCKED');
-    expect(fifth.body.data.retry_after_seconds).toBeGreaterThan(0);
-  });
-});
-
-// ============================================================================
-// V1.13.1 短信第二因素紧急开关（ADMIN_SMS_REQUIRED=off 停用短信门，缺省安全）
-// ============================================================================
-
-describe('V1.13.1 ADMIN_SMS_REQUIRED 紧急开关', () => {
-  it('off 时超管密码通过直接签发 JWT，不再返回短信票据', async () => {
-    process.env.ADMIN_SMS_REQUIRED = 'off';
-    try {
-      const res = await request(app)
-        .post('/api/admin/login')
-        .send({ username: 'superadmin', password: 'Admin123456' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.sms_required).toBeUndefined();
-      expect(res.body.ticket).toBeUndefined();
-      expect(typeof res.body.token).toBe('string');
-      expect(res.body.admin.role).toBe('super');
-    } finally {
-      delete process.env.ADMIN_SMS_REQUIRED;
-    }
-  });
-
-  it('off 时 off 前签发的短信票据立即失效（/login/sms/send 拒绝 401）', async () => {
-    process.env.ADMIN_SMS_REQUIRED = 'off';
-    try {
-      // off 模式下 /login 不再签发票据，用伪造票据验证短信端点已不可用
-      const res = await request(app)
-        .post('/api/admin/login/sms/send')
-        .send({ username: 'superadmin', ticket: 'forged.body.signature' });
-
-      expect(res.status).toBe(401);
-      expect(res.body.code).toBe('INVALID_LOGIN_TICKET');
-    } finally {
-      delete process.env.ADMIN_SMS_REQUIRED;
-    }
-  });
-
-  it('默认（未配置）保持短信门开启：超管仍走两阶段', async () => {
-    delete process.env.ADMIN_SMS_REQUIRED;
+  it('邮箱已被其他账号绑定时返回 409 ALREADY_REGISTERED', async () => {
     const res = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'superadmin', password: 'Admin123456' });
+      .put(`/api/admin/users/${targetUserId}/email`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ email: 'other@example.com' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ALREADY_REGISTERED');
+  });
 
+  it('成功更新后 email 变更且 email_verified 置 0', async () => {
+    const res = await request(app)
+      .put(`/api/admin/users/${targetUserId}/email`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ email: 'fresh@example.com' });
     expect(res.status).toBe(200);
-    expect(res.body.sms_required).toBe(true);
+    expect(res.body.data.email).toBe('fresh@example.com');
+    expect(res.body.data.email_verified).toBe(0);
+
+    const { db } = await import('../../src/db');
+    const row = await db.get<{ email: string; email_verified: number }>(
+      'SELECT email, email_verified FROM users WHERE id = ?',
+      targetUserId
+    );
+    expect(row?.email).toBe('fresh@example.com');
+    expect(row?.email_verified).toBe(0);
+  });
+
+  it('邮箱与当前一致时幂等返回，不改动验证状态', async () => {
+    const res = await request(app)
+      .put(`/api/admin/users/${otherUserId}/email`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ email: 'other@example.com' });
+    expect(res.status).toBe(200);
+
+    const { db } = await import('../../src/db');
+    const row = await db.get<{ email_verified: number }>(
+      'SELECT email_verified FROM users WHERE id = ?',
+      otherUserId
+    );
+    expect(row?.email_verified).toBe(1);
   });
 });

@@ -8,12 +8,11 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { db } from '../db';
-import { maskTarget } from './otpService';
 
 /** 管理员角色：super（超级管理员）/ zone_master（区域管理员）/ zone_auditor（区域审计） */
 export type AdminRole = 'super' | 'zone_master' | 'zone_auditor';
 
-/** 管理员用户实体（对应 admin_users 表结构） */
+/** 管理员用户实体（对应 admin_users 表结构，V2.0.0 去手机化） */
 export interface AdminUser {
   id: string;
   username: string;
@@ -25,8 +24,6 @@ export interface AdminUser {
   is_active: number;
   must_change_password: number;
   token_version: number;
-  phone?: string;
-  phone_verified: number;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -92,7 +89,6 @@ export function validateSuperAdminPassword(password: unknown, username: string):
 /**
  * 校验管理员用户名与密码（仅认证，不签发 JWT）。
  * 用户不存在时同样执行一次 bcrypt.compare（dummy），保证两条失败路径耗时一致。
- * 是否需要第二因素（超管短信验证码）由路由层按角色决定。
  * @param username 用户名
  * @param password 明文密码
  * @returns 成功返回管理员实体；失败返回通用错误消息（不可枚举用户）
@@ -111,84 +107,6 @@ export async function verifyAdminCredentials(
   }
 
   return { success: true, admin };
-}
-
-/** 超管短信第二因素票据有效期：5 分钟 */
-const SMS_TICKET_TTL_MS = 5 * 60 * 1000;
-
-interface SmsTicketPayload {
-  adminId: string;
-  username: string;
-  ip: string;
-  exp: number;
-}
-
-/**
- * 签发超管短信登录票据：密码与 Turnstile 通过后换取，
- * 供「发送/校验短信验证码」两步在 5 分钟内免重复人机验证。
- * 绑定 adminId、用户名与客户端 IP，HMAC-SHA256 防篡改。
- */
-export function signAdminSmsTicket(admin: AdminUser, ip: string): string {
-  const payload: SmsTicketPayload = {
-    adminId: admin.id,
-    username: admin.username,
-    ip,
-    exp: Date.now() + SMS_TICKET_TTL_MS,
-  };
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = crypto.createHmac('sha256', loadJwtSecret()).update(body).digest('base64url');
-  return `${body}.${sig}`;
-}
-
-/**
- * 校验超管短信登录票据：恒时比对签名，核对用户名/IP/有效期，
- * 并确认对应超管账号仍活跃。任一条件不满足返回 null。
- */
-export async function verifyAdminSmsTicket(
-  ticket: unknown,
-  username: string,
-  ip: string
-): Promise<AdminUser | null> {
-  if (typeof ticket !== 'string') return null;
-  const dot = ticket.indexOf('.');
-  if (dot <= 0 || dot === ticket.length - 1) return null;
-  const body = ticket.slice(0, dot);
-  const sig = ticket.slice(dot + 1);
-
-  const expected = crypto.createHmac('sha256', loadJwtSecret()).update(body).digest();
-  let actual: Buffer;
-  try {
-    actual = Buffer.from(sig, 'base64url');
-  } catch {
-    return null;
-  }
-  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-    return null;
-  }
-
-  let payload: SmsTicketPayload;
-  try {
-    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as SmsTicketPayload;
-  } catch {
-    return null;
-  }
-  if (
-    typeof payload.adminId !== 'string' ||
-    typeof payload.username !== 'string' ||
-    typeof payload.ip !== 'string' ||
-    typeof payload.exp !== 'number' ||
-    payload.username !== username ||
-    payload.ip !== ip ||
-    payload.exp < Date.now()
-  ) {
-    return null;
-  }
-
-  const admin = await db.get<AdminUser>(
-    'SELECT * FROM admin_users WHERE id = ? AND username = ? AND role = "super" AND is_active = 1',
-    [payload.adminId, username]
-  );
-  return admin || null;
 }
 
 /**
@@ -408,53 +326,6 @@ export async function logAdminAction(admin: AdminUser, action: string, targetTyp
     'INSERT INTO admin_logs (id, admin_id, admin_name, action, target_type, target_id, details, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [id, admin.id, admin.username, action, targetType || null, targetId || null, details ? JSON.stringify(details) : null, ip || null, new Date().toISOString()]
   );
-}
-
-/**
- * 按服务器配置引导超管手机号（V1.13.0 第二因素）。
- *
- * SUPER_ADMIN_PHONES 形如 `admin:13800000000,y:13900000000`（逗号分隔）：
- * - 号码须匹配中国大陆手机号口径（1[3-9] 开头 11 位），格式错误拒绝启动；
- * - 仅对 role=super 的活跃账号生效，用户名不存在时告警跳过；
- * - 号码变化或未验证时更新并置 phone_verified=1。
- *
- * 走配置通道而非应用界面，避免攻击者用公开默认密码登录后抢绑手机。
- */
-export async function bootstrapSuperAdminPhones(): Promise<void> {
-  const raw = process.env.SUPER_ADMIN_PHONES?.trim();
-  if (!raw) return;
-
-  for (const pair of raw.split(',')) {
-    const item = pair.trim();
-    if (!item) continue;
-
-    const sep = item.lastIndexOf(':');
-    if (sep <= 0 || sep === item.length - 1) {
-      throw new Error(`SUPER_ADMIN_PHONES 配置项格式错误：「${item}」，应为 用户名:手机号`);
-    }
-    const username = item.slice(0, sep).trim();
-    const phone = item.slice(sep + 1).trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      throw new Error(`SUPER_ADMIN_PHONES 中「${username}」的手机号格式不合法：${phone}`);
-    }
-
-    const admin = await db.get<AdminUser>(
-      'SELECT * FROM admin_users WHERE username = ? AND role = "super" AND is_active = 1',
-      [username]
-    );
-    if (!admin) {
-      console.warn(`[Admin] SUPER_ADMIN_PHONES 未找到活跃超管账号「${username}」，已跳过`);
-      continue;
-    }
-
-    if (admin.phone !== phone || admin.phone_verified !== 1) {
-      await db.run(
-        'UPDATE admin_users SET phone = ?, phone_verified = 1, updated_at = ? WHERE id = ?',
-        [phone, new Date().toISOString(), admin.id]
-      );
-      console.log(`[Admin] 超管「${username}」手机号已按配置绑定（${maskTarget(phone)}）`);
-    }
-  }
 }
 
 /**

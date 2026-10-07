@@ -1,12 +1,12 @@
 /**
- * @file otpService 单元测试（V1.11.0）
+ * @file otpService 单元测试（V2.0.0：邮箱-only）
  * @description 覆盖验证码生命周期管理的核心逻辑：
  *              1. generateCode —— 恒为 6 位数字（含前导零补齐）
  *              2. hashCode —— HMAC-SHA256 确定性与区分性
  *              3. createCodeRecord —— 返回明文码、入库仅存哈希、同 target+scene 旧码作废
  *              4. verifyCode —— 通过一次性消费 / 错误递增 attempts / 5 次锁定 / 过期拒绝
  *              5. cleanupExpiredCodes —— 删除 7 天前记录
- *              6. maskTarget —— 邮箱 / 手机号 / 异常短输入脱敏
+ *              6. maskTarget —— 邮箱 / 异常短输入脱敏
  *              测试库经 DB_PATH 隔离，不触达生产 database.db。
  */
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -58,7 +58,7 @@ describe('hashCode', () => {
 
 describe('createCodeRecord', () => {
   it('返回 6 位明文码，入库仅存哈希且 attempts 为 0', async () => {
-    const code = await otp.createCodeRecord('unit-create@example.com', 'mail', 'register', '127.0.0.1');
+    const code = await otp.createCodeRecord('unit-create@example.com', 'register', '127.0.0.1');
     expect(code).toMatch(/^\d{6}$/);
 
     const row = await db.get(
@@ -75,8 +75,8 @@ describe('createCodeRecord', () => {
   });
 
   it('再次创建使同 target+scene 的旧码作废（任一时刻仅一条未使用记录）', async () => {
-    await otp.createCodeRecord('unit-rotate@example.com', 'mail', 'login', '127.0.0.1');
-    const second = await otp.createCodeRecord('unit-rotate@example.com', 'mail', 'login', '127.0.0.1');
+    await otp.createCodeRecord('unit-rotate@example.com', 'login', '127.0.0.1');
+    const second = await otp.createCodeRecord('unit-rotate@example.com', 'login', '127.0.0.1');
 
     const unusedRows = await db.all(
       'SELECT * FROM verification_codes WHERE target = ? AND scene = ? AND used_at IS NULL',
@@ -90,7 +90,7 @@ describe('createCodeRecord', () => {
 
 describe('verifyCode', () => {
   it('正确码校验通过并一次性消费（二次使用被拒）', async () => {
-    const code = await otp.createCodeRecord('unit-ok@example.com', 'mail', 'login', '127.0.0.1');
+    const code = await otp.createCodeRecord('unit-ok@example.com', 'login', '127.0.0.1');
 
     const ok = await otp.verifyCode('unit-ok@example.com', code, 'login');
     expect(ok).toEqual({ ok: true });
@@ -102,7 +102,7 @@ describe('verifyCode', () => {
   });
 
   it('错误码返回 OTP_MISMATCH 并递增 attempts', async () => {
-    const code = await otp.createCodeRecord('unit-mismatch@example.com', 'mail', 'login', '127.0.0.1');
+    const code = await otp.createCodeRecord('unit-mismatch@example.com', 'login', '127.0.0.1');
 
     const res = await otp.verifyCode('unit-mismatch@example.com', wrongCodeOf(code), 'login');
     expect(res).toEqual({ ok: false, error: 'OTP_MISMATCH' });
@@ -115,7 +115,7 @@ describe('verifyCode', () => {
   });
 
   it('连续 5 次错误后返回 OTP_LOCKED 并同步作废验证码', async () => {
-    const code = await otp.createCodeRecord('unit-lock@example.com', 'mail', 'login', '127.0.0.1');
+    const code = await otp.createCodeRecord('unit-lock@example.com', 'login', '127.0.0.1');
     const wrong = wrongCodeOf(code);
 
     for (let i = 0; i < 4; i++) {
@@ -132,7 +132,7 @@ describe('verifyCode', () => {
   });
 
   it('过期验证码返回 OTP_EXPIRED', async () => {
-    const code = await otp.createCodeRecord('unit-expired@example.com', 'mail', 'login', '127.0.0.1');
+    const code = await otp.createCodeRecord('unit-expired@example.com', 'login', '127.0.0.1');
     await db.run(
       'UPDATE verification_codes SET expires_at = ? WHERE target = ?',
       new Date(Date.now() - 1000).toISOString(),
@@ -151,8 +151,8 @@ describe('verifyCode', () => {
 
 describe('cleanupExpiredCodes', () => {
   it('删除 7 天前记录并保留近期记录', async () => {
-    await otp.createCodeRecord('unit-old@example.com', 'mail', 'login', '127.0.0.1');
-    await otp.createCodeRecord('unit-new@example.com', 'mail', 'login', '127.0.0.1');
+    await otp.createCodeRecord('unit-old@example.com', 'login', '127.0.0.1');
+    await otp.createCodeRecord('unit-new@example.com', 'login', '127.0.0.1');
 
     // 将旧记录 created_at 拨到 8 天前
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
@@ -166,12 +166,8 @@ describe('cleanupExpiredCodes', () => {
 });
 
 describe('maskTarget', () => {
-  it('邮箱保留首字符与域名', () => {
+  it('大小写邮箱保留首字符与域名', () => {
     expect(otp.maskTarget('alice@example.com')).toBe('a***@example.com');
-  });
-
-  it('手机号保留前 3 位与后 4 位', () => {
-    expect(otp.maskTarget('13812345678')).toBe('138****5678');
   });
 
   it('异常短输入整体脱敏兜底', () => {

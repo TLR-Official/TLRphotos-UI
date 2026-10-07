@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
-import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser, sendOtp, bindPhone } from '../../api/auth';
+import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser, sendEmailCode, bindEmail } from '../../api/auth';
 import { useHumanVerification } from '../../shared/useHumanVerification';
 import { TurnstileWidget, type TurnstileWidgetHandle } from '../../components/TurnstileWidget';
 import type { User, UserStats, MyPhoto } from '../../api/auth';
@@ -140,28 +140,18 @@ export function ProfilePage() {
   const [prefsMessage, setPrefsMessage] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // V1.11.0：绑定手机号
-  const [bindPhoneNum, setBindPhoneNum] = useState('');
-  const [bindCode, setBindCode] = useState('');
-  const [bindCooldown, setBindCooldown] = useState(0);
-  const [bindSending, setBindSending] = useState(false);
-  const [bindError, setBindError] = useState('');
-  const [bindSuccess, setBindSuccess] = useState('');
-  const [bindToken, setBindToken] = useState('');
-  const bindTurnstileRef = useRef<TurnstileWidgetHandle>(null);
-
-  // V1.11.2：资料页修改手机号 → 验证码换绑弹窗
-  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
-  const [phoneModalNum, setPhoneModalNum] = useState('');
-  const [phoneModalCode, setPhoneModalCode] = useState('');
-  const [phoneModalCooldown, setPhoneModalCooldown] = useState(0);
-  const [phoneModalSending, setPhoneModalSending] = useState(false);
-  const [phoneModalError, setPhoneModalError] = useState('');
-  const [phoneModalInfo, setPhoneModalInfo] = useState('');
-  const [phoneModalToken, setPhoneModalToken] = useState('');
-  const phoneModalTurnstileRef = useRef<TurnstileWidgetHandle>(null);
+  // V2.0.0：更换邮箱 → 邮箱验证码绑定弹窗（JWT 路径，绑定成功后 email_verified=1）
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailModalAddr, setEmailModalAddr] = useState('');
+  const [emailModalCode, setEmailModalCode] = useState('');
+  const [emailModalCooldown, setEmailModalCooldown] = useState(0);
+  const [emailModalSending, setEmailModalSending] = useState(false);
+  const [emailModalError, setEmailModalError] = useState('');
+  const [emailModalInfo, setEmailModalInfo] = useState('');
+  const [emailModalToken, setEmailModalToken] = useState('');
+  const emailModalTurnstileRef = useRef<TurnstileWidgetHandle>(null);
   // 防止同一开/关周期内自动发码被 effect 重复触发
-  const phoneModalAutoSentRef = useRef(false);
+  const emailModalAutoSentRef = useRef(false);
 
   // 未登录跳转至登录页；已登录则用用户信息初始化表单
   useEffect(() => {
@@ -173,7 +163,6 @@ export function ProfilePage() {
       setFormData({
         username: user.username,
         bio: user.bio,
-        phone: user.phone,
         website: user.website,
         location: user.location,
         custom_fields: user.custom_fields || {},
@@ -196,164 +185,99 @@ export function ProfilePage() {
     }
   }, [user?.id]);
 
-  // 绑定手机号发送验证码 60s 倒计时
+  // 换邮箱弹窗发送验证码 60s 倒计时
   useEffect(() => {
-    if (bindCooldown <= 0) return;
-    const timer = setInterval(() => setBindCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
+    if (emailModalCooldown <= 0) return;
+    const timer = setInterval(() => setEmailModalCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
     return () => clearInterval(timer);
-  }, [bindCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 换绑弹窗发送验证码 60s 倒计时
-  useEffect(() => {
-    if (phoneModalCooldown <= 0) return;
-    const timer = setInterval(() => setPhoneModalCooldown((s) => (s > 0 ? s - 1 : 0)), 1000);
-    return () => clearInterval(timer);
-  }, [phoneModalCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [emailModalCooldown > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 弹窗打开后 Turnstile 令牌就绪即自动发送一次验证码
   useEffect(() => {
-    if (!phoneModalOpen || !phoneModalToken || phoneModalAutoSentRef.current) return;
-    phoneModalAutoSentRef.current = true;
-    void handleSendPhoneModalCode();
-  }, [phoneModalOpen, phoneModalToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** 手机号脱敏显示（如 138****5678） */
-  const maskPhone = (p: string) => (p.length === 11 ? `${p.slice(0, 3)}****${p.slice(7)}` : p);
-
-  /** 发送绑定手机号验证码（scene=bind_phone） */
-  const handleSendBindCode = async () => {
-    setBindError('');
-    setBindSuccess('');
-    const phone = bindPhoneNum.trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      setBindError('请输入正确的手机号');
-      return;
-    }
-    if (!bindToken) {
-      setBindError('请先完成安全验证');
-      return;
-    }
-    setBindSending(true);
-    const res = await sendOtp(phone, 'bind_phone', bindToken);
-    setBindSending(false);
-    // Turnstile 令牌一次性：发送后重置挑战，绑定提交需使用新令牌
-    setBindToken('');
-    bindTurnstileRef.current?.reset();
-    if (res.success && res.data) {
-      setBindCooldown(res.data.cooldown || 60);
-      setBindSuccess(`验证码已发送至 ${res.data.target}，10 分钟内有效`);
-    } else {
-      setBindError(res.message || '验证码发送失败，请稍后再试');
-    }
-  };
-
-  /** 提交绑定手机号 */
-  const handleBindPhone = async () => {
-    setBindError('');
-    setBindSuccess('');
-    const phone = bindPhoneNum.trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      setBindError('请输入正确的手机号');
-      return;
-    }
-    if (!/^\d{6}$/.test(bindCode)) {
-      setBindError('请输入 6 位验证码');
-      return;
-    }
-    const res = await bindPhone(phone, bindCode, bindToken || undefined);
-    if (res.success) {
-      setBindSuccess('手机号绑定成功');
-      setBindPhoneNum('');
-      setBindCode('');
-      setBindCooldown(0);
-      // 刷新用户信息（更新 phone / phone_verified 展示）
-      await refreshUser();
-    } else {
-      setBindError(res.message || '绑定手机号失败，请稍后再试');
-    }
-  };
+    if (!emailModalOpen || !emailModalToken || emailModalAutoSentRef.current) return;
+    emailModalAutoSentRef.current = true;
+    void handleSendEmailModalCode();
+  }, [emailModalOpen, emailModalToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * 打开换绑手机号弹窗（资料表单检测到手机号变更时调用）
+   * 打开更换邮箱弹窗（资料页邮箱行 / 账户安全卡片调用）。
    * 重置弹窗状态并重新挂载 Turnstile，令牌就绪后由 effect 自动发码。
-   * @param phone 新手机号
+   * @param initialEmail 预填邮箱（通常为当前邮箱）
    */
-  const openPhoneBindModal = (phone: string) => {
-    setPhoneModalNum(phone);
-    setPhoneModalCode('');
-    setPhoneModalCooldown(0);
-    setPhoneModalError('');
-    setPhoneModalInfo('');
-    setPhoneModalToken('');
-    phoneModalAutoSentRef.current = false;
-    setPhoneModalOpen(true);
+  const openEmailBindModal = (initialEmail: string) => {
+    setEmailModalAddr(initialEmail);
+    setEmailModalCode('');
+    setEmailModalCooldown(0);
+    setEmailModalError('');
+    setEmailModalInfo('');
+    setEmailModalToken('');
+    emailModalAutoSentRef.current = false;
+    setEmailModalOpen(true);
   };
 
-  /** 发送换绑验证码（自动触发与手动重发共用） */
-  const handleSendPhoneModalCode = async () => {
-    setPhoneModalError('');
-    const phone = phoneModalNum.trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      setPhoneModalError('请输入正确的手机号');
+  /** 发送换邮箱验证码（自动触发与手动重发共用；scene=bind_email，JWT 路径） */
+  const handleSendEmailModalCode = async () => {
+    setEmailModalError('');
+    const addr = emailModalAddr.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      setEmailModalError('请输入正确的邮箱地址');
       return;
     }
-    if (!phoneModalToken) {
-      setPhoneModalError('安全验证未就绪，请稍候');
+    if (!emailModalToken) {
+      setEmailModalError('安全验证未就绪，请稍候');
       return;
     }
-    setPhoneModalSending(true);
-    const res = await sendOtp(phone, 'bind_phone', phoneModalToken);
-    setPhoneModalSending(false);
-    // Turnstile 令牌一次性：发送后重置挑战
-    setPhoneModalToken('');
-    phoneModalTurnstileRef.current?.reset();
+    setEmailModalSending(true);
+    const res = await sendEmailCode(addr, 'bind_email', emailModalToken);
+    setEmailModalSending(false);
+    // Turnstile 令牌一次性：发送后重置挑战，确认绑定需新令牌
+    setEmailModalToken('');
+    emailModalTurnstileRef.current?.reset();
     if (res.success && res.data) {
-      setPhoneModalCooldown(res.data.cooldown || 60);
-      setPhoneModalInfo(`验证码已发送至 ${res.data.target}，10 分钟内有效`);
+      setEmailModalCooldown(res.data.cooldown || 60);
+      setEmailModalInfo(`验证码已发送至 ${res.data.target}，10 分钟内有效`);
     } else {
-      setPhoneModalError(res.message || '验证码发送失败，请稍后再试');
+      setEmailModalError(res.message || '验证码发送失败，请稍后再试');
     }
   };
 
-  /** 确认换绑：校验验证码通过后完成新手机号绑定 */
-  const handleConfirmPhoneBind = async () => {
-    setPhoneModalError('');
-    const phone = phoneModalNum.trim();
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      setPhoneModalError('请输入正确的手机号');
+  /** 确认更换邮箱：验证码校验通过后写入新邮箱（email_verified=1） */
+  const handleConfirmEmailBind = async () => {
+    setEmailModalError('');
+    const addr = emailModalAddr.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      setEmailModalError('请输入正确的邮箱地址');
       return;
     }
-    if (!/^\d{6}$/.test(phoneModalCode)) {
-      setPhoneModalError('请输入 6 位验证码');
+    if (!/^\d{6}$/.test(emailModalCode)) {
+      setEmailModalError('请输入 6 位验证码');
       return;
     }
-    if (!phoneModalToken) {
-      setPhoneModalError('请先完成安全验证');
+    if (!emailModalToken) {
+      setEmailModalError('请先完成安全验证');
       return;
     }
-    const res = await bindPhone(phone, phoneModalCode, phoneModalToken);
+    const res = await bindEmail(addr, emailModalCode, emailModalToken);
     if (res.success) {
-      setPhoneModalOpen(false);
-      setPhoneModalCooldown(0);
-      setPhoneModalCode('');
-      // 刷新用户信息，同步资料表单中的手机号展示
+      setEmailModalOpen(false);
+      setEmailModalCooldown(0);
+      setEmailModalCode('');
       await refreshUser();
-      setMessage('手机号换绑成功');
+      setMessage('邮箱更换成功');
     } else {
-      setPhoneModalError(res.message || '换绑失败，请稍后再试');
+      setEmailModalError(res.message || '更换邮箱失败，请稍后再试');
       // 令牌已消费：重置挑战以便用户重试
-      setPhoneModalToken('');
-      phoneModalTurnstileRef.current?.reset();
+      setEmailModalToken('');
+      emailModalTurnstileRef.current?.reset();
     }
   };
 
-  /** 关闭弹窗：未完成绑定时将表单手机号恢复为当前已绑定号码 */
-  const handleClosePhoneBindModal = () => {
-    setPhoneModalOpen(false);
-    setPhoneModalCooldown(0);
-    setPhoneModalCode('');
-    setPhoneModalError('');
-    setFormData((prev) => ({ ...prev, phone: user?.phone || '' }));
+  /** 关闭更换邮箱弹窗 */
+  const handleCloseEmailBindModal = () => {
+    setEmailModalOpen(false);
+    setEmailModalCooldown(0);
+    setEmailModalCode('');
+    setEmailModalError('');
   };
 
   // 加载我的照片列表
@@ -511,17 +435,11 @@ export function ProfilePage() {
 
   /**
    * 校验个人资料表单
-   * 对邮箱、手机号、网站做格式校验，返回是否通过。
+   * 对网站等字段做格式校验，返回是否通过。邮箱为只读确权字段，不在此表单内修改。
    * @returns 校验是否通过
    */
   const validateProfileForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = '请输入有效的邮箱地址';
-    }
-    if (formData.phone && !/^1[3-9]\d{9}$/.test(formData.phone)) {
-      newErrors.phone = '请输入有效的手机号码';
-    }
     if (formData.website && !/^https?:\/\/[\w\-.]+(:\d+)?(\/[\w\-./?%&=]*)?$/.test(formData.website)) {
       newErrors.website = '请输入有效的网址';
     }
@@ -537,15 +455,6 @@ export function ProfilePage() {
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateProfileForm()) return;
-
-    // V1.11.2：检测手机号变更——新手机号必须走验证码换绑流程，禁止直接写入
-    const newPhone = (formData.phone || '').trim();
-    const currentPhone = user?.phone || '';
-    const phoneChanged = newPhone !== currentPhone;
-    if (phoneChanged && !newPhone) {
-      setMessage('不支持直接清空手机号，请输入新手机号进行换绑');
-      return;
-    }
 
     setIsSubmitting(true);
     setMessage('');
@@ -570,8 +479,6 @@ export function ProfilePage() {
         website: formData.website,
         location: formData.location,
         custom_fields: formData.custom_fields,
-        // 手机号有变更时不随本次更新直存，待验证码校验通过后由换绑接口写入
-        ...(phoneChanged ? {} : { phone: formData.phone }),
       };
       // V1.8.0：资料修改为高危操作，经验证门包裹（用原始 API 以便 403 拦截可被识别）
       const updated = await verificationGuard('update_profile', () => updateUser(updateData));
@@ -579,13 +486,7 @@ export function ProfilePage() {
         throw new Error(updated.message || '更新用户信息失败');
       }
       await refreshUser();
-      if (phoneChanged) {
-        // 其他资料已保存：弹出验证码框并自动向新手机号发码
-        openPhoneBindModal(newPhone);
-        setMessage('其他资料已保存，请完成新手机号验证');
-      } else {
-        setMessage('资料更新成功');
-      }
+      setMessage('资料更新成功');
     } catch (error) {
       setMessage((error as Error).message || '更新失败');
     } finally {
@@ -669,22 +570,22 @@ export function ProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {verificationModal}
-      {/* 手机号换绑验证码弹窗 */}
-      {phoneModalOpen && (
+      {/* 更换邮箱验证码弹窗 */}
+      {emailModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
           <div className="rounded-2xl p-6 max-w-md w-full bg-white shadow-xl">
             <div className="flex items-start justify-between mb-2">
               <div>
-                <h3 className="text-lg font-bold text-gray-800">验证新手机号</h3>
+                <h3 className="text-lg font-bold text-gray-800">更换邮箱</h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  验证码将发送至 {maskPhone(phoneModalNum)}，10 分钟内有效
+                  请输入新邮箱地址，验证码 10 分钟内有效
                 </p>
               </div>
               <button
                 type="button"
-                onClick={handleClosePhoneBindModal}
+                onClick={handleCloseEmailBindModal}
                 className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                title="取消换绑"
+                title="取消"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -693,66 +594,75 @@ export function ProfilePage() {
             </div>
 
             <div className="space-y-4 mt-4">
+              {/* 新邮箱 */}
+              <input
+                type="email"
+                value={emailModalAddr}
+                onChange={(e) => setEmailModalAddr(e.target.value)}
+                placeholder="请输入新邮箱地址"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
+              />
+
               {/* 验证码输入 + 重发 */}
               <div className="flex gap-3">
                 <input
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
-                  value={phoneModalCode}
-                  onChange={(e) => setPhoneModalCode(e.target.value.replace(/\D/g, ''))}
+                  value={emailModalCode}
+                  onChange={(e) => setEmailModalCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="请输入 6 位验证码"
                   className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
                 />
                 <button
                   type="button"
-                  disabled={phoneModalCooldown > 0 || phoneModalSending || !phoneModalToken}
-                  onClick={handleSendPhoneModalCode}
+                  disabled={emailModalCooldown > 0 || emailModalSending || !emailModalToken}
+                  onClick={handleSendEmailModalCode}
                   className={`flex-shrink-0 px-4 rounded-lg text-sm font-medium transition-all ${
-                    phoneModalCooldown > 0 || phoneModalSending || !phoneModalToken
+                    emailModalCooldown > 0 || emailModalSending || !emailModalToken
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       : 'bg-teal-600 text-white hover:bg-teal-700'
                   }`}
                 >
-                  {phoneModalSending
+                  {emailModalSending
                     ? '发送中...'
-                    : phoneModalCooldown > 0
-                    ? `${phoneModalCooldown}s`
+                    : emailModalCooldown > 0
+                    ? `${emailModalCooldown}s`
                     : '重新发送'}
                 </button>
               </div>
 
               {/* 人机验证（打开后自动通过即触发发码） */}
               <TurnstileWidget
-                ref={phoneModalTurnstileRef}
+                ref={emailModalTurnstileRef}
                 action="login"
                 theme="light"
-                onSuccess={setPhoneModalToken}
-                onExpire={() => setPhoneModalToken('')}
-                onError={() => setPhoneModalToken('')}
+                onSuccess={setEmailModalToken}
+                onExpire={() => setEmailModalToken('')}
+                onError={() => setEmailModalToken('')}
               />
 
-              {phoneModalError && (
-                <p className="text-sm text-red-500">{phoneModalError}</p>
+              {emailModalError && (
+                <p className="text-sm text-red-500">{emailModalError}</p>
               )}
-              {phoneModalInfo && (
-                <p className="text-sm text-green-600">{phoneModalInfo}</p>
+              {emailModalInfo && (
+                <p className="text-sm text-green-600">{emailModalInfo}</p>
               )}
 
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={handleClosePhoneBindModal}
+                  onClick={handleCloseEmailBindModal}
                   className="flex-1 py-2.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmPhoneBind}
+                  onClick={handleConfirmEmailBind}
                   className="flex-1 py-2.5 rounded-lg font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
                 >
-                  确认绑定
+                  确认更换
                 </button>
               </div>
             </div>
@@ -1028,13 +938,34 @@ export function ProfilePage() {
                   error={errors.username}
                 />
 
-                <FieldRow
-                  label="邮箱"
-                  type="email"
-                  placeholder="请输入邮箱"
-                  value={user?.email}
-                  onChange={() => {}}
-                />
+                {/* 邮箱（只读确权字段，通过更换邮箱弹窗修改） */}
+                <div className="flex items-center gap-4">
+                  <label className="w-24 text-sm font-medium flex-shrink-0 text-gray-700">
+                    邮箱
+                  </label>
+                  <div className="flex-1 flex items-center justify-between gap-3 px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                    <span className="text-sm text-gray-800 truncate">{user?.email || '未绑定'}</span>
+                    {user?.email_verified === 1 ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium flex-shrink-0">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        已验证
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium flex-shrink-0">
+                        未验证
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openEmailBindModal(user?.email || '')}
+                    className="flex-shrink-0 text-sm text-teal-700 hover:text-teal-500 font-medium transition-colors"
+                  >
+                    更换邮箱
+                  </button>
+                </div>
 
                 <FieldRow
                   label="简介"
@@ -1042,17 +973,6 @@ export function ProfilePage() {
                   value={formData.bio}
                   onChange={(v) => handleInputChange('bio', v)}
                   error={errors.bio}
-                />
-
-                <FieldRow
-                  label="手机号"
-                  type="tel"
-                  placeholder="请输入手机号"
-                  value={formData.phone}
-                  onChange={(v) => handleInputChange('phone', v)}
-                  error={errors.phone}
-                  isPrivate={false}
-                  onTogglePrivate={() => {}}
                 />
 
                 <FieldRow
@@ -1620,10 +1540,18 @@ export function ProfilePage() {
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                      <span className="text-sm text-gray-500">手机号</span>
-                      <span className="text-sm font-medium text-gray-900">
-                        {user?.phone && user?.phone_verified === 1 ? maskPhone(user.phone) : '未绑定'}
-                      </span>
+                      <span className="text-sm text-gray-500">邮箱状态</span>
+                      {user?.email_verified === 1 ? (
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
+                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                          已验证
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          未验证
+                        </span>
+                      )}
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-sm text-gray-500">登录状态</span>
@@ -1635,99 +1563,43 @@ export function ProfilePage() {
                   </div>
                 </div>
 
-                {/* 绑定手机号 */}
+                {/* 邮箱安全 */}
                 <div className="rounded-lg p-5 bg-gray-50">
-                  <h3 className="text-base font-semibold mb-4 text-gray-800">绑定手机号</h3>
-                  {user?.phone && user?.phone_verified === 1 ? (
+                  <h3 className="text-base font-semibold mb-4 text-gray-800">邮箱安全</h3>
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-gray-800">已绑定手机号</p>
-                        <p className="text-sm text-gray-500">{maskPhone(user.phone)}</p>
+                        <p className="text-sm font-medium text-gray-800">当前邮箱</p>
+                        <p className="text-sm text-gray-500">{user?.email || '未绑定'}</p>
                       </div>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        已验证
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="flex gap-3">
-                        <div className="relative flex-1">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                            </svg>
-                          </div>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={11}
-                            value={bindPhoneNum}
-                            onChange={(e) => setBindPhoneNum(e.target.value.replace(/\D/g, ''))}
-                            placeholder="请输入手机号"
-                            className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3">
-                        <div className="relative flex-1">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                            </svg>
-                          </div>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={bindCode}
-                            onChange={(e) => setBindCode(e.target.value.replace(/\D/g, ''))}
-                            placeholder="6 位验证码"
-                            className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-teal-600 transition-all"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          disabled={bindCooldown > 0 || bindSending}
-                          onClick={handleSendBindCode}
-                          className={`flex-shrink-0 px-4 rounded-lg text-sm font-medium transition-all duration-300 ${
-                            bindCooldown > 0 || bindSending
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg'
-                          }`}
-                        >
-                          {bindSending ? '发送中...' : bindCooldown > 0 ? `${bindCooldown}s` : '发送验证码'}
-                        </button>
-                      </div>
-
-                      <TurnstileWidget
-                        ref={bindTurnstileRef}
-                        action="login"
-                        theme="light"
-                        onSuccess={setBindToken}
-                        onExpire={() => setBindToken('')}
-                        onError={() => setBindToken('')}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={handleBindPhone}
-                        className="w-full py-2.5 rounded-lg font-medium bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg transition-all duration-300"
-                      >
-                        绑定
-                      </button>
-
-                      {bindError && (
-                        <p className="text-sm text-red-500 text-center">{bindError}</p>
-                      )}
-                      {bindSuccess && (
-                        <p className="text-sm text-green-500 text-center">{bindSuccess}</p>
+                      {user?.email_verified === 1 ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          已验证
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                          未验证
+                        </span>
                       )}
                     </div>
-                  )}
+
+                    {user?.email_verified !== 1 && (
+                      <p className="text-xs leading-relaxed text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        邮箱尚未完成验证。可点击下方按钮对当前邮箱重新发起验证；也可在下次登录时通过邮箱验证码确认，系统将自动完成验证。
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => openEmailBindModal(user?.email || '')}
+                      className="w-full py-2.5 rounded-lg font-medium bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg transition-all duration-300"
+                    >
+                      更换邮箱 / 重新验证
+                    </button>
+                  </div>
                 </div>
 
                 {/* 安全操作 */}

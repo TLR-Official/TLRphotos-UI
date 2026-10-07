@@ -28,20 +28,24 @@
 
 ---
 
-## 安全约束 (V1.11.0)
+## 安全约束 (V2.0.0)
 
-验证码体系（Spug 通道，登录/注册/绑定手机号强制）：
+> ⚠️ **V2.0.0 破坏性变更**：全面移除手机验证码/短信通道（Spug），email 成为唯一账号标识与验证码通道；数据库 `users`/`admin_users` 的 `phone`/`phone_verified` 列物理删除（表重建迁移），旧 JWT 在部署后一律失效需重新登录。
+
+纯邮箱验证码体系（每次登录强制邮箱验证码；阿里云 DirectMail SMTP 为唯一发送通道）：
 
 - **验证码规格**：6 位纯数字；有效期 10 分钟；同一验证码最多 5 次错误尝试，超限锁定需重新获取
-- **存储安全**：入库仅存 HMAC-SHA256 哈希，明文码仅在内存中传递给 Spug 发送通道，绝不落库、不落日志；发送失败时作废旧记录，避免残留死码
+- **存储安全**：入库仅存 HMAC-SHA256 哈希，明文码仅在内存中传递给 SMTP 发送通道，绝不落库、不落日志；发送失败时作废旧记录，避免残留死码
 - **发送限速**（三层独立叠加，任一超限返回 `429 RATE_LIMITED` + `Retry-After`）：
-  - 同一 target 60 秒冷却（提示"发送过于频繁，请 60 秒后再试"）
-  - 同一 target 每小时最多 5 次
+  - 同一邮箱 60 秒冷却（提示"发送过于频繁，请 60 秒后再试"）
+  - 同一邮箱每小时最多 5 次
   - 同一 IP 每小时最多 20 次
-- **隐私脱敏**：接口响应与日志中的手机号/邮箱均脱敏返回（手机号中间 4 位 `*` 替换，如 `138****8000`）
+- **隐私脱敏**：接口响应与日志中的邮箱脱敏返回（如 `a***@example.com`）
 - **login_ticket**：两步登录中间票据，HMAC-SHA256 签名（恒时比较），绑定 userId + 客户端 IP（XFF 首段），10 分钟有效，IP 变更立即失效
-- **校验目标防伪造**：`/login/verify` 的验证目标由服务端按通道从用户记录取，客户端不可传入 target
-- **配置依赖**：短信走 Spug 通道（`SPUG_SMS_TEMPLATE`），邮件走阿里云 DirectMail SMTP（`ALIYUN_SMTP_HOST/PORT/USER/PASSWORD/FROM_NAME`）；任一通道未配置时对应验证码发送返回 503（fail-closed）
+- **bind_ticket**：无邮箱老用户在 `/login` 密码校验通过后获得的绑定票据，HMAC 签名 + IP 绑定，10 分钟有效；仅可用于 `/email/code/send`（bind_email）与 `/email/bind`
+- **校验目标防伪造**：`/login/verify` 的验证目标由服务端从用户记录取 `user.email`，客户端不可传入 target
+- **邮箱确权门**：上传/点赞/评论/资料修改等账户类操作要求 `email_verified=1`，否则返回 403 `EMAIL_VERIFICATION_REQUIRED`；新注册用户验码通过即确权，老用户首次登录验码后自动确权
+- **配置依赖**：验证码邮件统一走阿里云 DirectMail SMTP（`ALIYUN_SMTP_HOST/PORT/USER/PASSWORD/FROM_NAME`）；未配置时发送返回 503（fail-closed）。已删除配置：`SPUG_SMS_TEMPLATE`、`SUPER_ADMIN_PHONES`、`ADMIN_SMS_REQUIRED`
 
 ---
 
@@ -550,72 +554,72 @@ Content-Type: multipart/form-data
 
 ## 认证接口 (Auth)
 
-> **V1.11.0 账号体系升级**：支持手机号 / 邮箱双账号（`identifier` 自动识别）；登录改造为「密码校验 → 验证码确认」两段式；注册与绑定手机号强制一次性验证码（OTP）。
+> **V2.0.0 账号体系**：**仅支持邮箱**注册与登录（手机/短信通道全面移除）；登录保持「密码校验 → 邮箱验证码确认」两段式且**每次登录均须验码**；老用户首次登录验码通过即自动完成邮箱确权（`email_verified=1`）；账号无邮箱时进入强制邮箱绑定流程。
 
-### 发送验证码（V1.11.0 新增）
+### 发送邮箱验证码（V2.0.0）
 
-**POST** `/api/auth/otp/send`
+**POST** `/api/auth/email/code/send`
 
-向手机号（短信）或邮箱（邮件）发送 6 位数字验证码，用于登录、注册、绑定手机号三个场景。
+向邮箱发送 6 位数字验证码，用于登录、注册、绑定/更换邮箱三个场景。
 
-**限速**：三层叠加（同一 target 60s 冷却 / 同一 target 5 次每小时 / 同一 IP 20 次每小时），任一超限返回 `429 RATE_LIMITED` + `Retry-After`。
+**限速**：三层叠加（同一邮箱 60s 冷却 / 同一邮箱 5 次每小时 / 同一 IP 20 次每小时），任一超限返回 `429 RATE_LIMITED` + `Retry-After`。
 
 **请求体**:
 ```json
 {
-  "target": "13800138000",
+  "email": "user@example.com",
   "scene": "login",
-  "turnstile_token": "0.zzAAA..."
+  "turnstile_token": "0.zzAAA...",
+  "bind_ticket": "可选：bind_email 场景的绑定票据"
 }
 ```
 
 **参数说明**:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| target | string | 是 | 手机号或邮箱（≤254 字符），自动识别通道：手机号→sms，其余按邮箱格式校验→mail |
-| scene | string | 是 | 业务场景：`login` / `register` / `bind_phone` |
+| email | string | 是 | 邮箱地址（trim + 小写，≤254 字符），非法邮箱格式返回 400 |
+| scene | string | 是 | 业务场景：`login` / `register` / `bind_email` |
 | turnstile_token | string | 是 | Turnstile 挑战令牌（register 场景 action=register，其余 action=login） |
+| bind_ticket | string | 否 | bind_email 场景：无邮箱老用户登录第一段获得的绑定票据（与 JWT 二选一） |
 
 **场景规则**:
-- `login`：target 必须已注册，否则 404 `PHONE_NOT_REGISTERED` / `EMAIL_NOT_REGISTERED`
-- `register`：target 必须未注册，否则 409 `ALREADY_REGISTERED`
-- `bind_phone`：需登录（`Authorization: Bearer <token>`），target 必须为手机号且未被他人绑定（冲突 409 `ALREADY_REGISTERED`）
+- `login`：邮箱必须已注册，否则 404 `EMAIL_NOT_REGISTERED`
+- `register`：邮箱必须未注册，否则 409 `ALREADY_REGISTERED`
+- `bind_email`：须持有效 bind_ticket（IP 绑定）或有效 JWT；邮箱被**其他账号**占用时 409 `ALREADY_REGISTERED`；两者均无返回 401 `UNAUTHORIZED`
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
-    "channel": "sms",
+    "channel": "mail",
     "cooldown": 60,
     "expires_minutes": 10,
-    "target": "138****8000"
+    "target": "u***@example.com"
   }
 }
 ```
 
-**字段说明**：`channel` 为实际发送通道（`sms`/`mail`）；`cooldown` 为冷却秒数；`target` 已脱敏。
-
 **错误码**:
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | INVALID_PARAMS | 参数格式错误 / 手机号或邮箱格式不正确 / 不支持的场景 |
-| 401 | UNAUTHORIZED | bind_phone 场景未登录 |
+| 400 | INVALID_PARAMS | 参数格式错误 / 邮箱格式不正确 / 不支持的场景 |
+| 401 | UNAUTHORIZED | bind_email 场景无有效绑定凭证 |
 | 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用（fail-closed） |
-| 404 | PHONE_NOT_REGISTERED / EMAIL_NOT_REGISTERED | login 场景 target 未注册 |
-| 409 | ALREADY_REGISTERED | register 场景已注册 / bind_phone 手机号被他人绑定 |
+| 404 | EMAIL_NOT_REGISTERED | login 场景邮箱未注册 |
+| 409 | ALREADY_REGISTERED | register 场景邮箱已注册 / bind_email 被他人绑定 |
 | 429 | RATE_LIMITED | 触发三层限速之一 |
 | 500 | OTP_SEND_FAILED | 验证码发送失败（通道侧错误） |
-| 502/503 | Spug 透传码 | Spug 服务发送失败（502）或模板未配置（503） |
+| 502/503 | 邮件通道透传码 | SMTP 发送失败（502）或邮件服务未配置（503） |
 
-### 用户注册（V1.11.0 验证码改造）
+### 用户注册（V2.0.0：仅邮箱）
 
 **POST** `/api/auth/register`
 
 **请求体**:
 ```json
 {
-  "identifier": "13800138000",
+  "email": "user@example.com",
   "password": "password123",
   "username": "用户名",
   "code": "123456",
@@ -626,15 +630,13 @@ Content-Type: multipart/form-data
 **参数说明**:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| identifier | string | 是 | 手机号或邮箱（自动识别；兼容旧字段 `email`，identifier 缺失时回退读取） |
+| email | string | 是 | 邮箱地址（trim + 小写，≤254 字符）；传入手机号形态字符串返回 400 |
 | password | string | 是 | 密码（≤200 字符） |
-| username | string | 否 | 用户名（≤50 字符）；手机号注册缺省自动设为「用户+手机后4位」 |
-| code | string | 是 | 6 位数字验证码（scene=register），须先调用 `/api/auth/otp/send` 获取 |
+| username | string | 否 | 用户名（≤50 字符） |
+| code | string | 是 | 6 位数字验证码（scene=register），须先调用 `/api/auth/email/code/send` 获取 |
 | turnstile_token | string | 是 | Turnstile 挑战令牌（action=register），fail-closed |
 
-**账号写入规则**：
-- 手机号注册：`email=NULL`、`phone=手机号`、`phone_verified=1`
-- 邮箱注册：`email=邮箱`、`phone_verified=0`
+**账号写入规则**：验码通过后建号，`email=邮箱`、`email_verified=1`（注册即确权）。
 
 **响应**（201，注册成功视同完成登录，直接签发双令牌）:
 ```json
@@ -643,9 +645,10 @@ Content-Type: multipart/form-data
   "data": {
     "user": {
       "id": "user_1234567890123",
-      "email": null,
-      "username": "用户8000",
-      "avatar_url": null
+      "email": "user@example.com",
+      "username": "用户名",
+      "avatar_url": null,
+      "email_verified": 1
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "session_token": "abc123def456..."
@@ -656,26 +659,26 @@ Content-Type: multipart/form-data
 **错误码**:
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | INVALID_PARAMS | 参数格式错误 / identifier 非合法手机号或邮箱 |
+| 400 | INVALID_PARAMS | 参数格式错误 / 邮箱格式不正确 |
 | 400 | OTP_REQUIRED | 验证码缺失或非 6 位数字 |
 | 400 | OTP_EXPIRED | 验证码不存在 / 已使用 / 已过期（提示重新获取） |
 | 400 | OTP_MISMATCH | 验证码错误 |
 | 400 | OTP_LOCKED | 错误次数超过 5 次被锁定，需重新获取 |
 | 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
-| 409 | ALREADY_REGISTERED | 手机号 / 邮箱已被注册 |
+| 409 | ALREADY_REGISTERED | 邮箱已被注册 |
 | 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
 | 500 | REGISTER_FAILED | 注册失败 |
 
-### 用户登录 · 第一步：密码校验（V1.11.0 两段式）
+### 用户登录 · 第一步：密码校验（V2.0.0 两段式）
 
 **POST** `/api/auth/login`
 
-> ⚠️ **契约变更**：V1.11.0 起登录为两段式。第一步仅校验密码，**不再直接签发 JWT**；成功后返回 `login_ticket` 与可用验证码通道，客户端须继续调用 [`POST /api/auth/login/verify`](#用户登录--第二步验证码确认v1110-新增) 完成确认。旧版「一次请求直接返回 token」契约**已废弃**（仅测试环境 `TEST_BYPASS_TOKEN` 兼容路径保留原行为）。
+> 第一步仅校验密码，**不签发 JWT**；成功后返回 `login_ticket`，客户端须先调 [`POST /api/auth/email/code/send`](#发送邮箱验证码v200)（scene=login）再调 [`POST /api/auth/login/verify`](#用户登录--第二步邮箱验证码确认v200) 完成确认。每次登录均须完成邮箱验证码确认。
 
 **请求体**:
 ```json
 {
-  "identifier": "13800138000",
+  "email": "user@example.com",
   "password": "password123",
   "turnstile_token": "0.zzAAA..."
 }
@@ -684,7 +687,7 @@ Content-Type: multipart/form-data
 **参数说明**:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| identifier | string | 是 | 手机号或邮箱（自动识别；兼容旧字段 `email`） |
+| email | string | 是 | 邮箱地址（trim + 小写，≤254 字符）；传入手机号形态字符串返回 400 |
 | password | string | 是 | 密码（≤200 字符） |
 | turnstile_token | string | 条件 | 人机验证令牌（action=login）：该用户 168h 内已有有效验证状态（同 IP）时可省略，否则必传 |
 
@@ -695,32 +698,37 @@ Content-Type: multipart/form-data
   "data": {
     "otp_required": true,
     "login_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...",
-    "channels": ["email", "phone"],
     "expires_minutes": 10
   }
 }
 ```
 
-**字段说明**:
-- `otp_required`：固定 `true`，提示客户端进入验证码确认步骤
-- `login_ticket`：HMAC-SHA256 签名票据（绑定 userId + 过期时间 + 客户端 IP），10 分钟有效，第二步必须原样回传
-- `channels`：该账号可用的验证码通道列表——`email`（用户 email 非空时提供）、`phone`（phone 非空且 `phone_verified=1` 时提供）；客户端据此引导用户调 `/api/auth/otp/send`（scene=login）获取验证码
+**账号无邮箱时的强制绑定响应**（过渡态兜底）`403`:
+```json
+{
+  "success": false,
+  "code": "EMAIL_BIND_REQUIRED",
+  "message": "该账号尚未绑定邮箱，请先完成邮箱绑定",
+  "data": { "bind_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...", "expires_minutes": 10 }
+}
+```
+客户端随后用 bind_ticket 调 `/email/code/send`（bind_email）与 `/email/bind` 完成绑定，绑定成功即完成登录签发。
 
 **错误码**:
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | INVALID_PARAMS | 参数格式错误 / identifier 非合法手机号或邮箱 |
-| 401 | AUTH_FAILED | 密码错误 |
+| 400 | INVALID_PARAMS | 参数格式错误 / 邮箱格式不正确 |
+| 401 | AUTH_FAILED | 邮箱不存在或密码错误（不细分回显） |
 | 401 | AUTH_REJECTED | 账号已被封禁 / 禁用 |
 | 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
-| 404 | PHONE_NOT_REGISTERED | 手机号未注册（前端可引导"继续登录将注册新账号"流程） |
+| 403 | EMAIL_BIND_REQUIRED | 账号无邮箱，须先绑定（data.bind_ticket） |
 | 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
 
-### 用户登录 · 第二步：验证码确认（V1.11.0 新增）
+### 用户登录 · 第二步：邮箱验证码确认（V2.0.0）
 
 **POST** `/api/auth/login/verify`
 
-校验 `login_ticket`（签名 + 过期 + IP 匹配）后，按指定通道验证一次性验证码；通过后签发 JWT + 会话并建立 168h 人机验证状态。
+校验 `login_ticket`（签名 + 过期 + IP 匹配）后验证邮箱一次性验证码（**验证目标固定为服务端取出的该用户邮箱**，客户端不可传入）；通过后自动 `markEmailVerified` 完成确权（老用户首次登录即确权），再签发 JWT + 会话并建立 168h 人机验证状态。
 
 **限速**：10 次/分/IP，抑制验证码爆破。
 
@@ -728,7 +736,6 @@ Content-Type: multipart/form-data
 ```json
 {
   "login_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...",
-  "channel": "phone",
   "code": "123456"
 }
 ```
@@ -737,10 +744,9 @@ Content-Type: multipart/form-data
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | login_ticket | string | 是 | 第一步返回的登录票据（≤2048 字符） |
-| channel | string | 是 | 验证通道：`email` / `phone`；验证目标由服务端按通道从用户记录取（客户端不可伪造 target） |
 | code | string | 是 | 6 位数字验证码（scene=login） |
 
-**响应**（与旧登录契约一致）:
+**响应**（与注册成功结构一致）:
 ```json
 {
   "success": true,
@@ -749,7 +755,8 @@ Content-Type: multipart/form-data
       "id": "user_1234567890123",
       "email": "user@example.com",
       "username": "用户名",
-      "avatar_url": null
+      "avatar_url": null,
+      "email_verified": 1
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "session_token": "abc123def456..."
@@ -761,37 +768,34 @@ Content-Type: multipart/form-data
 | HTTP | code | 说明 |
 |------|------|------|
 | 400 | INVALID_TICKET | 票据格式非法 |
-| 400 | INVALID_PARAMS | channel 非 email/phone |
 | 400 | OTP_REQUIRED | 验证码缺失或非 6 位数字 |
 | 400 | OTP_EXPIRED / OTP_MISMATCH / OTP_LOCKED | 验证码过期 / 错误 / 锁定（语义同注册） |
-| 400 | CHANNEL_UNAVAILABLE | 该账号无此通道（如未绑定/未验证手机号） |
 | 401 | INVALID_TICKET | 票据签名无效 / 已过期 / IP 变更（需重新走第一步） |
 | 401 | USER_BANNED / USER_DISABLED | 出票后账号被封禁 / 禁用（签发前复核） |
+| 403 | EMAIL_BIND_REQUIRED | 该账号无邮箱（须先走绑定流程） |
 | 404 | USER_NOT_FOUND | 用户不存在 |
 | 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
 | 500 | LOGIN_FAILED | 登录失败 |
 
 **说明**:
 - `session_token` 有效期为 30 天，或连续 7 天无活动自动过期
-- **V1.7.0 封禁检查**：被封禁用户的现有 JWT 在所有需鉴权接口被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
-- **V1.8.0 人机验证**：登录成功（第二步通过）即建立/刷新 168h 验证状态
+- **封禁检查**：被封禁用户的现有 JWT 在所有需鉴权接口被 `loadAuthUser` 拦截，返回 `401 { code: "USER_BANNED" }`
+- **人机验证**：登录成功（第二步通过）即建立/刷新 168h 验证状态
 
-### 绑定手机号（V1.11.0 新增）
+### 绑定 / 更换邮箱（V2.0.0）
 
-**POST** `/api/auth/phone/bind`
+**POST** `/api/auth/email/bind`
 
-为当前登录账号绑定手机号并通过验证码完成验证（`phone_verified=1`）。
-
-**请求头**:
-```
-Authorization: Bearer <token>
-```
+支持两种身份凭证：
+- **bind_ticket**（无邮箱老用户登录第一段签发）：绑定成功后直接完成登录，签发 JWT + 会话
+- **JWT**（已登录用户更换邮箱）：绑定成功返回更新后的用户资料
 
 **请求体**:
 ```json
 {
-  "phone": "13800138000",
+  "email": "new@example.com",
   "code": "123456",
+  "bind_ticket": "可选：绑定票据（与 Authorization 头二选一）",
   "turnstile_token": "0.zzAAA..."
 }
 ```
@@ -799,21 +803,23 @@ Authorization: Bearer <token>
 **参数说明**:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| phone | string | 是 | 中国大陆手机号（`1[3-9]` 开头 11 位） |
-| code | string | 是 | 6 位数字验证码（scene=bind_phone，调 `/api/auth/otp/send` 获取） |
+| email | string | 是 | 新邮箱（trim + 小写，≤254 字符） |
+| code | string | 是 | 6 位数字验证码（scene=bind_email，调 `/api/auth/email/code/send` 获取） |
+| bind_ticket | string | 否 | 绑定票据；不传时必须携带 `Authorization: Bearer <token>` |
 | turnstile_token | string | 是 | Turnstile 挑战令牌（action=login） |
 
-**响应**（更新后的用户公开资料）:
+**响应（bind_ticket 路径）**：结构同登录成功（user + token + session_token，`email_verified=1`）。
+
+**响应（JWT 路径，更新后的用户资料）**:
 ```json
 {
   "success": true,
   "data": {
     "id": "user_1234567890123",
-    "email": "user@example.com",
+    "email": "new@example.com",
     "username": "用户名",
     "avatar_url": null,
-    "phone": "13800138000",
-    "phone_verified": 1
+    "email_verified": 1
   }
 }
 ```
@@ -821,12 +827,13 @@ Authorization: Bearer <token>
 **错误码**:
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | INVALID_PARAMS | 手机号格式不正确 |
+| 400 | INVALID_PARAMS | 邮箱格式不正确 / code 非 6 位数字 |
 | 400 | OTP_REQUIRED / OTP_EXPIRED / OTP_MISMATCH / OTP_LOCKED | 验证码相关错误（语义同注册） |
-| 401 | UNAUTHORIZED | 未登录 |
-| 401 | USER_BANNED / USER_DISABLED | 账号被封禁 / 禁用（loadAuthUser 拦截） |
+| 401 | INVALID_TICKET | bind_ticket 签名无效 / 过期 / IP 变更 |
+| 401 | UNAUTHORIZED | 既无有效票据也未登录 |
 | 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
-| 409 | ALREADY_REGISTERED | 该手机号已被其他账号绑定 |
+| 404 | USER_NOT_FOUND | 用户不存在 |
+| 409 | ALREADY_REGISTERED | 邮箱已被其他账号绑定 |
 | 500 | BIND_FAILED | 绑定失败 |
 
 ### 自动登录（刷新令牌）
@@ -885,7 +892,7 @@ Authorization: Bearer <token>
     "username": "用户名",
     "avatar_url": null,
     "bio": "个人简介",
-    "phone": "13800138000",
+    "email_verified": 1,
     "website": "https://example.com",
     "location": "北京市",
     "custom_fields": {},
@@ -908,7 +915,6 @@ Authorization: Bearer <token>
 {
   "username": "新用户名",
   "bio": "个人简介",
-  "phone": "13800138000",
   "website": "https://example.com",
   "location": "北京市",
   "custom_fields": {
@@ -930,13 +936,15 @@ Authorization: Bearer <token>
     "username": "新用户名",
     "avatar_url": null,
     "bio": "个人简介",
-    "phone": "13800138000",
+    "email_verified": 1,
     "website": "https://example.com",
     "location": "北京市",
     "custom_fields": {}
   }
 }
 ```
+
+> 邮箱未确权（`email_verified≠1`）时返回 403 `EMAIL_VERIFICATION_REQUIRED`；本接口不接受邮箱/手机号字段，更换邮箱须走 [`POST /api/auth/email/bind`](#绑定--更换邮箱v200)。
 
 ### 修改密码
 
@@ -1033,6 +1041,7 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 | /api/admin/users/:id/ban | POST | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/unban | POST | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/permissions | PUT | admin_user_admin | 403 验证门 |
+| /api/admin/users/:id/email | PUT | admin_user_admin | 403 验证门（V2.0.0 新增） |
 
 ### 验证门拦截响应（403）
 
@@ -1140,13 +1149,11 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 
 **统一请求头**: `Authorization: Bearer <admin_token>`（除登录接口外均需管理员鉴权）
 
-### 管理员登录（第一阶段）
+### 管理员登录（V2.0.0：全角色单阶段）
 
 **POST** `/api/admin/login`
 
-**说明**: 登录入口全链路防护：IP 限速（10 次/分钟）→ 严格输入校验 → Turnstile 人机验证 → 失败锁定检查 → bcrypt 常量时间校验。失败提示统一为「用户名或密码错误」，不可枚举用户。登录按角色分流：
-- **审核员（zone_master/zone_auditor）**：第一阶段直接签发 JWT，登录流程零变化；
-- **超管（super）**：第一阶段**不签发 JWT**，返回 5 分钟有效的短信票据，须再完成「发送短信验证码」与「校验短信验证码」两步；超管手机号经服务器配置 `SUPER_ADMIN_PHONES` 预绑定，未绑手机一律拒绝。
+**说明**: 登录入口全链路防护：IP 限速（10 次/分钟）→ 严格输入校验 → Turnstile 人机验证 → 失败锁定检查 → bcrypt 常量时间校验。失败提示统一为「用户名或密码错误」，不可枚举用户。**V2.0.0 起超管与审核员统一单阶段登录**：校验通过即直接签发 JWT，不再存在短信第二因素；`/login/sms/send`、`/login/sms/verify` 端点与 `ADMIN_SMS_REQUIRED`、`SUPER_ADMIN_PHONES` 配置均已删除。
 
 **请求体**:
 ```json
@@ -1159,100 +1166,13 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 
 **参数约束**: `username` 为字符串、trim 后 1–64 字符；`password` 为字符串、1–128 字符；`turnstile_token` 必填（测试环境可用 `tokens=TEST_BYPASS_TOKEN` 绕过）。
 
-**成功响应（审核员）** `200`:
+**成功响应（全角色统一）** `200`:
 ```json
 {
   "success": true,
   "token": "管理员 JWT（8h，含 iss/aud/tv 声明）",
   "admin": {
-    "id": "zone-auditor-id",
-    "username": "zoneauditor",
-    "name": "分区审核员",
-    "role": "zone_auditor",
-    "zone": "landscape",
-    "must_change_password": 0
-  }
-}
-```
-
-**成功响应（超管：短信第二因素票据）** `200`:
-```json
-{
-  "success": true,
-  "sms_required": true,
-  "ticket": "短信登录票据（5 分钟有效，HMAC 签名，绑定用户名与 IP）"
-}
-```
-
-**紧急开关说明**：`ADMIN_SMS_REQUIRED=off` 时超管短信第二因素整体停用，超管成功响应与审核员相同（直接返回 `token`，无 `sms_required`/`ticket` 字段）；默认未配置时短信门开启。
-
-**失败响应**:
-
-| 状态码 | code | 触发条件 |
-|--------|------|----------|
-| 400 | — | 缺失/类型错误/超长入参 |
-| 429 | RATE_LIMITED | 同 IP 超过 10 次/分钟（含 Retry-After） |
-| 403 | HUMAN_VERIFICATION_FAILED | Turnstile 缺失/无效/action 不符 |
-| 403 | ADMIN_LOGIN_LOCKED | 同用户名+同 IP 连续 5 次失败，锁定 15 分钟（`data.retry_after_seconds`） |
-| 403 | SUPER_PHONE_NOT_VERIFIED | 超管未绑定/未验证手机号（手机号只能经 `SUPER_ADMIN_PHONES` 配置） |
-| 401 | — | 用户名或密码错误 |
-
-### 超管登录发送短信验证码（第二阶段）
-
-**POST** `/api/admin/login/sms/send`
-
-**说明**: 凭第一阶段票据请求发送短信验证码（复用 Spug 短信通道，`scene=admin_login`），无需再次 Turnstile。受三层短信限速：同账号 60 秒冷却 + 同账号每小时 5 条 + 同 IP 每小时 20 条。验证码 10 分钟有效、哈希入库，明文不入库不落日志。
-
-**请求体**:
-```json
-{
-  "username": "admin",
-  "ticket": "第一阶段返回的短信票据"
-}
-```
-
-**成功响应** `200`:
-```json
-{
-  "success": true,
-  "message": "验证码已发送",
-  "cooldown_seconds": 60
-}
-```
-
-**失败响应**:
-
-| 状态码 | code | 触发条件 |
-|--------|------|----------|
-| 400 | — | 缺失/类型错误/超长入参 |
-| 401 | INVALID_LOGIN_TICKET | 票据缺失/篡改/过期/用户名或 IP 不符 |
-| 403 | ADMIN_LOGIN_LOCKED | 账号处于失败锁定期 |
-| 429 | RATE_LIMITED | 触发任一层短信限速 |
-| 503 | — | 短信通道未配置 |
-| 502 | — | 短信发送失败（对客户端脱敏） |
-
-### 超管登录校验短信验证码（第二阶段）
-
-**POST** `/api/admin/login/sms/verify`
-
-**说明**: 票据 + 6 位短信验证码均通过才签发 JWT。验证码错误计入失败锁定（与密码失败同口径，5 次锁定 15 分钟）；验证码自身另有 5 次错误尝试作废机制。
-
-**请求体**:
-```json
-{
-  "username": "admin",
-  "ticket": "第一阶段返回的短信票据",
-  "code": "6 位短信验证码"
-}
-```
-
-**成功响应** `200`:
-```json
-{
-  "success": true,
-  "token": "管理员 JWT（8h，含 iss/aud/tv 声明）",
-  "admin": {
-    "id": "super_admin_initial",
+    "id": "admin-id",
     "username": "admin",
     "name": "系统管理员",
     "role": "super",
@@ -1267,10 +1187,11 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 | 状态码 | code | 触发条件 |
 |--------|------|----------|
 | 400 | — | 缺失/类型错误/超长入参 |
-| 401 | INVALID_LOGIN_TICKET | 票据缺失/篡改/过期/用户名或 IP 不符 |
-| 401 | — | 验证码不正确 |
-| 401 | — | 验证码已过期（重新获取） |
-| 403 | ADMIN_LOGIN_LOCKED | 验证码或密码连续失败达 5 次锁定（`data.retry_after_seconds`） |
+| 429 | RATE_LIMITED | 同 IP 超过 10 次/分钟（含 Retry-After） |
+| 403 | HUMAN_VERIFICATION_FAILED | Turnstile 缺失/无效/action 不符 |
+| 403 | ADMIN_LOGIN_LOCKED | 同用户名+同 IP 连续 5 次失败，锁定 15 分钟（`data.retry_after_seconds`） |
+| 401 | — | 用户名或密码错误 |
+
 
 ### 修改当前管理员密码
 
@@ -1461,6 +1382,41 @@ Authorization: Bearer <admin_token>
 ```
 
 **审计日志**：`action=update_permissions`，`details` 含 `changes` 对象记录每项 `from→to`。
+
+### 超管代改用户邮箱（V2.0.0 新增）
+
+**PUT** `/api/admin/users/:id/email`
+
+**说明**：当用户无法自行收码换绑（如邮箱废弃）时，由超管代为指定新邮箱。更新后该用户 `email_verified=0`，下次登录必须完成邮箱验证码确认。
+
+**权限**：管理员鉴权 + **仅 `role=super`**（其他角色 403）+ 高危操作人机验证（`ensureHumanVerified`，168h 状态内同 IP 免重复挑战）。
+
+**请求体**:
+```json
+{
+  "email": "new@example.com",
+  "turnstile_token": "Turnstile 令牌（action=admin_login）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "邮箱已更新，用户须在下次登录时完成邮箱验证",
+  "data": { "email": "new@example.com", "email_verified": 0 }
+}
+```
+
+**错误码**:
+| 状态码 | code | 触发条件 |
+|--------|------|----------|
+| 400 | — | 邮箱格式不正确 |
+| 403 | HUMAN_VERIFICATION_REQUIRED | 人机验证未通过 |
+| 404 | — | 目标用户不存在 |
+| 409 | ALREADY_REGISTERED | 邮箱已被其他账号绑定 |
+
+**审计日志**：`action=update_user_email`，`target_id` 为用户 ID。
 
 ---
 

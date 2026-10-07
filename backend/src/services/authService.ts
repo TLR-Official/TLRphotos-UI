@@ -1,29 +1,28 @@
 /**
  * @file 认证服务
- * @description 面向普通用户（非管理员）的认证与账户管理：注册、登录、令牌校验、
- *              资料更新、密码修改与头像更新。密码采用 bcrypt 加盐哈希，会话凭证使用 JWT。
+ * @description 面向普通用户（非管理员）的认证与账户管理：邮箱注册、登录、令牌校验、
+ *              资料更新、密码修改与头像更新（V2.0.0：手机号体系全面移除，邮箱为唯一账号标识）。
+ *              密码采用 bcrypt 加盐哈希，会话凭证使用 JWT。
  */
 
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import type express from 'express';
 import { db } from '../db';
-import { createSession, deleteUserSessions } from './cookieService';
+import { createSession } from './cookieService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
 const SALT_ROUNDS = 10;
 
-/** 用户实体（对应 users 表结构） */
+/** 用户实体（对应 users 表结构，V2.0.0 去手机化） */
 export interface User {
   id: string;
-  // V1.11.0：email 可空（手机号注册用户无邮箱）
+  // 邮箱为唯一账号标识；NULL 仅允许出现在过渡绑定流程中
   email: string | null;
   username: string | null;
   avatar_url: string | null;
   bio: string | null;
-  phone: string | null;
-  phone_verified: number;
   website: string | null;
   location: string | null;
   custom_fields: string | null;
@@ -33,40 +32,29 @@ export interface User {
   can_view: number;
   can_download: number;
   can_like: number;
+  email_verified: number;
   created_at: string;
   updated_at: string;
 }
 
-/** 登录账号识别结果：邮箱 / 手机号 */
-export type IdentifierKind = 'email' | 'phone';
+/** 用户查询统一列集（含密码哈希，调用方不得外泄） */
+const USER_COLUMNS = `id, email, password_hash, username, avatar_url, bio, website, location,
+  custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like,
+  email_verified, created_at, updated_at`;
 
 /**
- * 识别登录账号类型：/^1[3-9]\d{9}$/ 判定为手机号，其余含 @ 且域名含点的为邮箱。
- * 与 auth.ts 路由层识别规则保持一致（单点维护风险可控：两处均使用本函数）。
+ * 校验邮箱格式：含 @ 且域名含点，不允许空白。
+ * V2.0.0 起为全项目唯一的账号格式校验。
  */
-export function detectIdentifier(identifier: string): IdentifierKind | null {
-  if (/^1[3-9]\d{9}$/.test(identifier)) return 'phone';
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) return 'email';
-  return null;
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 /**
- * 按登录账号（邮箱或手机号）查询用户。
- * 手机号查 phone 列、邮箱查 email 列；返回 null 表示未注册。
+ * 按邮箱查询用户；返回 null 表示未注册。
  */
-export async function findUserByIdentifier(identifier: string): Promise<User | null> {
-  const kind = detectIdentifier(identifier);
-  if (!kind) return null;
-  const user =
-    kind === 'phone'
-      ? await db.get(
-          'SELECT id, email, password_hash, username, avatar_url, bio, phone, phone_verified, website, location, custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at FROM users WHERE phone = ?',
-          identifier
-        )
-      : await db.get(
-          'SELECT id, email, password_hash, username, avatar_url, bio, phone, phone_verified, website, location, custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at FROM users WHERE email = ?',
-          identifier
-        );
+export async function findUserByEmail(email: string): Promise<User | null> {
+  const user = await db.get(`SELECT ${USER_COLUMNS} FROM users WHERE email = ?`, email);
   return user ? (user as User) : null;
 }
 
@@ -78,40 +66,33 @@ export interface LoginResult {
 }
 
 /**
- * 用户注册：唯一性校验通过后写入新用户。
- * V1.11.0 扩展：支持邮箱注册（email 写入）与手机号注册（email=NULL、phone 写入、phone_verified=1，
- * username 缺省自动生成「用户+手机后4位」）。
- * @param identifier 邮箱或手机号（自动识别）
+ * 用户注册：邮箱唯一性校验通过后写入新用户。
+ * V2.0.0：仅支持邮箱注册；注册前邮箱验证码由路由层校验，故建号即置 email_verified=1。
+ * @param email 注册邮箱
  * @param password 明文密码
  * @param username 可选用户名
  * @returns 新建用户信息（不含密码哈希）
  */
-export async function register(identifier: string, password: string, username?: string): Promise<User> {
-  const kind = detectIdentifier(identifier);
-  if (!kind) {
-    throw new Error('登录账号格式不正确');
+export async function register(email: string, password: string, username?: string): Promise<User> {
+  if (!isValidEmail(email)) {
+    throw new Error('邮箱格式不正确');
   }
 
-  const existingUser =
-    kind === 'phone'
-      ? await db.get('SELECT id FROM users WHERE phone = ?', identifier)
-      : await db.get('SELECT id FROM users WHERE email = ?', identifier);
+  const existingUser = await db.get('SELECT id FROM users WHERE email = ?', email);
   if (existingUser) {
-    throw new Error(kind === 'phone' ? '该手机号已被注册' : '邮箱已被注册');
+    throw new Error('邮箱已被注册');
   }
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   // 用户 ID 采用 user_ + 时间戳，保证可读性与唯一性
   const userId = `user_${Date.now()}`;
-  // 手机号注册缺省用户名：「用户+手机后4位」
-  const finalUsername = username || (kind === 'phone' ? `用户${identifier.slice(-4)}` : null);
+  const finalUsername = username || null;
 
   await db.run(
-    'INSERT INTO users (id, email, phone, phone_verified, password_hash, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO users (id, email, password_hash, username, email_verified, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?, ?)`,
     userId,
-    kind === 'email' ? identifier : null,
-    kind === 'phone' ? identifier : null,
-    kind === 'phone' ? 1 : 0,
+    email,
     passwordHash,
     finalUsername,
     new Date().toISOString(),
@@ -126,10 +107,8 @@ export async function register(identifier: string, password: string, username?: 
 }
 
 /**
- * 用户登录：校验账号密码并签发 JWT；勾选"记住我"时额外创建长期会话。
- * V1.11.0：账号查询统一走 findUserByIdentifier，支持邮箱 / 手机号；
- * JWT 签发与会话创建抽取为 issueLoginResult，供两段式登录的 verify 步复用。
- * @param email 登录账号（邮箱或手机号）
+ * 用户登录：校验邮箱密码并签发 JWT；勾选"记住我"时额外创建长期会话。
+ * @param email 登录邮箱
  * @param password 明文密码
  * @param remember 是否创建长期会话
  * @param ipAddress 客户端 IP（用于会话记录）
@@ -141,14 +120,14 @@ export async function login(email: string, password: string, remember?: boolean,
 }
 
 /**
- * 仅校验账号密码（两段式登录第一步使用，不签发 JWT / 不创建会话）。
- * 按手机号或邮箱识别查询；用户不存在、被封禁、被禁用、密码错误分别抛出对应错误。
- * @param identifier 邮箱或手机号
+ * 仅校验邮箱密码（两段式登录第一步使用，不签发 JWT / 不创建会话）。
+ * 用户不存在、被封禁、被禁用、密码错误分别抛出对应错误。
+ * @param email 登录邮箱
  * @param password 明文密码
  * @returns 密码校验通过的用户实体
  */
-export async function verifyPasswordOnly(identifier: string, password: string): Promise<User> {
-  const user = await findUserByIdentifier(identifier);
+export async function verifyPasswordOnly(email: string, password: string): Promise<User> {
+  const user = await findUserByEmail(email);
 
   if (!user) {
     throw new Error('账号或密码错误');
@@ -171,7 +150,7 @@ export async function verifyPasswordOnly(identifier: string, password: string): 
 }
 
 /**
- * 签发 JWT 并按需创建长期会话（两段式登录第二步 / 注册完成 / 测试绕过路径复用）。
+ * 签发 JWT 并按需创建长期会话（两段式登录第二步 / 注册完成复用）。
  * @param user 已完成校验的用户实体
  * @param remember 是否创建长期会话
  * @param ipAddress 客户端 IP（用于会话记录）
@@ -193,17 +172,16 @@ export async function issueLoginResult(user: User, remember?: boolean, ipAddress
       username: user.username || null,
       avatar_url: user.avatar_url || null,
       bio: user.bio || null,
-      phone: user.phone || null,
-      phone_verified: user.phone_verified ?? 0,
       website: user.website || null,
       location: user.location || null,
       custom_fields: user.custom_fields || null,
       is_active: user.is_active,
-      banned_at: null,
+      banned_at: user.banned_at || null,
       can_upload: user.can_upload ?? 1,
       can_view: user.can_view ?? 1,
       can_download: user.can_download ?? 1,
       can_like: user.can_like ?? 1,
+      email_verified: user.email_verified ?? 0,
       created_at: user.created_at,
       updated_at: user.updated_at,
     },
@@ -232,7 +210,7 @@ export function verifyToken(token: string): { userId: string } | null {
  * @returns 用户信息；不存在返回 null
  */
 export async function getUserById(userId: string): Promise<User | null> {
-  const user = await db.get('SELECT id, email, username, avatar_url, bio, phone, phone_verified, website, location, custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at FROM users WHERE id = ?', userId);
+  const user = await db.get(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`, userId);
   return user ? (user as User) : null;
 }
 
@@ -293,14 +271,13 @@ export async function loadAuthUser(req: express.Request): Promise<{ user: User |
  * @returns 更新后的用户信息
  */
 export async function updateUser(userId: string, data: Partial<User>): Promise<User> {
-  const { username, avatar_url, bio, phone, website, location, custom_fields } = data;
+  const { username, avatar_url, bio, website, location, custom_fields } = data;
 
   await db.run(
-    'UPDATE users SET username = ?, avatar_url = ?, bio = ?, phone = ?, website = ?, location = ?, custom_fields = ?, updated_at = ? WHERE id = ?',
+    'UPDATE users SET username = ?, avatar_url = ?, bio = ?, website = ?, location = ?, custom_fields = ?, updated_at = ? WHERE id = ?',
     username || null,
     avatar_url || null,
     bio || null,
-    phone || null,
     website || null,
     location || null,
     custom_fields || null,
@@ -313,6 +290,27 @@ export async function updateUser(userId: string, data: Partial<User>): Promise<U
     throw new Error('用户不存在');
   }
   return updatedUser;
+}
+
+/**
+ * 标记用户邮箱已确权（登录验证码校验成功后调用）。
+ */
+export async function markEmailVerified(userId: string): Promise<void> {
+  await db.run(
+    'UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?',
+    [new Date().toISOString(), userId]
+  );
+}
+
+/**
+ * 绑定（更换）用户邮箱并保持已确权状态。
+ * 调用前路由层必须已完成新邮箱的验证码校验。
+ */
+export async function bindUserEmail(userId: string, email: string): Promise<void> {
+  await db.run(
+    'UPDATE users SET email = ?, email_verified = 1, updated_at = ? WHERE id = ?',
+    [email, new Date().toISOString(), userId]
+  );
 }
 
 /**

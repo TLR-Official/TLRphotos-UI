@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, AdminSmsSendResponse, AdminSmsVerifyResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -31,53 +31,18 @@ export function getAdminToken() {
 }
 
 /**
- * 管理员登录第一阶段
- * 审核员直接返回 token；超管返回 sms_required + 短信票据，需继续完成第二阶段。
+ * 管理员登录（V2.0.0：全角色单阶段）
+ * 密码与 Turnstile 校验通过即签发 token。
  * @param username 用户名
  * @param password 密码
  * @param turnstileToken Turnstile 人机验证令牌（action=admin_login）
- * @returns 登录响应（token 或短信票据）
+ * @returns 登录响应
  */
 export async function login(username: string, password: string, turnstileToken: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, turnstile_token: turnstileToken }),
-  });
-  return response.json();
-}
-
-/**
- * 超管登录第二阶段-发送短信验证码
- * 凭第一阶段票据下发，受服务端三层短信限速约束。
- * @param username 超管用户名
- * @param ticket 短信登录票据
- */
-export async function sendAdminSms(username: string, ticket: string): Promise<AdminSmsSendResponse> {
-  const response = await fetch(`${API_BASE}/login/sms/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, ticket }),
-  });
-  return response.json();
-}
-
-/**
- * 超管登录第二阶段-校验短信验证码
- * 校验通过才签发 JWT。
- * @param username 超管用户名
- * @param ticket 短信登录票据
- * @param code 6 位短信验证码
- */
-export async function verifyAdminSms(
-  username: string,
-  ticket: string,
-  code: string
-): Promise<AdminSmsVerifyResponse> {
-  const response = await fetch(`${API_BASE}/login/sms/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, ticket, code }),
   });
   return response.json();
 }
@@ -331,6 +296,26 @@ export async function updateUserPermissions(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(perms),
+  });
+  return response.json();
+}
+
+/**
+ * 超管重置用户邮箱（V2.0.0：PUT /users/:id/email）
+ * 写入新邮箱并置 email_verified=0，用户下次登录时通过邮箱验证码完成确权。
+ * @param id 用户 id
+ * @param email 新邮箱地址
+ * @param turnstileToken Turnstile 令牌（action=update_user_email）
+ */
+export async function updateUserEmail(
+  id: string,
+  email: string,
+  turnstileToken: string
+): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/users/${id}/email`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ email, turnstile_token: turnstileToken }),
   });
   return response.json();
 }

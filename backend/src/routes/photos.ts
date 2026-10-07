@@ -17,6 +17,7 @@ import { loadAuthUser } from '../services/authService';
 import { ensureHumanVerified } from '../services/verificationService';
 import { memoryManager } from '../services/memoryManager';
 import { requireAuth } from '../middleware/requireAuth';
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
 import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = express.Router();
@@ -402,7 +403,7 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
  * @param id 照片 ID
  * @returns 最新点赞数 + is_liked 状态
  */
-router.post('/:id/like', async (req, res) => {
+router.post('/:id/like', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -451,7 +452,7 @@ router.post('/:id/like', async (req, res) => {
  * 取消点赞照片（需登录）。
  * 与点赞接口对称：未点赞时幂等返回当前值；已点赞则删除记录并扣减计数（MAX(0, ...) 防负数）。
  */
-router.delete('/:id/like', async (req, res) => {
+router.delete('/:id/like', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -704,7 +705,7 @@ function sendForbiddenImage(res: any) {
  * @body fileName 目标文件名
  * @returns uploadUrl 预签名上传 URL、key OSS 对象 Key
  */
-router.post('/upload/presigned', async (req, res) => {
+router.post('/upload/presigned', requireVerifiedEmail, async (req, res) => {
   try {
     // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
     const { user: authUser, error: authErr } = await loadAuthUser(req);
@@ -751,7 +752,7 @@ router.post('/upload/presigned', async (req, res) => {
  * 前端直传 OSS 成功后调用，服务端确认上传结果并写入照片元数据。
  * 照片 ID 取当前最大数值 ID + 1，并补零至 6 位。
  */
-router.post('/upload/complete', async (req, res) => {
+router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
   try {
     // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
     const { user: authUser, error: authErr } = await loadAuthUser(req);
@@ -885,6 +886,8 @@ router.post(
   // V1.10.1：认证与上传权限必须在 multer 解析前完成，
   // 未认证请求直接 401，不再先进入文件解析/缓冲层
   requireAuth,
+  // V2.0.0：邮箱未确权账户同样在文件解析前拒绝
+  requireVerifiedEmail,
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (!req.authUser?.can_upload) {
       res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
@@ -1125,7 +1128,7 @@ router.post(
  * 再删除数据库点赞记录与照片记录，保证资源与数据一致。
  * @param id 照片 ID
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
 

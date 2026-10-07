@@ -64,7 +64,7 @@ beforeAll(async () => {
     { id: TEST_USER_B, email: 'b@test.local', username: 'UserB' },
   ]) {
     await db.run(
-      'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, ?, ?)',
+      'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, 1, ?, ?)',
       u.id, u.email, '$2b$10$placeholderhashplaceholderhashplaceholderhashplaceholder', u.username, new Date().toISOString(), new Date().toISOString()
     );
   }
@@ -328,7 +328,7 @@ describe('图片统计与点赞', () => {
     const now = new Date().toISOString();
     for (const uid of userIds) {
       await db.run(
-        'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, ?, ?)',
+        'INSERT OR REPLACE INTO users (id, email, password_hash, username, is_active, banned_at, can_upload, can_view, can_download, can_like, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NULL, 1, 1, 1, 1, 1, ?, ?)',
         uid, `${uid}@test.local`, '$2b$10$placeholderhashplaceholderhashplaceholderhashplaceholder', uid, now, now
       );
     }
@@ -589,5 +589,36 @@ describe('V1.10.1 上传口认证前置（ID:4）', () => {
     );
     const res = await request(app).get(`/api/photos/${pendingId}`);
     expect(res.status).toBe(404);
+  });
+});
+
+// V2.0.0：账户功能（点赞 / 上传）须邮箱确权，email_verified=0 一律 403
+describe('V2.0.0 邮箱确权门（requireVerifiedEmail）', () => {
+  it('已登录但 email_verified=0 时点赞返回 403 EMAIL_VERIFICATION_REQUIRED', async () => {
+    await db.run('UPDATE users SET email_verified = 0 WHERE id = ?', TEST_USER_A);
+
+    const res = await request(app)
+      .post(`/api/photos/${testPhotoId}/like`)
+      .set('Authorization', `Bearer ${tokenA}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+
+    // 恢复确权状态，避免影响其他用例
+    await db.run('UPDATE users SET email_verified = 1 WHERE id = ?', TEST_USER_A);
+  });
+
+  it('email 为空时点赞返回 403 EMAIL_VERIFICATION_REQUIRED', async () => {
+    // 复用 tokenA 用户，临时清空邮箱（UNIQUE 允许多个 NULL）
+    await db.run('UPDATE users SET email = NULL, email_verified = 0 WHERE id = ?', TEST_USER_A);
+
+    const res = await request(app)
+      .post(`/api/photos/${testPhotoId}/like`)
+      .set('Authorization', `Bearer ${tokenA}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+
+    await db.run('UPDATE users SET email = ?, email_verified = 1 WHERE id = ?', 'a@test.local', TEST_USER_A);
   });
 });

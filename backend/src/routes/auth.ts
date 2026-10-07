@@ -1,10 +1,10 @@
 /**
  * @file auth.ts
- * @description 用户认证路由模块。
- *              覆盖注册、登录（两段式：密码 + 验证码）、登出、令牌刷新、当前用户信息维护、
- *              修改密码、上传头像、绑定手机号、查看指定用户公开资料与照片、
- *              用户仪表盘统计等场景。鉴权统一基于 Bearer Token + Session Token 双令牌机制。
- *              V1.11.0：登录改造为「密码校验 → 验证码确认」两段式，支持手机号 / 邮箱双账号体系。
+ * @description 用户认证路由模块（V2.0.0：纯邮箱认证体系，全面移除手机验证码）。
+ *              覆盖邮箱验证码发送、注册、登录（两段式：密码 + 邮箱验证码，每次登录均须验码）、
+ *              无邮箱/换邮箱绑定、登出、令牌刷新、当前用户信息维护、修改密码、上传头像、
+ *              查看指定用户公开资料与照片、用户仪表盘统计等场景。
+ *              鉴权统一基于 Bearer Token + Session Token 双令牌机制。
  */
 import express from 'express';
 import jwt from 'jsonwebtoken';
@@ -16,11 +16,13 @@ import {
   updateUser,
   changePassword,
   updateAvatar,
-  findUserByIdentifier,
-  detectIdentifier,
+  findUserByEmail,
+  isValidEmail,
   verifyPasswordOnly,
   issueLoginResult,
   loadAuthUser,
+  markEmailVerified,
+  bindUserEmail,
 } from '../services/authService';
 import { getSession, updateLastActive, deleteSession } from '../services/cookieService';
 import {
@@ -33,11 +35,9 @@ import {
   getVerificationIp,
 } from '../services/verificationService';
 import { createCodeRecord, verifyCode, maskTarget } from '../services/otpService';
-import type { OtpChannel, OtpScene } from '../services/otpService';
-import { sendSmsCode } from '../services/spugService';
-import type { OtpServiceError as SpugOtpError } from '../services/spugService';
+import type { OtpScene } from '../services/otpService';
 import { sendMailCode } from '../services/aliMailService';
-import type { OtpServiceError as MailOtpError } from '../services/aliMailService';
+import type { OtpServiceError } from '../services/aliMailService';
 import { db } from '../db';
 import multer from 'multer';
 import path from 'path';
@@ -45,25 +45,24 @@ import fs from 'fs';
 import { getProxyUrl } from '../utils/url';
 import { createRateLimiter } from '../middleware/rateLimit';
 
-/** 两个 OTP 通道（短信 / 邮件）的统一服务错误类型 */
-type OtpServiceError = SpugOtpError | MailOtpError;
-
 // V1.10.1：认证口限速，按 IP 每窗口 10 次，抑制凭据爆破与类型探测
 const authLimiter = createRateLimiter({ max: 10, message: '尝试过于频繁，请稍后再试' });
 
-// V1.11.0：验证码发送口三层限速 —— 每 target 60s 1 次（冷却）、每 target 每小时 5 次、每 IP 每小时 20 次
+// 邮箱验证码发送口三层限速 —— 每邮箱 60s 1 次（冷却）、每邮箱每小时 5 次、每 IP 每小时 20 次
 // 三层独立限速器实例叠加，任一超限即 429；测试环境（NODE_ENV=test）限速器默认放行
+const emailKey = (req: express.Request) =>
+  `email:${typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''}`;
 const otpCooldownLimiter = createRateLimiter({
   windowMs: 60_000,
   max: 1,
   message: '发送过于频繁，请 60 秒后再试',
-  keyFn: (req) => `target:${typeof req.body?.target === 'string' ? req.body.target : ''}`,
+  keyFn: emailKey,
 });
 const otpTargetHourLimiter = createRateLimiter({
   windowMs: 60 * 60_000,
   max: 5,
-  message: '该账号获取验证码过于频繁，请稍后再试',
-  keyFn: (req) => `target:${typeof req.body?.target === 'string' ? req.body.target : ''}`,
+  message: '该邮箱获取验证码过于频繁，请稍后再试',
+  keyFn: emailKey,
 });
 const otpIpHourLimiter = createRateLimiter({
   windowMs: 60 * 60_000,
@@ -81,9 +80,9 @@ const JWT_EXPIRES_IN = '24h';
  * 兜底使用 socket 远端地址，用于会话审计与风控。
  */
 function getClientIp(req: express.Request): string {
-  const ip = req.headers['x-forwarded-for'] || 
-             req.headers['x-real-ip'] || 
-             req.socket.remoteAddress || 
+  const ip = req.headers['x-forwarded-for'] ||
+             req.headers['x-real-ip'] ||
+             req.socket.remoteAddress ||
              'unknown';
   return Array.isArray(ip) ? ip[0] : ip;
 }
@@ -116,33 +115,34 @@ const cleanupTempFile = (req: any) => {
   }
 };
 
-// ==================== V1.11.0 两段式登录票据（login_ticket） ====================
-/** login_ticket 有效期：10 分钟（密码通过后须在该窗口内完成验证码确认） */
-const LOGIN_TICKET_TTL_MS = 10 * 60 * 1000;
+// ==================== 短期票据（login_ticket / bind_ticket，HMAC 签名） ====================
+/** 票据有效期：10 分钟（密码通过后须在该窗口内完成验证码确认或邮箱绑定） */
+const TICKET_TTL_MS = 10 * 60 * 1000;
 
-/** login_ticket 载荷（HMAC 签名保护，密钥 = JWT_SECRET） */
-interface LoginTicketPayload {
+/** 票据载荷（HMAC 签名保护，密钥 = JWT_SECRET） */
+interface TicketPayload {
   userId: string;
+  typ: 'login' | 'bind';
   exp: number;
   ip: string;
 }
 
 /**
- * 生成 login_ticket：格式 `${base64url(JSON payload)}.${hmac}`。
- * payload 含 userId / 过期时间戳 / 客户端 IP，HMAC-SHA256 防篡改。
+ * 生成短期票据：格式 `${base64url(JSON payload)}.${hmac}`。
+ * payload 含 userId / 类型 / 过期时间戳 / 客户端 IP，HMAC-SHA256 防篡改。
  */
-function signLoginTicket(userId: string, ip: string): string {
-  const payload: LoginTicketPayload = { userId, exp: Date.now() + LOGIN_TICKET_TTL_MS, ip };
+function signTicket(typ: TicketPayload['typ'], userId: string, ip: string): string {
+  const payload: TicketPayload = { userId, typ, exp: Date.now() + TICKET_TTL_MS, ip };
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const sig = crypto.createHmac('sha256', JWT_SECRET).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
 /**
- * 校验 login_ticket：格式、HMAC 签名（恒时比较）、过期时间、IP 匹配（XFF 首段）。
+ * 校验短期票据：格式、HMAC 签名（恒时比较）、类型、过期时间、IP 匹配。
  * 返回 null 表示无效；有效返回载荷。
  */
-function verifyLoginTicket(ticket: string, ip: string): LoginTicketPayload | null {
+function verifyTicket(ticket: string, typ: TicketPayload['typ'], ip: string): TicketPayload | null {
   const dotIndex = ticket.lastIndexOf('.');
   if (dotIndex <= 0) return null;
   const body = ticket.slice(0, dotIndex);
@@ -152,13 +152,18 @@ function verifyLoginTicket(ticket: string, ip: string): LoginTicketPayload | nul
   const b = Buffer.from(expected, 'utf8');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
-  let payload: LoginTicketPayload;
+  let payload: TicketPayload;
   try {
-    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as LoginTicketPayload;
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TicketPayload;
   } catch {
     return null;
   }
-  if (typeof payload.userId !== 'string' || typeof payload.exp !== 'number' || typeof payload.ip !== 'string') {
+  if (
+    typeof payload.userId !== 'string' ||
+    payload.typ !== typ ||
+    typeof payload.exp !== 'number' ||
+    typeof payload.ip !== 'string'
+  ) {
     return null;
   }
   if (payload.exp <= Date.now()) return null;
@@ -171,6 +176,28 @@ function sendError(res: express.Response, status: number, code: string, message:
   return res.status(status).json({ success: false, message, code });
 }
 
+/** 验证码校验失败原因码 → 统一错误响应 */
+function sendOtpError(
+  res: express.Response,
+  result: { ok: boolean; error?: string }
+): boolean {
+  if (result.ok) return false;
+  switch (result.error) {
+    case 'OTP_NOT_FOUND':
+    case 'OTP_EXPIRED':
+    case 'OTP_INVALID':
+      sendError(res, 400, 'OTP_EXPIRED', '验证码已过期，请重新获取');
+      return true;
+    case 'OTP_MISMATCH':
+      sendError(res, 400, 'OTP_MISMATCH', '验证码错误');
+      return true;
+    case 'OTP_LOCKED':
+    default:
+      sendError(res, 400, 'OTP_LOCKED', '验证码错误次数过多，请重新获取');
+      return true;
+  }
+}
+
 /** 构造与登录一致的响应用户体（剔除敏感字段） */
 function buildLoginResponseUser(u: any) {
   return {
@@ -178,74 +205,68 @@ function buildLoginResponseUser(u: any) {
     email: u.email ?? null,
     username: u.username ?? null,
     avatar_url: u.avatar_url ?? null,
+    email_verified: u.email_verified ?? 0,
   };
 }
 
 const router = express.Router();
 
 /**
- * 发送登录 / 注册 / 绑定手机号验证码（V1.11.0）。
- * 入参 { target, scene, turnstile_token }；自动识别 target 为手机号（短信）或邮箱（邮件）。
- * 场景规则：
- *  - login：target 必须已注册，否则 404 PHONE_NOT_REGISTERED / EMAIL_NOT_REGISTERED；
- *  - register：target 必须未注册，否则 409 ALREADY_REGISTERED；
- *  - bind_phone：需登录，target 必须为手机号且未被他人绑定。
- * 三层限速（target 60s 冷却 / target 每小时 5 次 / IP 每小时 20 次）+ Turnstile 人机验证。
- * 明文码仅在内存中传递给 Spug 发送通道，发送失败时作废旧记录后抛错，绝不入库、不落日志。
+ * 发送邮箱验证码（V2.0.0）。
+ * 入参 { email, scene, turnstile_token }；场景仅限：
+ *  - login：邮箱必须已注册，否则 404 EMAIL_NOT_REGISTERED；
+ *  - register：邮箱必须未注册，否则 409 ALREADY_REGISTERED；
+ *  - bind_email：须持有效 bind_ticket（登录第一段无邮箱时签发）或 JWT（已登录换邮箱），
+ *    且邮箱未被其他账号占用。
+ * 三层限速（邮箱 60s 冷却 / 邮箱每小时 5 次 / IP 每小时 20 次）+ Turnstile 人机验证。
+ * 明文码仅在内存中传递给邮件发送通道，发送失败时作废旧记录后抛错，绝不入库、不落日志。
  */
-router.post('/otp/send', otpCooldownLimiter, otpTargetHourLimiter, otpIpHourLimiter, async (req, res) => {
+router.post('/email/code/send', otpCooldownLimiter, otpTargetHourLimiter, otpIpHourLimiter, async (req, res) => {
   try {
-    const { target, scene, turnstile_token, tokens } = req.body ?? {};
+    const { email, scene, turnstile_token, tokens, bind_ticket } = req.body ?? {};
 
     // 严格入口校验：类型 + 长度上限，拦截类型混淆
-    if (typeof target !== 'string' || typeof scene !== 'string') {
+    if (typeof email !== 'string' || typeof scene !== 'string') {
       return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
     }
-    if (!['login', 'register', 'bind_phone'].includes(scene)) {
+    if (!['login', 'register', 'bind_email'].includes(scene)) {
       return sendError(res, 400, 'INVALID_PARAMS', '不支持的业务场景');
     }
-    const trimmedTarget = target.trim();
-    if (!trimmedTarget || trimmedTarget.length > 254) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
+    const trimmedEmail = email.trim().toLowerCase();
+    if (trimmedEmail.length > 254 || !isValidEmail(trimmedEmail)) {
+      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的邮箱地址');
     }
 
-    // 自动识别通道：手机号 → sms；其余按邮箱格式校验（含 @ 与域名点）
-    const kind = detectIdentifier(trimmedTarget);
-    if (!kind) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的手机号或邮箱');
-    }
-    const channel: OtpChannel = kind === 'phone' ? 'sms' : 'mail';
-
-    if (scene === 'bind_phone') {
-      // 绑定手机号：需登录（loadAuthUser 统一处理封禁 / 禁用），且 target 必须为手机号
-      const { user, error } = await loadAuthUser(req);
-      if (error) {
-        return sendError(res, error.status, error.code, error.message);
+    if (scene === 'bind_email') {
+      // 绑定场景：bind_ticket 或 JWT 至少有一，且邮箱未被他人占用
+      const vIp = getVerificationIp(req);
+      let binderId: string | null = null;
+      if (typeof bind_ticket === 'string') {
+        const payload = verifyTicket(bind_ticket, 'bind', vIp);
+        binderId = payload?.userId || null;
+      } else {
+        const { user } = await loadAuthUser(req);
+        binderId = user?.id || null;
       }
-      if (!user) {
-        return sendError(res, 401, 'UNAUTHORIZED', '请先登录');
+      if (!binderId) {
+        return sendError(res, 401, 'UNAUTHORIZED', '绑定凭证已失效，请重新登录');
       }
-      if (kind !== 'phone') {
-        return sendError(res, 400, 'INVALID_PARAMS', '绑定手机号仅支持手机号');
-      }
-      const conflict = await db.get('SELECT id FROM users WHERE phone = ?', trimmedTarget);
-      if (conflict && conflict.id !== user.id) {
-        return sendError(res, 409, 'ALREADY_REGISTERED', '该手机号已被其他账号绑定');
+      const conflict = await findUserByEmail(trimmedEmail);
+      if (conflict && conflict.id !== binderId) {
+        return sendError(res, 409, 'ALREADY_REGISTERED', '该邮箱已被其他账号绑定');
       }
     } else {
-      // 登录 / 注册场景：检查 target 注册状态
-      const existing = await findUserByIdentifier(trimmedTarget);
+      // 登录 / 注册场景：检查邮箱注册状态
+      const existing = await findUserByEmail(trimmedEmail);
       if (scene === 'login' && !existing) {
-        return kind === 'phone'
-          ? sendError(res, 404, 'PHONE_NOT_REGISTERED', '该手机号未注册，继续登录将注册新账号')
-          : sendError(res, 404, 'EMAIL_NOT_REGISTERED', '该邮箱未注册');
+        return sendError(res, 404, 'EMAIL_NOT_REGISTERED', '该邮箱未注册');
       }
       if (scene === 'register' && existing) {
-        return sendError(res, 409, 'ALREADY_REGISTERED', '该账号已被注册');
+        return sendError(res, 409, 'ALREADY_REGISTERED', '该邮箱已被注册');
       }
     }
 
-    // Turnstile 人机验证：与登录 / 注册一致（action=login / register），测试环境支持 tokens 绕过
+    // Turnstile 人机验证（register 场景 action=register，其余 action=login），测试环境支持 tokens 绕过
     if (!isTestBypass(tokens)) {
       const verdict = await verifyTurnstileToken(
         turnstile_token,
@@ -257,86 +278,75 @@ router.post('/otp/send', otpCooldownLimiter, otpTargetHourLimiter, otpIpHourLimi
       }
     }
 
-    // 生成验证码记录（入库仅存哈希），随后调用 Spug 发送明文码
+    // 生成验证码记录（入库仅存哈希，channel 固定 mail），随后发送邮件
     const ip = getVerificationIp(req);
-    const code = await createCodeRecord(trimmedTarget, channel, scene as OtpScene, ip);
+    const code = await createCodeRecord(trimmedEmail, scene as OtpScene, ip);
     try {
-      if (channel === 'sms') {
-        await sendSmsCode(trimmedTarget, code, 10);
-      } else {
-        const sceneLabel = scene === 'register' ? '注册验证' : scene === 'bind_phone' ? '绑定手机号' : '登录验证';
-        await sendMailCode(trimmedTarget, code, 10, sceneLabel);
-      }
+      const sceneLabel = scene === 'register' ? '注册验证' : scene === 'bind_email' ? '绑定邮箱' : '登录验证';
+      await sendMailCode(trimmedEmail, code, 10, sceneLabel);
     } catch (sendErr) {
       // 发送失败：作废刚创建的记录（置 used_at），避免残留可校验的死码，再向上抛错
       await db.run(
         'UPDATE verification_codes SET used_at = ? WHERE target = ? AND scene = ? AND used_at IS NULL',
-        [new Date().toISOString(), trimmedTarget, scene]
+        [new Date().toISOString(), trimmedEmail, scene]
       );
       throw sendErr;
     }
 
-    // 日志仅记录脱敏目标，禁止明文码 / 完整目标落日志
-    console.log(`[OTP] 验证码已发送: scene=${scene} channel=${channel} target=${maskTarget(trimmedTarget)}`);
+    // 日志仅记录脱敏目标，禁止明文码 / 完整邮箱落日志
+    console.log(`[OTP] 邮箱验证码已发送: scene=${scene} target=${maskTarget(trimmedEmail)}`);
 
     return res.json({
       success: true,
       data: {
-        channel,
+        channel: 'mail',
         cooldown: 60,
         expires_minutes: 10,
-        target: maskTarget(trimmedTarget),
+        target: maskTarget(trimmedEmail),
       },
     });
   } catch (error) {
-    // Spug 服务错误（含未配置 503 / 发送失败 502）：按携带的 status/code 透传，客户端提示已脱敏
-    const otpErr = error as OtpServiceError;
-    if (typeof otpErr?.status === 'number' && typeof otpErr?.code === 'string') {
-      return sendError(res, otpErr.status, otpErr.code, otpErr.message);
+    // 邮件服务错误（含未配置 503 / 发送失败 502）：按携带的 status/code 透传，客户端提示已脱敏
+    const mailErr = error as OtpServiceError;
+    if (typeof mailErr?.status === 'number' && typeof mailErr?.code === 'string') {
+      return sendError(res, mailErr.status, mailErr.code, mailErr.message);
     }
-    console.error('OTP send error:', error);
+    console.error('Email code send error:', error);
     return sendError(res, 500, 'OTP_SEND_FAILED', '验证码发送失败，请稍后再试');
   }
 });
 
 /**
- * 用户注册（V1.11.0 验证码注册改造）。
- * 入参 { identifier, password, username?, code, turnstile_token }；identifier 自动识别邮箱 / 手机号。
- * 注册前必须通过 otpService.verifyCode(target, code, 'register') 校验一次性验证码；
- * 手机号注册：email=NULL、phone=手机号、phone_verified=1、username 缺省「用户+手机后4位」；
- * 邮箱注册：email=邮箱、phone 不变（phone_verified=0）。
- * 注册成功视同完成登录验证，直接签发 JWT 并创建会话（remember=true），返回结构与登录一致。
+ * 用户注册（V2.0.0：仅邮箱注册）。
+ * 入参 { email, password, username?, code, turnstile_token }；
+ * 注册前必须通过 verifyCode(email, code, 'register') 校验一次性邮箱验证码；
+ * 注册成功即邮箱已确权（email_verified=1），直接签发 JWT 并创建会话（remember=true），
+ * 返回结构与登录一致。
  */
 router.post('/register', authLimiter, async (req, res) => {
   try {
-    const { identifier, email: legacyEmail, password, username, code, turnstile_token, tokens } = req.body ?? {};
-    // 兼容旧版字段：identifier 缺失时回退读取 email（邮箱注册路径）
-    const account = (typeof identifier === 'string' ? identifier : typeof legacyEmail === 'string' ? legacyEmail : '').trim();
+    const { email, password, username, code, turnstile_token, tokens } = req.body ?? {};
 
-    // V1.10.1：严格入口校验 —— 必须为字符串（拦截对象/数组等类型混淆，
-    // 防止非字符串进入 ORM 绑定位置触发引擎错误外泄）
-    if (!account || typeof password !== 'string') {
+    // 严格入口校验：类型 + 长度上限，拦截类型混淆导致的引擎错误外泄
+    if (typeof email !== 'string' || typeof password !== 'string') {
       return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
     }
-    if (!password) {
-      return sendError(res, 400, 'INVALID_PARAMS', '账号和密码不能为空');
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      return sendError(res, 400, 'INVALID_PARAMS', '邮箱和密码不能为空');
     }
-    if (account.length > 254 || password.length > 200) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
+    if (trimmedEmail.length > 254 || password.length > 200 || !isValidEmail(trimmedEmail)) {
+      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的邮箱地址');
     }
     if (username !== undefined && (typeof username !== 'string' || username.length > 50)) {
       return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
-    }
-    const kind = detectIdentifier(account);
-    if (!kind) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的手机号或邮箱');
     }
     // 验证码必填：格式收敛为 6 位数字字符串（防注入 + 提前拦截无效请求）
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       return sendError(res, 400, 'OTP_REQUIRED', '请输入 6 位验证码');
     }
 
-    // V1.8.0 人机验证：注册必须先通过 Turnstile（action=register；测试环境可用 tokens 绕过）
+    // 人机验证：注册必须先通过 Turnstile（action=register；测试环境可用 tokens 绕过）
     if (!isTestBypass(tokens)) {
       const verdict = await verifyTurnstileToken(turnstile_token, 'register', getVerificationIp(req));
       if (!verdict.ok) {
@@ -344,23 +354,11 @@ router.post('/register', authLimiter, async (req, res) => {
       }
     }
 
-    // 注册验证码校验（scene=register）：失败原因码映射统一文案，不落明文码
-    const otpResult = await verifyCode(account, code, 'register');
-    if (!otpResult.ok) {
-      switch (otpResult.error) {
-        case 'OTP_NOT_FOUND':
-        case 'OTP_EXPIRED':
-        case 'OTP_INVALID':
-          return sendError(res, 400, 'OTP_EXPIRED', '验证码已过期，请重新获取');
-        case 'OTP_MISMATCH':
-          return sendError(res, 400, 'OTP_MISMATCH', '验证码错误');
-        case 'OTP_LOCKED':
-        default:
-          return sendError(res, 400, 'OTP_LOCKED', '验证码错误次数过多，请重新获取');
-      }
-    }
+    // 注册验证码校验（scene=register），不落明文码
+    const otpResult = await verifyCode(trimmedEmail, code, 'register');
+    if (sendOtpError(res, otpResult)) return;
 
-    const user = await register(account, password, username);
+    const user = await register(trimmedEmail, password, username);
 
     // 注册成功即完成登录验证：直接签发 JWT + 创建长期会话（remember 默认 true）
     const ipAddress = getClientIp(req);
@@ -380,7 +378,7 @@ router.post('/register', authLimiter, async (req, res) => {
   } catch (error) {
     console.error('Registration error:', error);
     const message = error instanceof Error ? error.message : '注册失败';
-    // 唯一性冲突（手机号 / 邮箱已注册）归一化为 409
+    // 唯一性冲突（邮箱已注册）归一化为 409
     if (message.includes('已被注册')) {
       return sendError(res, 409, 'ALREADY_REGISTERED', message);
     }
@@ -389,55 +387,47 @@ router.post('/register', authLimiter, async (req, res) => {
 });
 
 /**
- * 用户登录第一步（V1.11.0 两段式改造）。
- * 入参 { identifier, password, turnstile_token }（identifier 兼容旧字段 email）。
- * identifier 自动识别邮箱 / 手机号（手机号查 phone 列、邮箱查 email 列）；
- * 手机号未注册返回 404 PHONE_NOT_REGISTERED（提示继续登录将注册新账号）。
+ * 用户登录第一步（V2.0.0：仅邮箱，两段式；每次登录均须完成邮箱验证码确认）。
+ * 入参 { email, password, turnstile_token }。
  * 密码校验通过后不签发 JWT、不创建会话，仅返回 login_ticket（HMAC-SHA256 签名，
- * 绑定 userId + 过期时间 + 客户端 IP，10 分钟有效）与可用验证码通道列表：
- *  - email 通道：用户 email 非空时提供；
- *  - phone 通道：用户 phone 非空且 phone_verified=1 时提供。
- * 客户端须继续调用 POST /login/verify 完成验证码确认。
+ * 绑定 userId + 过期时间 + 客户端 IP，10 分钟有效）。
+ * 账号无邮箱（过渡态）时返回 403 EMAIL_BIND_REQUIRED + bind_ticket，
+ * 客户端须先调用 /email/code/send（bind_email）再调用 /email/bind 完成绑定与登录。
  *
- * 测试兼容（仅 NODE_ENV=test 且 turnstile_token === TEST_BYPASS_TOKEN）：
- * 维持改造前原行为直接签发 JWT + 创建会话，保证存量测试套件不受影响。
+ * 测试兼容（仅 NODE_ENV=test 且 turnstile_token/tokens 命中绕过口径）：
+ * 直接签发 JWT + 创建会话，保证测试套件效率。
  */
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { identifier, email: legacyEmail, password, turnstile_token, tokens } = req.body ?? {};
-    // 兼容旧版字段：identifier 缺失时回退读取 email（邮箱登录路径）
-    const account = (typeof identifier === 'string' ? identifier : typeof legacyEmail === 'string' ? legacyEmail : '').trim();
+    const { email, password, turnstile_token, tokens } = req.body ?? {};
 
-    // V1.10.1：严格入口校验（同注册），拦截类型混淆导致的引擎错误外泄
-    if (!account || typeof password !== 'string') {
+    // 严格入口校验（同注册），拦截类型混淆导致的引擎错误外泄
+    if (typeof email !== 'string' || typeof password !== 'string') {
       return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
     }
-    if (!password) {
-      return sendError(res, 400, 'INVALID_PARAMS', '账号和密码不能为空');
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      return sendError(res, 400, 'INVALID_PARAMS', '邮箱和密码不能为空');
     }
-    if (account.length > 254 || password.length > 200) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
-    }
-    if (!detectIdentifier(account)) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的手机号或邮箱');
+    if (trimmedEmail.length > 254 || password.length > 200 || !isValidEmail(trimmedEmail)) {
+      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的邮箱地址');
     }
 
     const ipAddress = getClientIp(req);
     const vIp = getVerificationIp(req);
 
-    // 测试兼容路径（TEST BYPASS）：仅测试环境且 turnstile_token 命中 TEST_BYPASS_TOKEN 时，
-    // 维持改造前原行为直接签发 JWT + 创建会话（旧测试不挂）；生产环境该通道物理关闭
+    // 测试兼容路径：仅测试环境且命中绕过口径时直接签发（生产环境物理关闭）
     const testBypass =
       isTestBypass(tokens) ||
       (process.env.NODE_ENV === 'test' &&
         typeof turnstile_token === 'string' &&
         turnstile_token === (process.env.TEST_BYPASS_TOKEN || ''));
 
-    // V1.8.0 人机验证（fail-closed），按序判断：
+    // 人机验证（fail-closed），按序判断：
     // 1) 测试环境绕过；2) 168h 内已验证、未登出且 IP 未变 → 免重复验证；
     // 3) 否则必须携带有效 Turnstile token（action=login）方可进入密码校验
     if (!testBypass) {
-      const userRow = await findUserByIdentifier(account);
+      const userRow = await findUserByEmail(trimmedEmail);
       const verified = userRow ? await getValidVerification('user', userRow.id, vIp) : null;
       if (!verified) {
         const verdict = await verifyTurnstileToken(turnstile_token, 'login', vIp);
@@ -447,16 +437,8 @@ router.post('/login', authLimiter, async (req, res) => {
       }
     }
 
-    // 手机号未注册：返回 404 + 业务码，前端据此引导「继续登录将注册新账号」流程
-    if (detectIdentifier(account) === 'phone') {
-      const exists = await findUserByIdentifier(account);
-      if (!exists) {
-        return sendError(res, 404, 'PHONE_NOT_REGISTERED', '该手机号未注册，继续登录将注册新账号');
-      }
-    }
-
     // 第一步：仅校验密码（不签发 JWT / 不创建会话）
-    const user = await verifyPasswordOnly(account, password);
+    const user = await verifyPasswordOnly(trimmedEmail, password);
 
     // 测试兼容路径直接完成签发（不走验证码第二步）
     if (testBypass) {
@@ -472,19 +454,24 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    // 第二步前置：返回 login_ticket 与可用验证码通道（10 分钟内完成确认）
-    const channels: string[] = [];
-    if (user.email) channels.push('email');
-    if (user.phone && user.phone_verified === 1) channels.push('phone');
+    // 账号无邮箱：签发 bind_ticket 引导强制绑定（历史过渡态；V2.0.0 迁移后理论上不触发，保留安全兜底）
+    if (!user.email) {
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_BIND_REQUIRED',
+        message: '该账号尚未绑定邮箱，请先完成邮箱绑定',
+        data: { bind_ticket: signTicket('bind', user.id, vIp), expires_minutes: 10 },
+      });
+    }
 
-    const loginTicket = signLoginTicket(user.id, vIp);
+    // 第二步前置：返回 login_ticket（10 分钟内完成邮箱验证码确认）
+    const loginTicket = signTicket('login', user.id, vIp);
 
     return res.json({
       success: true,
       data: {
         otp_required: true,
         login_ticket: loginTicket,
-        channels,
         expires_minutes: 10,
       },
     });
@@ -500,23 +487,19 @@ router.post('/login', authLimiter, async (req, res) => {
 });
 
 /**
- * 用户登录第二步：验证码确认（V1.11.0）。
- * 入参 { login_ticket, channel, code }；channel ∈ email / phone，
- * 校验目标取该用户的 email / phone 字段（客户端不可伪造 target）。
- * 依次校验：login_ticket 签名 / 过期 / IP 匹配 → otpService.verifyCode(scene=login)。
- * 通过后复用 issueLoginResult 签发 JWT + 创建会话（remember 默认 true），
- * 并建立 168h 人机验证状态；返回结构与原登录一致。
- * 限速：10 次/分/IP（authLimiter 同规格独立实例），抑制验证码爆破。
+ * 用户登录第二步：邮箱验证码确认（V2.0.0）。
+ * 入参 { login_ticket, code }；校验目标固定为该用户 email（客户端不可伪造 target）。
+ * 依次校验：login_ticket 签名 / 过期 / IP 匹配 → verifyCode(scene=login)。
+ * 通过后 markEmailVerified 完成确权（老用户首次登录即自动确权），
+ * 再复用 issueLoginResult 签发 JWT + 创建会话（remember 默认 true），并建立 168h 人机验证状态。
+ * 限速：10 次/分/IP，抑制验证码爆破。
  */
 router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于频繁，请稍后再试' }), async (req, res) => {
   try {
-    const { login_ticket, channel, code } = req.body ?? {};
+    const { login_ticket, code } = req.body ?? {};
 
     if (typeof login_ticket !== 'string' || login_ticket.length > 2048) {
       return sendError(res, 400, 'INVALID_TICKET', '登录票据无效，请重新登录');
-    }
-    if (channel !== 'email' && channel !== 'phone') {
-      return sendError(res, 400, 'INVALID_PARAMS', '不支持的验证通道');
     }
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       return sendError(res, 400, 'OTP_REQUIRED', '请输入 6 位验证码');
@@ -524,8 +507,8 @@ router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于
 
     const vIp = getVerificationIp(req);
 
-    // 票据校验：签名（恒时比较）+ 过期 + IP 匹配（XFF 首段）
-    const payload = verifyLoginTicket(login_ticket, vIp);
+    // 票据校验：签名（恒时比较）+ 类型 + 过期 + IP 匹配
+    const payload = verifyTicket(login_ticket, 'login', vIp);
     if (!payload) {
       return sendError(res, 401, 'INVALID_TICKET', '登录票据已失效，请重新登录');
     }
@@ -542,26 +525,16 @@ router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于
       return sendError(res, 401, 'USER_DISABLED', '用户已被禁用');
     }
 
-    // 校验目标由服务端按通道从用户记录取（不信任客户端传 target）
-    const target = channel === 'email' ? user.email : user.phone;
-    if (!target) {
-      return sendError(res, 400, 'CHANNEL_UNAVAILABLE', '该账号不支持此验证通道');
+    // 校验目标由服务端从用户记录取（不信任客户端传 target）
+    if (!user.email) {
+      return sendError(res, 403, 'EMAIL_BIND_REQUIRED', '该账号尚未绑定邮箱，请先完成邮箱绑定');
     }
 
-    const otpResult = await verifyCode(target, code, 'login');
-    if (!otpResult.ok) {
-      switch (otpResult.error) {
-        case 'OTP_NOT_FOUND':
-        case 'OTP_EXPIRED':
-        case 'OTP_INVALID':
-          return sendError(res, 400, 'OTP_EXPIRED', '验证码已过期，请重新获取');
-        case 'OTP_MISMATCH':
-          return sendError(res, 400, 'OTP_MISMATCH', '验证码错误');
-        case 'OTP_LOCKED':
-        default:
-          return sendError(res, 400, 'OTP_LOCKED', '验证码错误次数过多，请重新获取');
-      }
-    }
+    const otpResult = await verifyCode(user.email, code, 'login');
+    if (sendOtpError(res, otpResult)) return;
+
+    // 邮箱确权：老用户首次登录验码通过即置 email_verified=1
+    await markEmailVerified(user.id);
 
     // 签发 JWT + 创建长期会话（remember 默认 true），建立 168h 人机验证状态
     const result = await issueLoginResult(user, true, getClientIp(req));
@@ -582,66 +555,92 @@ router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于
 });
 
 /**
- * 绑定手机号（V1.11.0，需登录）。
- * 入参 { phone, code, turnstile_token }；手机号格式校验 + 查重（被他人绑定 → 409）。
- * 通过 otpService.verifyCode(phone, code, 'bind_phone') 校验后写入 phone 并置 phone_verified=1。
- * 返回更新后的用户公开资料。
+ * 绑定 / 更换邮箱（V2.0.0，两种身份凭证）：
+ *  - bind_ticket：登录第一段发现账号无邮箱时签发，绑定成功后直接完成登录签发；
+ *  - JWT：已登录用户更换邮箱，绑定成功返回更新后的用户资料。
+ * 入参 { email, code, bind_ticket? }；邮箱格式校验 + 未被他人占用，
+ * 通过 verifyCode(email, code, 'bind_email') 后写入 email 并置 email_verified=1。
  */
-router.post('/phone/bind', async (req, res) => {
+router.post('/email/bind', authLimiter, async (req, res) => {
   try {
-    const { user, error } = await loadAuthUser(req);
-    if (error) {
-      return sendError(res, error.status, error.code, error.message);
-    }
-    if (!user) {
-      return sendError(res, 401, 'UNAUTHORIZED', '请先登录');
-    }
+    const { email, code, bind_ticket, turnstile_token, tokens } = req.body ?? {};
 
-    const { phone, code, turnstile_token, tokens } = req.body ?? {};
-    if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone.trim())) {
-      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的手机号');
+    if (typeof email !== 'string' || typeof code !== 'string') {
+      return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
     }
-    const trimmedPhone = phone.trim();
-    if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (trimmedEmail.length > 254 || !isValidEmail(trimmedEmail)) {
+      return sendError(res, 400, 'INVALID_PARAMS', '请输入正确的邮箱地址');
+    }
+    if (!/^\d{6}$/.test(code)) {
       return sendError(res, 400, 'OTP_REQUIRED', '请输入 6 位验证码');
     }
 
-    // Turnstile 人机验证（action=login，与验证码发送一致；测试环境可绕过）
+    const vIp = getVerificationIp(req);
+
+    // 身份解析：优先 bind_ticket；否则走 JWT
+    let ticketUser: { id: string } | null = null;
+    if (typeof bind_ticket === 'string') {
+      const payload = verifyTicket(bind_ticket, 'bind', vIp);
+      ticketUser = payload ? { id: payload.userId } : null;
+      if (!ticketUser) {
+        return sendError(res, 401, 'INVALID_TICKET', '绑定凭证已失效，请重新登录');
+      }
+    }
+
+    let authUser: Awaited<ReturnType<typeof loadAuthUser>>['user'] = null;
+    if (!ticketUser) {
+      const loaded = await loadAuthUser(req);
+      if (loaded.error) {
+        return sendError(res, loaded.error.status, loaded.error.code, loaded.error.message);
+      }
+      authUser = loaded.user;
+      if (!authUser) {
+        return sendError(res, 401, 'UNAUTHORIZED', '请先登录');
+      }
+    }
+
+    const targetUserId = ticketUser?.id || authUser!.id;
+
+    // 人机验证（确认步同发码步要求一致；测试环境可绕过）
     if (!isTestBypass(tokens)) {
-      const verdict = await verifyTurnstileToken(turnstile_token, 'login', getVerificationIp(req));
+      const verdict = await verifyTurnstileToken(turnstile_token, 'login', vIp);
       if (!verdict.ok) {
         return sendError(res, verdict.status, 'HUMAN_VERIFICATION_REQUIRED', verdict.message);
       }
     }
 
-    // 查重：手机号已被其他账号绑定 → 409
-    const conflict = await db.get('SELECT id FROM users WHERE phone = ?', trimmedPhone);
-    if (conflict && conflict.id !== user.id) {
-      return sendError(res, 409, 'ALREADY_REGISTERED', '该手机号已被其他账号绑定');
+    // 查重：邮箱已被其他账号绑定 → 409
+    const conflict = await findUserByEmail(trimmedEmail);
+    if (conflict && conflict.id !== targetUserId) {
+      return sendError(res, 409, 'ALREADY_REGISTERED', '该邮箱已被其他账号绑定');
     }
 
-    const otpResult = await verifyCode(trimmedPhone, code, 'bind_phone');
-    if (!otpResult.ok) {
-      switch (otpResult.error) {
-        case 'OTP_NOT_FOUND':
-        case 'OTP_EXPIRED':
-        case 'OTP_INVALID':
-          return sendError(res, 400, 'OTP_EXPIRED', '验证码已过期，请重新获取');
-        case 'OTP_MISMATCH':
-          return sendError(res, 400, 'OTP_MISMATCH', '验证码错误');
-        case 'OTP_LOCKED':
-        default:
-          return sendError(res, 400, 'OTP_LOCKED', '验证码错误次数过多，请重新获取');
+    const otpResult = await verifyCode(trimmedEmail, code, 'bind_email');
+    if (sendOtpError(res, otpResult)) return;
+
+    await bindUserEmail(targetUserId, trimmedEmail);
+
+    // bind_ticket 路径：绑定即完成登录，签发 JWT + 会话
+    if (ticketUser) {
+      const boundUser = await getUserById(targetUserId);
+      if (!boundUser) {
+        return sendError(res, 404, 'USER_NOT_FOUND', '用户不存在');
       }
+      const result = await issueLoginResult(boundUser, true, getClientIp(req));
+      await saveVerification('user', boundUser.id, vIp, 'login');
+      return res.json({
+        success: true,
+        data: {
+          user: buildLoginResponseUser(result.user),
+          token: result.token,
+          session_token: result.session_token,
+        },
+      });
     }
 
-    await db.run('UPDATE users SET phone = ?, phone_verified = 1, updated_at = ? WHERE id = ?', [
-      trimmedPhone,
-      new Date().toISOString(),
-      user.id,
-    ]);
-
-    const updated = await getUserById(user.id);
+    // JWT 路径：返回更新后的用户资料
+    const updated = await getUserById(targetUserId);
     return res.json({
       success: true,
       data: {
@@ -649,13 +648,12 @@ router.post('/phone/bind', async (req, res) => {
         email: updated!.email,
         username: updated!.username,
         avatar_url: updated!.avatar_url,
-        phone: updated!.phone,
-        phone_verified: updated!.phone_verified,
+        email_verified: updated!.email_verified,
       },
     });
   } catch (err) {
-    console.error('Phone bind error:', err);
-    return sendError(res, 500, 'BIND_FAILED', '绑定手机号失败，请稍后再试');
+    console.error('Email bind error:', err);
+    return sendError(res, 500, 'BIND_FAILED', '绑定邮箱失败，请稍后再试');
   }
 });
 
@@ -699,7 +697,7 @@ router.get('/me', async (req, res) => {
         username: user.username,
         avatar_url: user.avatar_url,
         bio: user.bio,
-        phone: user.phone,
+        email_verified: user.email_verified,
         website: user.website,
         location: user.location,
         // custom_fields 以 JSON 字符串存储，返回时解析为对象
@@ -714,8 +712,8 @@ router.get('/me', async (req, res) => {
 });
 
 /**
- * 更新当前登录用户资料。
- * 支持用户名、简介、电话、网站、所在地与自定义字段；custom_fields 序列化为 JSON 字符串存储。
+ * 更新当前登录用户资料（V2.0.0：移除手机号字段；邮箱未确权账户拒绝）。
+ * 支持用户名、简介、网站、所在地与自定义字段；custom_fields 序列化为 JSON 字符串存储。
  */
 router.put('/me', async (req, res) => {
   try {
@@ -731,18 +729,26 @@ router.put('/me', async (req, res) => {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
-    // V1.8.0：资料修改为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const currentUser = await getUserById(decoded.userId);
+    if (!currentUser) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    // V2.0.0：账户功能须邮箱确权
+    if (!currentUser.email || currentUser.email_verified !== 1) {
+      return sendError(res, 403, 'EMAIL_VERIFICATION_REQUIRED', '请先完成邮箱验证后再使用该功能');
+    }
+
+    // 资料修改为高危操作，需人机验证状态（168h 内同 IP 有效）
     const denied = await ensureHumanVerified('user', decoded.userId, req);
     if (denied) {
       return res.status(denied.status).json(denied.payload);
     }
 
-    const { username, bio, phone, website, location, custom_fields } = req.body;
+    const { username, bio, website, location, custom_fields } = req.body;
 
     const updatedUser = await updateUser(decoded.userId, {
       username,
       bio,
-      phone,
       website,
       location,
       // 自定义字段序列化为 JSON 字符串便于持久化
@@ -757,7 +763,7 @@ router.put('/me', async (req, res) => {
         username: updatedUser.username,
         avatar_url: updatedUser.avatar_url,
         bio: updatedUser.bio,
-        phone: updatedUser.phone,
+        email_verified: updatedUser.email_verified,
         website: updatedUser.website,
         location: updatedUser.location,
         custom_fields: updatedUser.custom_fields ? JSON.parse(updatedUser.custom_fields) : null,
@@ -770,7 +776,7 @@ router.put('/me', async (req, res) => {
 });
 
 /**
- * 修改当前登录用户密码。
+ * 修改当前登录用户密码（V2.0.0：邮箱未确权账户拒绝）。
  * 需提供原密码与新密码，原密码校验通过后方可更新。
  */
 router.put('/me/password', async (req, res) => {
@@ -787,7 +793,15 @@ router.put('/me/password', async (req, res) => {
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
-    // V1.8.0：修改密码为高危操作，需人机验证状态（168h 内同 IP 有效）
+    const currentUser = await getUserById(decoded.userId);
+    if (!currentUser) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    if (!currentUser.email || currentUser.email_verified !== 1) {
+      return sendError(res, 403, 'EMAIL_VERIFICATION_REQUIRED', '请先完成邮箱验证后再使用该功能');
+    }
+
+    // 修改密码为高危操作，需人机验证状态（168h 内同 IP 有效）
     const denied = await ensureHumanVerified('user', decoded.userId, req);
     if (denied) {
       return res.status(denied.status).json(denied.payload);
@@ -809,7 +823,7 @@ router.put('/me/password', async (req, res) => {
 });
 
 /**
- * 上传当前用户头像。
+ * 上传当前用户头像（V2.0.0：邮箱未确权账户拒绝并清理临时文件）。
  * 接收 multipart 文件，保存至本地 uploads 目录后写入用户记录，
  * 头像 URL 通过 /uploads 静态目录对外提供。
  */
@@ -817,7 +831,6 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      // 鉴权失败时 multer 已将文件落盘，需清理临时文件
       cleanupTempFile(req);
       return res.status(401).json({ success: false, message: '未授权' });
     }
@@ -826,12 +839,21 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
     const decoded = verifyToken(token);
 
     if (!decoded) {
-      // 令牌无效时 multer 已将文件落盘，需清理临时文件
       cleanupTempFile(req);
       return res.status(401).json({ success: false, message: '无效的令牌' });
     }
 
-    // V1.8.0：头像上传为高危操作，需人机验证状态；拦截时清理 multer 已落盘临时文件
+    const currentUser = await getUserById(decoded.userId);
+    if (!currentUser) {
+      cleanupTempFile(req);
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    if (!currentUser.email || currentUser.email_verified !== 1) {
+      cleanupTempFile(req);
+      return sendError(res, 403, 'EMAIL_VERIFICATION_REQUIRED', '请先完成邮箱验证后再使用该功能');
+    }
+
+    // 头像上传为高危操作，需人机验证状态；拦截时清理 multer 已落盘临时文件
     const denied = await ensureHumanVerified('user', decoded.userId, req);
     if (denied) {
       cleanupTempFile(req);
@@ -854,7 +876,6 @@ router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
       },
     });
   } catch (error) {
-    // 异常路径下文件未被正式使用，清理临时文件
     cleanupTempFile(req);
     console.error('Upload avatar error:', error);
     res.status(500).json({ success: false, message: error instanceof Error ? error.message : '头像上传失败' });
@@ -869,7 +890,7 @@ router.post('/logout', async (req, res) => {
   try {
     const sessionToken = req.headers['x-session-token'] as string;
     if (sessionToken) {
-      // V1.8.0：退出登录使人机验证状态立即失效（再次高危操作需重新验证）
+      // 退出登录使人机验证状态立即失效（再次高危操作需重新验证）
       const session = await getSession(sessionToken);
       if (session?.user_id) {
         await clearVerification('user', session.user_id);

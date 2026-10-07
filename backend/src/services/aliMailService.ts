@@ -1,8 +1,8 @@
 /**
  * @file aliMailService.ts
  * @description 阿里云邮件推送（DirectMail）SMTP 验证码服务。
- *              通过 smtpdm.aliyun.com:465 为登录 / 注册等场景发送一次性验证码（OTP）邮件，
- *              自 V1.12.0 起替换原 SPUG 邮件通道（短信通道仍由 spugService 承担）。
+ *              通过 smtpdm.aliyun.com:465 为登录 / 注册 / 绑定邮箱等场景发送一次性验证码（OTP）邮件。
+ *              V1.12.0 起替换原 SPUG 邮件通道；V2.0.0 短信功能移除后为唯一验证码发送通道。
  *
  *              连接参数与凭据经环境变量注入，禁止硬编码：
  *                ALIYUN_SMTP_HOST / ALIYUN_SMTP_PORT / ALIYUN_SMTP_USER /

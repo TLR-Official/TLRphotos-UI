@@ -27,8 +27,8 @@ export let db: Database;
 const initSchema = async () => {
   await db.exec(`
     -- 用户主表：存储注册用户基本信息与第三方登录绑定状态
-    -- email 可空（支持手机号+验证码无邮箱注册场景），phone_verified 标记手机号是否已通过验证码校验；
-    -- 存量库的 email NOT NULL 约束通过 initSchema 末尾的表重建迁移消除，此处仅约束全新库
+    -- V2.0.0：全面移除手机号体系，email 为唯一账号标识（仍允许 NULL：仅过渡绑定流程临时存在）；
+    -- email_verified 标记邮箱是否已通过验证码确权；登录验证码成功后自动置 1
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE,
@@ -36,7 +36,6 @@ const initSchema = async () => {
       username TEXT,
       avatar_url TEXT,
       bio TEXT,
-      phone TEXT,
       website TEXT,
       location TEXT,
       custom_fields TEXT,
@@ -45,7 +44,7 @@ const initSchema = async () => {
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      phone_verified INTEGER DEFAULT 0
+      email_verified INTEGER NOT NULL DEFAULT 0
     );
 
     -- 照片主表：thumbnail_path 为缩略图、original_url 指向 OSS 原图
@@ -161,8 +160,6 @@ const initSchema = async () => {
       is_active INTEGER DEFAULT 1,
       must_change_password INTEGER NOT NULL DEFAULT 0,
       token_version INTEGER NOT NULL DEFAULT 0,
-      phone TEXT,
-      phone_verified INTEGER NOT NULL DEFAULT 0,
       created_by TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -265,9 +262,9 @@ const initSchema = async () => {
     await db.run('ALTER TABLE users ADD COLUMN can_like INTEGER DEFAULT 1');
   } catch {}
 
-  // 登录验证码功能：手机号验证标记（表重建路径已含该列，此处覆盖未触发重建的存量库）
+  // V2.0.0 邮箱确权标记（表重建路径已含该列，此处覆盖未触发重建的存量库）
   try {
-    await db.run('ALTER TABLE users ADD COLUMN phone_verified INTEGER DEFAULT 0');
+    await db.run('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
   } catch {}
 
   // V1.13.0 管理员安全：强制改密标记 + JWT 版本号（改密即作废旧 JWT）
@@ -277,62 +274,156 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE admin_users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
   } catch {}
-  // V1.13.0 超管短信第二因素：绑定手机号与验证标记（由服务器配置引导，不经应用界面）
-  try {
-    await db.run('ALTER TABLE admin_users ADD COLUMN phone TEXT');
-  } catch {}
-  try {
-    await db.run('ALTER TABLE admin_users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0');
-  } catch {}
 
-  // users 表 email 可空化迁移：SQLite 不支持 ALTER COLUMN 修改约束，需整表重建。
-  // 幂等检测：仅当 email 列仍带 NOT NULL 约束（notnull=1）时执行，否则跳过。
-  const userTableInfo = await db.all('PRAGMA table_info(users)') as Array<{ name: string; notnull: number }>;
-  const emailColumn = userTableInfo.find((col) => col.name === 'email');
-  if (emailColumn && emailColumn.notnull === 1) {
-    // 迁移前备份数据库文件，失败可人工回滚
-    const backupPath = `${dbPath}.bak-otp-${Date.now()}`;
-    fs.copyFileSync(dbPath, backupPath);
+  // ==========================================================================
+  // V2.0.0：全面移除手机号体系，email 成为唯一账号标识
+  // 1) 删除扫描探测垃圾账号 2) 清空短信验证码记录
+  // 3) users 表重建去除 phone/phone_verified（含老库 email NOT NULL 解除）
+  // 4) admin_users 表重建去除 phone/phone_verified
+  // 全部步骤幂等；任何破坏性操作前先做整库文件备份
+  // ==========================================================================
 
-    // 重建期间必须关闭外键检查，避免 DROP TABLE users 触发 cookie 等子表级联删除；
-    // PRAGMA foreign_keys 不能在事务内修改，故在 BEGIN 前设置
+  const v2BackupPath = `${dbPath}.bak-v2-${Date.now()}`;
+  let v2BackedUp = false;
+  const ensureV2Backup = () => {
+    if (!v2BackedUp) {
+      fs.copyFileSync(dbPath, v2BackupPath);
+      v2BackedUp = true;
+    }
+  };
+
+  // 1) 探测垃圾账号：仅当无照片/点赞/浏览关联时删除，防止误删同名真实用户
+  const probeAccounts = (await db.all(
+    "SELECT id, username FROM users WHERE email IN ('agent.probe.9f2@example.com','agent.probe.role.a7@example.com')"
+  )) as Array<{ id: string; username: string }>;
+  for (const probe of probeAccounts) {
+    const rel = (await db.get(
+      `SELECT
+         (SELECT COUNT(*) FROM photos WHERE user_id = ?) AS photos,
+         (SELECT COUNT(*) FROM photo_likes WHERE user_id = ?) AS likes,
+         (SELECT COUNT(*) FROM photo_views WHERE viewer_key = ?) AS views`,
+      [probe.id, probe.id, `user:${probe.id}`]
+    )) as { photos: number; likes: number; views: number };
+    if (rel.photos === 0 && rel.likes === 0 && rel.views === 0) {
+      ensureV2Backup();
+      await db.run('DELETE FROM users WHERE id = ?', [probe.id]);
+      console.log(`[DB V2.0.0] 已删除探测账号: ${probe.username}`);
+    } else {
+      console.warn(`[DB V2.0.0] 探测账号存在关联数据，跳过删除: ${probe.username}`);
+    }
+  }
+
+  // 2) 清空短信验证码记录（表保留，收敛为纯邮箱验证码）
+  const smsCodeCount = (await db.get("SELECT COUNT(*) AS c FROM verification_codes WHERE channel='sms'")) as { c: number };
+  if (smsCodeCount.c > 0) {
+    ensureV2Backup();
+    await db.run("DELETE FROM verification_codes WHERE channel='sms'");
+  }
+
+  // 3)/4) 表重建：检测是否仍残留手机列（users 另含 email NOT NULL 老库场景）
+  const userCols = (await db.all('PRAGMA table_info(users)')) as Array<{ name: string; notnull: number }>;
+  const usersNeedsRebuild =
+    userCols.some((c) => c.name === 'phone' || c.name === 'phone_verified') ||
+    (userCols.find((c) => c.name === 'email')?.notnull ?? 0) === 1;
+
+  const adminCols = (await db.all('PRAGMA table_info(admin_users)')) as Array<{ name: string }>;
+  const adminNeedsRebuild = adminCols.some((c) => c.name === 'phone' || c.name === 'phone_verified');
+
+  if (usersNeedsRebuild || adminNeedsRebuild) {
+    ensureV2Backup();
+    const beforeUserCount = (await db.get('SELECT COUNT(*) AS c FROM users')) as { c: number };
+    const beforeAdminCount = (await db.get('SELECT COUNT(*) AS c FROM admin_users')) as { c: number };
+
+    // 重建期间关闭外键检查，避免 DROP TABLE 触发子表级联；PRAGMA 不能在事务内切换
     await db.exec('PRAGMA foreign_keys=OFF');
     try {
       await db.exec('BEGIN');
-      // users_new 结构与现 users 完全一致，仅 email 去除 NOT NULL，并新增 phone_verified
-      await db.exec(`
-        CREATE TABLE users_new (
-          id TEXT PRIMARY KEY,
-          email TEXT UNIQUE,
-          password_hash TEXT NOT NULL,
-          username TEXT,
-          avatar_url TEXT,
-          bio TEXT,
-          phone TEXT,
-          website TEXT,
-          location TEXT,
-          custom_fields TEXT,
-          wechat_openid TEXT,
-          qq_openid TEXT,
-          is_active INTEGER DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          banned_at TEXT,
-          can_upload INTEGER DEFAULT 1,
-          can_view INTEGER DEFAULT 1,
-          can_download INTEGER DEFAULT 1,
-          can_like INTEGER DEFAULT 1,
-          phone_verified INTEGER DEFAULT 0
-        );
-      `);
-      // 全量列复制（phone_verified 为新列，补默认值 0）
-      await db.exec(`
-        INSERT INTO users_new (id, email, password_hash, username, avatar_url, bio, phone, website, location, custom_fields, wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, can_upload, can_view, can_download, can_like, phone_verified)
-        SELECT id, email, password_hash, username, avatar_url, bio, phone, website, location, custom_fields, wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, can_upload, can_view, can_download, can_like, 0 FROM users
-      `);
-      await db.exec('DROP TABLE users');
-      await db.exec('ALTER TABLE users_new RENAME TO users');
+
+      if (usersNeedsRebuild) {
+        await db.exec(`
+          CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            username TEXT,
+            avatar_url TEXT,
+            bio TEXT,
+            website TEXT,
+            location TEXT,
+            custom_fields TEXT,
+            wechat_openid TEXT,
+            qq_openid TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            banned_at TEXT,
+            can_upload INTEGER DEFAULT 1,
+            can_view INTEGER DEFAULT 1,
+            can_download INTEGER DEFAULT 1,
+            can_like INTEGER DEFAULT 1,
+            email_verified INTEGER NOT NULL DEFAULT 0
+          );
+        `);
+        await db.exec(`
+          INSERT INTO users_new
+            (id, email, password_hash, username, avatar_url, bio, website, location, custom_fields,
+             wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at,
+             can_upload, can_view, can_download, can_like, email_verified)
+          SELECT
+            id, email, password_hash, username, avatar_url, bio, website, location, custom_fields,
+            wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at,
+            can_upload, can_view, can_download, can_like, email_verified
+          FROM users
+        `);
+        await db.exec('DROP TABLE users');
+        await db.exec('ALTER TABLE users_new RENAME TO users');
+
+        const afterUserCount = (await db.get('SELECT COUNT(*) AS c FROM users')) as { c: number };
+        if (afterUserCount.c !== beforeUserCount.c) {
+          throw new Error(`users 重建行数不一致: ${beforeUserCount.c} -> ${afterUserCount.c}`);
+        }
+      }
+
+      if (adminNeedsRebuild) {
+        await db.exec(`
+          CREATE TABLE admin_users_new (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            email TEXT UNIQUE,
+            name TEXT,
+            role TEXT NOT NULL DEFAULT 'zone_auditor',
+            zone TEXT DEFAULT 'default',
+            is_active INTEGER DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            token_version INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await db.exec(`
+          INSERT INTO admin_users_new
+            (id, username, password_hash, email, name, role, zone, is_active,
+             must_change_password, token_version, created_by, created_at, updated_at)
+          SELECT
+            id, username, password_hash, email, name, role, zone, is_active,
+            must_change_password, token_version, created_by, created_at, updated_at
+          FROM admin_users
+        `);
+        await db.exec('DROP TABLE admin_users');
+        await db.exec('ALTER TABLE admin_users_new RENAME TO admin_users');
+
+        const afterAdminCount = (await db.get('SELECT COUNT(*) AS c FROM admin_users')) as { c: number };
+        if (afterAdminCount.c !== beforeAdminCount.c) {
+          throw new Error(`admin_users 重建行数不一致: ${beforeAdminCount.c} -> ${afterAdminCount.c}`);
+        }
+      }
+
       await db.exec('COMMIT');
+      console.log(
+        `[DB V2.0.0] 表重建完成: users=${beforeUserCount.c}${usersNeedsRebuild ? '(已去手机列)' : ''}, admin_users=${beforeAdminCount.c}${adminNeedsRebuild ? '(已去手机列)' : ''}`
+      );
     } catch (migrationError) {
       await db.exec('ROLLBACK');
       throw migrationError;

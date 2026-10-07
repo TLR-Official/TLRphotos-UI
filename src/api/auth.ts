@@ -1,10 +1,10 @@
 /**
  * @file 认证 API
  * @description
- *  封装与用户认证、账户管理相关的后端接口。
+ *  封装与用户认证、账户管理相关的后端接口（V2.0.0：纯邮箱认证体系）。
  *  核心功能：
  *   1. 登录 / 注册 / Token 刷新（含 session_token 长期会话）。
- *   2. 当前用户信息获取与更新、修改密码、上传头像。
+ *   2. 当前用户信息获取与更新、修改密码、上传头像、绑定 / 更换邮箱。
  *   3. 用户统计数据查询。
  *   4. 登录 / 注册请求通过 requestManager 去重，避免重复提交。
  *  注意：login / refresh 直接使用 fetch 而非 request，因登录前可能尚未拿到统一错误处理逻辑，
@@ -24,12 +24,11 @@ export interface CustomField {
 /** 用户信息 */
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
   username: string | null;
   avatar_url: string | null;
   bio: string | null;
-  phone?: string | null;
-  phone_verified?: number;   // V1.11.0：手机号是否已通过验证码绑定（1=已验证）
+  email_verified: number;      // V2.0.0：邮箱是否已通过验证码确权（1=已验证）
   website: string | null;
   location: string | null;
   custom_fields: Record<string, CustomField> | null;
@@ -42,18 +41,17 @@ export interface LoginData {
   token: string;
 }
 
-/** 登录成功返回的业务数据（V1.11.0：注册成功 / 验证码确认后签发，结构一致） */
+/** 注册成功 / 验证码确认后签发的业务数据 */
 export interface LoginSuccessData {
   user: User;
   token: string;
   session_token?: string;
 }
 
-/** 登录第一步返回的验证码挑战数据（otp_required=true） */
+/** 登录第一步返回的邮箱验证码挑战数据（otp_required=true） */
 export interface LoginOtpData {
   otp_required: true;
   login_ticket: string;                       // HMAC 签名票据，10 分钟有效
-  channels: Array<'email' | 'phone'>;         // 可用验证码通道
   expires_minutes: number;
 }
 
@@ -76,7 +74,15 @@ export interface LoginOtpResponse {
 /** 登录接口响应联合类型：otp_required=true 为前者，否则为后者 */
 export type LoginResponse = LoginOtpResponse | LoginSuccessResponse;
 
-/** 注册接口响应（V1.11.0：注册成功视同登录，直接签发 token + 会话） */
+/** 无邮箱账号登录响应：须先绑定邮箱 */
+export interface EmailBindRequiredResponse {
+  success: boolean;
+  code: 'EMAIL_BIND_REQUIRED';
+  message: string;
+  data?: { bind_ticket: string; expires_minutes: number };
+}
+
+/** 注册接口响应（注册成功视同登录，直接签发 token + 会话） */
 export interface RegisterResponse {
   success: boolean;
   message?: string;
@@ -87,25 +93,24 @@ export interface RegisterResponse {
 /** 注册成功返回的业务数据（与登录成功结构一致） */
 export type RegisterData = LoginSuccessData;
 
-/** 验证码业务场景 */
-export type OtpScene = 'login' | 'register' | 'bind_phone';
+/** 邮箱验证码业务场景 */
+export type OtpScene = 'login' | 'register' | 'bind_email';
 
-/** 发送验证码接口返回的业务数据 */
+/** 发送邮箱验证码接口返回的业务数据 */
 export interface SendOtpData {
-  channel: 'sms' | 'mail';   // 实际发送通道
-  cooldown: number;          // 重发冷却秒数（60）
-  expires_minutes: number;   // 验证码有效期（分钟）
-  target: string;            // 脱敏后的目标（如 138****5678 / a***@x.com）
+  channel: 'mail';            // 固定邮件通道
+  cooldown: number;           // 重发冷却秒数（60）
+  expires_minutes: number;    // 验证码有效期（分钟）
+  target: string;             // 脱敏后的邮箱（如 a***@x.com）
 }
 
-/** 绑定手机号接口返回的业务数据 */
-export interface BindPhoneData {
+/** 绑定 / 更换邮箱接口返回的业务数据 */
+export interface BindEmailData {
   id: string;
   email: string | null;
   username: string | null;
   avatar_url: string | null;
-  phone: string | null;
-  phone_verified: number;
+  email_verified: number;
 }
 
 /** 头像上传成功返回的业务数据 */
@@ -126,15 +131,15 @@ export interface RefreshResponse {
 
 /**
  * 登录第一步（直连 fetch，未经 request 客户端）
- * @description V1.11.0 两段式登录：密码校验通过后返回 login_ticket + 可用验证码通道，
- *              须继续调用 verifyLogin 完成验证码确认（测试 bypass 场景直接签发 token）。
- * @param identifier - 邮箱或手机号（后端自动识别）
+ * @description 两段式登录：密码校验通过后返回 login_ticket，
+ *              须继续调用 verifyLogin 完成邮箱验证码确认（测试 bypass 场景直接签发 token）。
+ * @param email - 邮箱地址
  * @param password - 密码
  * @param remember - 是否启用长期会话（保留兼容，后端当前固定创建长期会话）
- * @param turnstileToken - Turnstile 人机验证令牌（V1.8.0，验证门要求时必传）
- * @returns LoginResponse 联合：otp_required=true 含 login_ticket/channels；否则含 user/token/session_token
+ * @param turnstileToken - Turnstile 人机验证令牌
+ * @returns LoginResponse 联合：otp_required=true 含 login_ticket；否则含 user/token/session_token
  */
-export async function login(identifier: string, password: string, remember?: boolean, turnstileToken?: string): Promise<LoginResponse> {
+export async function login(email: string, password: string, remember?: boolean, turnstileToken?: string): Promise<LoginResponse> {
   // 超时控制：登录涉及 bcrypt 校验，留 30s 余量；超时后 abort 中断 fetch
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -145,7 +150,7 @@ export async function login(identifier: string, password: string, remember?: boo
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ identifier, password, remember, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+      body: JSON.stringify({ email, password, remember, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
       signal: controller.signal,
     });
 
@@ -204,7 +209,7 @@ export async function login(identifier: string, password: string, remember?: boo
  * @returns RefreshResponse，含新的 user 与 token
  */
 export async function refresh(sessionToken: string): Promise<RefreshResponse> {
-  // 超时控制：refresh 通常 <1s，给 15s 余量；超时后 abort 中断 fetch
+  // 超时控制：refresh 通常 <1s，给 15s 余量；超时后 abort 中断
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -265,46 +270,68 @@ export async function refresh(sessionToken: string): Promise<RefreshResponse> {
 }
 
 /**
- * 登录第二步：验证码确认
- * @description 凭 login_ticket + 通道 + 6 位验证码完成登录，成功签发 token 与会话。
+ * 登录第二步：邮箱验证码确认
+ * @description 凭 login_ticket + 6 位邮箱验证码完成登录，成功签发 token 与会话。
  * @param loginTicket - 登录第一步返回的 HMAC 签名票据（10 分钟有效）
- * @param channel - 验证通道（email / phone），目标由服务端按用户记录取值
  * @param code - 6 位数字验证码
  * @returns ApiResponse<LoginSuccessData>
  */
-export async function verifyLogin(loginTicket: string, channel: 'email' | 'phone', code: string): Promise<ApiResponse<LoginSuccessData>> {
+export async function verifyLogin(loginTicket: string, code: string): Promise<ApiResponse<LoginSuccessData>> {
   return request<LoginSuccessData>('/auth/login/verify', {
     method: 'POST',
-    body: JSON.stringify({ login_ticket: loginTicket, channel, code }),
+    body: JSON.stringify({ login_ticket: loginTicket, code }),
   });
 }
 
 /**
- * 发送验证码（登录 / 注册 / 绑定手机号）
- * @description target 自动识别手机号（短信）或邮箱（邮件）；三层限速（60s 冷却 / 目标每小时 5 次 / IP 每小时 20 次）。
- * @param target - 手机号或邮箱
- * @param scene - 业务场景（login / register / bind_phone）
+ * 发送邮箱验证码（登录 / 注册 / 绑定邮箱）
+ * @description 三层限速（60s 冷却 / 邮箱每小时 5 次 / IP 每小时 20 次）。
+ * @param email - 邮箱地址
+ * @param scene - 业务场景（login / register / bind_email）
  * @param turnstileToken - Turnstile 人机验证令牌（必传，action 与场景对应）
- * @returns ApiResponse<SendOtpData>，含脱敏目标与冷却秒数
+ * @param bindTicket - bind_email 场景下的绑定票据（未登录绑定时必传）
+ * @returns ApiResponse<SendOtpData>，含脱敏邮箱与冷却秒数
  */
-export async function sendOtp(target: string, scene: OtpScene, turnstileToken?: string): Promise<ApiResponse<SendOtpData>> {
-  return request<SendOtpData>('/auth/otp/send', {
+export async function sendEmailCode(
+  email: string,
+  scene: OtpScene,
+  turnstileToken?: string,
+  bindTicket?: string
+): Promise<ApiResponse<SendOtpData>> {
+  return request<SendOtpData>('/auth/email/code/send', {
     method: 'POST',
-    body: JSON.stringify({ target, scene, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+    body: JSON.stringify({
+      email,
+      scene,
+      ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      ...(bindTicket ? { bind_ticket: bindTicket } : {}),
+    }),
   });
 }
 
 /**
- * 绑定手机号（需登录）
- * @param phone - 手机号
- * @param code - 6 位短信验证码（scene=bind_phone）
+ * 绑定 / 更换邮箱
+ * @description 未登录绑定（凭 bind_ticket）成功后直接签发 token；已登录更换邮箱返回更新资料。
+ * @param email - 邮箱地址
+ * @param code - 6 位邮箱验证码（scene=bind_email）
  * @param turnstileToken - Turnstile 人机验证令牌（action=login）
- * @returns ApiResponse<BindPhoneData>，含更新后的手机号与验证状态
+ * @param bindTicket - 绑定票据（无邮箱账号登录第一段返回）
+ * @returns ApiResponse，bind_ticket 路径 data 含 token + 会话；JWT 路径为 BindEmailData
  */
-export async function bindPhone(phone: string, code: string, turnstileToken?: string): Promise<ApiResponse<BindPhoneData>> {
-  return request<BindPhoneData>('/auth/phone/bind', {
+export async function bindEmail(
+  email: string,
+  code: string,
+  turnstileToken?: string,
+  bindTicket?: string
+): Promise<ApiResponse<LoginSuccessData | BindEmailData>> {
+  return request<LoginSuccessData | BindEmailData>('/auth/email/bind', {
     method: 'POST',
-    body: JSON.stringify({ phone, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+    body: JSON.stringify({
+      email,
+      code,
+      ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      ...(bindTicket ? { bind_ticket: bindTicket } : {}),
+    }),
   });
 }
 
@@ -328,21 +355,20 @@ export async function loginWithManager(email: string, password: string): Promise
 
 /**
  * 注册（经 requestManager 去重）
- * @description V1.11.0 验证码注册：identifier 自动识别邮箱 / 手机号，
- *              需先通过 sendOtp 获取验证码；注册成功视同登录，直接签发 token + 会话。
- * @param identifier - 邮箱或手机号
+ * @description 邮箱验证码注册：需先通过 sendEmailCode 获取验证码；注册成功视同登录，直接签发 token + 会话。
+ * @param email - 邮箱
  * @param password - 密码
- * @param username - 用户名（可选，手机号注册缺省「用户+手机后4位」）
+ * @param username - 用户名（可选）
  * @param code - 6 位数字验证码（scene=register）
  * @param turnstileToken - Turnstile 人机验证令牌（action=register）
  * @returns ApiResponse<RegisterData>
  */
-export async function register(identifier: string, password: string, username: string | undefined, code: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
-  const key = `register:${identifier}`;
+export async function register(email: string, password: string, username: string | undefined, code: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
+  const key = `register:${email}`;
   return deduplicatedRequest(key, () =>
     request<RegisterData>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ identifier, password, username, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+      body: JSON.stringify({ email, password, username, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
     })
   );
 }

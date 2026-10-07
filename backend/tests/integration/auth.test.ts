@@ -9,13 +9,8 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 
-// V1.11.0：注册需先经 otp/send 获取验证码；Spug 通道打桩捕获明文码，不触达真实网络
+// V2.0.0：纯邮箱注册，邮件通道打桩捕获明文码，不触达真实网络（原短信通道已移除）
 const otpCapture = vi.hoisted(() => ({ codes: new Map<string, string>() }));
-vi.mock('../../src/services/spugService', () => ({
-  sendSmsCode: vi.fn(async (to: string, code: string) => {
-    otpCapture.codes.set(to, code);
-  }),
-}));
 
 vi.mock('../../src/services/aliMailService', () => ({
   sendMailCode: vi.fn(async (to: string, code: string) => {
@@ -64,11 +59,11 @@ beforeAll(async () => {
   app.use('/api/auth', authRoutes);
 });
 
-/** V1.11.0：注册前必须先经 otp/send 获取 6 位验证码（Spug 通道已打桩捕获明文码） */
-async function requestRegisterCode(target: string): Promise<string> {
-  const res = await request(app).post('/api/auth/otp/send').send({ target, scene: 'register' });
+/** V2.0.0：注册前必须先经 email/code/send 获取 6 位邮箱验证码（邮件通道已打桩捕获明文码） */
+async function requestRegisterCode(email: string): Promise<string> {
+  const res = await request(app).post('/api/auth/email/code/send').send({ email, scene: 'register' });
   expect(res.status).toBe(200);
-  return otpCapture.codes.get(target)!;
+  return otpCapture.codes.get(email)!;
 }
 
 describe('POST /api/auth/register', () => {
@@ -130,9 +125,9 @@ describe('POST /api/auth/register', () => {
         code: code1,
       });
 
-    // 再用相同邮箱注册：已注册邮箱经 otp/send(register) 取码会 409，
+    // 再用相同邮箱注册：已注册邮箱经 email/code/send(register) 取码会 409，
     // 直接写入验证码记录模拟并发间隙，走到底层唯一性校验
-    const code2 = await createCodeRecord(dupEmail, 'mail', 'register', '127.0.0.1');
+    const code2 = await createCodeRecord(dupEmail, 'register', '127.0.0.1');
     const res = await request(app)
       .post('/api/auth/register')
       .send({
@@ -322,5 +317,26 @@ describe('V1.10.1 入口类型校验（ID:5）', () => {
       .post('/api/auth/login')
       .send({ email: `${'a'.repeat(260)}@b.com`, password: 'x' });
     expect(res.status).toBe(400);
+  });
+});
+
+// V2.0.0：账号标识仅接受邮箱格式，手机号形态字符串一律拒绝
+describe('V2.0.0 纯邮箱账号体系', () => {
+  it('login 收到手机号形态字符串返回 400 INVALID_PARAMS', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: '13812345678', password: 'Test123456' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_PARAMS');
+  });
+
+  it('register 收到手机号形态字符串返回 400 INVALID_PARAMS', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: '13812345678', password: 'Test123456', code: '123456' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_PARAMS');
   });
 });

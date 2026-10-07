@@ -19,42 +19,17 @@ export interface AdminUser {
   updated_at?: string;
 }
 
-/** 登录第一阶段响应 */
+/** 登录响应（V2.0.0：全角色单阶段直发 token） */
 export interface LoginResponse {
   success: boolean;
   token?: string;
   admin?: AdminUser;
   message?: string;
-  /** 超管密码通过：需进入短信验证码第二阶段 */
-  sms_required?: boolean;
-  /** 短信登录票据（5 分钟有效，绑定用户名与 IP） */
-  ticket?: string;
-  /** 人机验证失败 / 登录锁定 / 超管未绑手机等机器可识别错误码 */
+  /** 人机验证失败 / 登录锁定等机器可识别错误码 */
   code?:
     | 'HUMAN_VERIFICATION_FAILED'
     | 'ADMIN_LOGIN_LOCKED'
-    | 'SUPER_PHONE_NOT_VERIFIED'
-    | 'INVALID_LOGIN_TICKET'
     | string;
-  data?: { retry_after_seconds?: number };
-}
-
-/** 超管短信验证码发送响应 */
-export interface AdminSmsSendResponse {
-  success: boolean;
-  message?: string;
-  code?: string;
-  /** 重新发送冷却秒数 */
-  cooldown_seconds?: number;
-}
-
-/** 超管短信验证码校验响应（通过即签发 JWT） */
-export interface AdminSmsVerifyResponse {
-  success: boolean;
-  token?: string;
-  admin?: AdminUser;
-  message?: string;
-  code?: 'ADMIN_LOGIN_LOCKED' | string;
   data?: { retry_after_seconds?: number };
 }
 
@@ -162,7 +137,10 @@ export interface AdminLog {
 /** 后台用户管理中的普通用户 */
 export interface User {
   id: string;
-  email: string;
+  /** V2.0.0：过渡期可能为空，绑定邮箱后必填 */
+  email?: string | null;
+  /** V2.0.0：1=邮箱已验证，0=待验证（功能受限） */
+  email_verified?: number;
   username?: string;
   avatar_url?: string;
   is_active: number;

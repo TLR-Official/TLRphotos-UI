@@ -7,6 +7,8 @@
 import express from 'express';
 import { db } from '../db';
 import path from 'path';
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
+import { loadAuthUser } from '../services/authService';
 
 const router = express.Router();
 
@@ -98,19 +100,21 @@ router.get('/:id/content', async (req, res) => {
 });
 
 /**
- * 文章点赞。
- * 基于文章 ID + 用户 ID 联合主键去重，重复点赞幂等返回当前计数。
+ * 文章点赞（V2.0.0：须邮箱确权的登录用户）。
+ * 身份取自 JWT，基于文章 ID + 用户 ID 联合主键去重，重复点赞幂等返回当前计数。
  * @param id 文章 ID
- * @body userId 用户 ID，未传时记为 anonymous
  * @returns 最新点赞数
  */
-router.post('/:id/like', async (req, res) => {
+router.post('/:id/like', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId = 'anonymous' } = req.body || {};
+    const { user } = await loadAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '请先登录' });
+    }
 
     // 已点赞：幂等返回当前点赞数
-    const existingLike = await db.get('SELECT * FROM article_likes WHERE article_id = ? AND user_id = ?', id, userId);
+    const existingLike = await db.get('SELECT * FROM article_likes WHERE article_id = ? AND user_id = ?', id, user.id);
 
     if (existingLike) {
       const currentArticle = await db.get('SELECT like_count FROM articles WHERE id = ?', id);
@@ -118,7 +122,7 @@ router.post('/:id/like', async (req, res) => {
     }
 
     // 未点赞：写入记录并累加 like_count
-    await db.run('INSERT INTO article_likes (article_id, user_id) VALUES (?, ?)', id, userId);
+    await db.run('INSERT INTO article_likes (article_id, user_id) VALUES (?, ?)', id, user.id);
     await db.run('UPDATE articles SET like_count = like_count + 1 WHERE id = ?', id);
     const updatedArticle = await db.get('SELECT like_count FROM articles WHERE id = ?', id);
 
@@ -130,22 +134,25 @@ router.post('/:id/like', async (req, res) => {
 });
 
 /**
- * 取消文章点赞。
+ * 取消文章点赞（V2.0.0：须邮箱确权的登录用户）。
  * 与点赞接口对称，未点赞时幂等返回；已点赞则删除记录并扣减计数（MAX(0, ...) 防止负数）。
  */
-router.delete('/:id/like', async (req, res) => {
+router.delete('/:id/like', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId = 'anonymous' } = req.body || {};
+    const { user } = await loadAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '请先登录' });
+    }
 
-    const existingLike = await db.get('SELECT * FROM article_likes WHERE article_id = ? AND user_id = ?', id, userId);
+    const existingLike = await db.get('SELECT * FROM article_likes WHERE article_id = ? AND user_id = ?', id, user.id);
 
     if (!existingLike) {
       const currentArticle = await db.get('SELECT like_count FROM articles WHERE id = ?', id);
       return res.json({ success: true, data: { like_count: currentArticle?.like_count || 0 } });
     }
 
-    await db.run('DELETE FROM article_likes WHERE article_id = ? AND user_id = ?', id, userId);
+    await db.run('DELETE FROM article_likes WHERE article_id = ? AND user_id = ?', id, user.id);
     // MAX(0, like_count - 1) 防止并发或异常情况下计数变为负数
     await db.run('UPDATE articles SET like_count = MAX(0, like_count - 1) WHERE id = ?', id);
     const updatedArticle = await db.get('SELECT like_count FROM articles WHERE id = ?', id);
@@ -192,16 +199,20 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 /**
- * 发表文章评论。
- * 校验内容非空后写入评论表，并同步累加文章 comment_count。
+ * 发表文章评论（V2.0.0：须邮箱确权的登录用户）。
+ * 作者名取自已登录用户资料，校验内容非空后写入评论表，并同步累加文章 comment_count。
  * @param id 文章 ID
- * @body author 评论者名称（默认访客）
  * @body content 评论内容
  */
-router.post('/:id/comments', async (req, res) => {
+router.post('/:id/comments', requireVerifiedEmail, async (req, res) => {
   try {
     const { id } = req.params;
-    const { author = '访客', content } = req.body || {};
+    const { content } = req.body || {};
+    const { user } = await loadAuthUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '请先登录' });
+    }
+    const author = user.username || user.email || '已验证用户';
 
     if (!content) {
       return res.status(400).json({ success: false, message: '评论内容不能为空' });

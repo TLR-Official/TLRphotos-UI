@@ -1,10 +1,10 @@
 /**
  * @file otpService.ts
- * @description 一次性验证码（OTP）生命周期管理服务。
+ * @description 邮箱一次性验证码（OTP）生命周期管理服务（V2.0.0：短信通道已全面移除）。
  *              负责验证码的生成、哈希入库、校验与过期清理：
  *              1. 生成：6 位随机数字码（crypto.randomInt 安全随机源）；
  *              2. 存储：仅存 HMAC-SHA256 哈希（密钥 = JWT_SECRET），
- *                 明文码只在内存中返回给发送通道，绝不入库、不落日志；
+ *                 明文码只在内存中返回给邮件通道，绝不入库、不落日志；
  *              3. 校验：crypto.timingSafeEqual 恒时比较防时序攻击，
  *                 错误尝试计数，达 5 次自动作废锁定；过期 / 已用记录一律拒绝；
  *              4. 清理：每日定时删除 7 天前记录（server.ts 调度），防止表膨胀。
@@ -22,10 +22,8 @@ const MAX_ATTEMPTS = 5;
 /** 记录保留时长：7 天（每日清理任务的删除阈值） */
 const CLEANUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** 发送通道：短信 / 邮件 */
-export type OtpChannel = 'sms' | 'mail';
-/** 业务场景：登录 / 注册 / 绑定手机号 / 超管登录第二因素 */
-export type OtpScene = 'login' | 'register' | 'bind_phone' | 'admin_login';
+/** 业务场景：登录 / 注册 / 绑定（更换）邮箱 */
+export type OtpScene = 'login' | 'register' | 'bind_email';
 /** 校验失败原因码（供路由层映射 HTTP 响应与文案） */
 export type OtpVerifyError = 'OTP_INVALID' | 'OTP_EXPIRED' | 'OTP_LOCKED' | 'OTP_MISMATCH' | 'OTP_NOT_FOUND';
 
@@ -49,15 +47,13 @@ export function hashCode(code: string): string {
  * 创建验证码记录：生成明文码 → 作废同 target+scene 的旧未用记录 → 入库新记录（存哈希）。
  * 两步写操作置于同一事务，避免并发请求产生多条有效码。
  *
- * @param target 接收目标（手机号或邮箱）
- * @param channel 发送通道
+ * @param target 接收邮箱
  * @param scene 业务场景
  * @param ip 请求来源 IP（审计用）
  * @returns 明文验证码 — 仅用于立即发送，调用方严禁入库 / 落日志
  */
 export async function createCodeRecord(
   target: string,
-  channel: OtpChannel,
   scene: OtpScene,
   ip: string
 ): Promise<string> {
@@ -75,8 +71,8 @@ export async function createCodeRecord(
     );
     await db.run(
       `INSERT INTO verification_codes (id, target, channel, scene, code_hash, attempts, expires_at, used_at, ip, created_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, NULL, ?, ?)`,
-      [id, target, channel, scene, hashCode(code), expiresAt, ip, nowIso]
+       VALUES (?, ?, 'mail', ?, ?, 0, ?, NULL, ?, ?)`,
+      [id, target, scene, hashCode(code), expiresAt, ip, nowIso]
     );
     await db.exec('COMMIT');
   } catch (err) {
@@ -152,17 +148,13 @@ export async function cleanupExpiredCodes(): Promise<void> {
 }
 
 /**
- * 接收目标脱敏（供日志使用，禁止输出完整手机号 / 邮箱）。
- * 邮箱：保留首字符与域名（a***@example.com）；手机号：保留前 3 位与后 4 位（138****1234）。
+ * 接收邮箱脱敏（供日志使用，禁止输出完整邮箱）：保留首字符与域名（a***@example.com）。
  */
 export function maskTarget(target: string): string {
   const atIndex = target.indexOf('@');
   if (atIndex > 0) {
     return `${target.slice(0, 1)}***@${target.slice(atIndex + 1)}`;
   }
-  if (target.length >= 7) {
-    return `${target.slice(0, 3)}****${target.slice(-4)}`;
-  }
-  // 异常短输入：整体脱敏兜底
+  // 异常输入：整体脱敏兜底
   return '***';
 }
