@@ -4,9 +4,10 @@
  *              所有凭证通过环境变量注入，禁止硬编码。
  */
 
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
+import type { Readable } from 'stream';
 
 const OSS_REGION = process.env.OSS_REGION || 'oss-cn-hangzhou';
 const OSS_ENDPOINT = process.env.OSS_ENDPOINT || `https://oss-${OSS_REGION}.aliyuncs.com`;
@@ -177,4 +178,57 @@ export async function deleteFromOSS(key: string): Promise<void> {
   });
 
   await s3Client.send(command);
+}
+
+/** 把可读流收集为 Buffer（评论归档对象读取使用） */
+function streamToBuffer(stream: Readable): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+  });
+}
+
+/**
+ * 读取对象为 Buffer；对象不存在（404/NoSuchKey）返回 null。
+ * 供评论归档回迁拉取线程 JSON 使用。
+ */
+export async function getObjectBuffer(key: string): Promise<Buffer | null> {
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({ Bucket: OSS_BUCKET, Key: key })
+    );
+    if (!response.Body) return null;
+    return await streamToBuffer(response.Body as Readable);
+  } catch (error) {
+    const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata
+      ?.httpStatusCode;
+    if (status === 404 || (error as { name?: string })?.name === 'NoSuchKey') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * 探测对象是否存在并返回大小（字节）；不存在返回 { exists: false }。
+ * 用于归档上传后的"先校验、后删本地"校验步骤。
+ */
+export async function objectExists(
+  key: string
+): Promise<{ exists: true; size: number } | { exists: false }> {
+  try {
+    const response = await s3Client.send(
+      new HeadObjectCommand({ Bucket: OSS_BUCKET, Key: key })
+    );
+    return { exists: true, size: response.ContentLength ?? 0 };
+  } catch (error) {
+    const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata
+      ?.httpStatusCode;
+    if (status === 404 || (error as { name?: string })?.name === 'NotFound') {
+      return { exists: false };
+    }
+    throw error;
+  }
 }

@@ -13,6 +13,7 @@ import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
 import { useHumanVerification } from '../../shared/useHumanVerification';
+import { CommentList } from '../comments/components/CommentList';
 
 
 /**
@@ -534,6 +535,14 @@ export function PhotoDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* 通用三级评论区（subject_type=photo）；归档/热度/人机门均在 CommentList 内完成 */}
+      <div className="mt-10 rounded-xl border border-gray-200 bg-white p-5 md:p-7">
+        <CommentList
+          subject={{ subjectType: 'photo', subjectId: id || '' }}
+          title="作品评论"
+        />
       </div>
     </main>
   );

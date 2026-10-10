@@ -20,11 +20,95 @@ const dbPath = process.env.DB_PATH ?? path.join(__dirname, '../data/database.db'
 export let db: Database;
 
 /**
+ * 评论体系完整 DDL（V3.0.0）。
+ * 基线建库与存量库 V3 迁移共用本常量，确保两条路径产生完全一致的结构：
+ * - comments: 通用三级嵌套评论，按 (subject_type, subject_id) 绑定任意主题
+ * - comment_likes: 评论点赞（联合主键去重）
+ * - comment_heat: 每线程热度档位与有效留存时间
+ * - comment_archives: 归档线程索引（数据行在 OSS）
+ */
+const commentSchemaSql = `
+  -- 通用评论表：depth 1/2/3，三级封顶（对 depth=3 再回复时 depth 仍为 3，平铺展示）
+  CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    root_id TEXT NOT NULL,
+    parent_id TEXT,
+    depth INTEGER NOT NULL DEFAULT 1,
+    user_id TEXT,
+    author TEXT NOT NULL,
+    reply_to_user_id TEXT,
+    reply_to_user_name TEXT,
+    content TEXT NOT NULL,
+    like_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+  -- 主题+时间：列表分页；root_id：整楼操作；parent_id：回复链校验
+  CREATE INDEX IF NOT EXISTS idx_comments_subject ON comments(subject_type, subject_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_comments_root ON comments(root_id);
+  CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id);
+
+  -- 评论点赞表：(comment_id, user_id) 联合主键确保同一用户仅赞一次
+  CREATE TABLE IF NOT EXISTS comment_likes (
+    comment_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (comment_id, user_id)
+  );
+
+  -- 评论热度表：每个 L1 线程一行，驱动归档/续期决策
+  CREATE TABLE IF NOT EXISTS comment_heat (
+    root_id TEXT PRIMARY KEY,
+    reply_count INTEGER NOT NULL DEFAULT 0,
+    like_count INTEGER NOT NULL DEFAULT 0,
+    score REAL NOT NULL DEFAULT 0,
+    velocity REAL NOT NULL DEFAULT 0,
+    tier TEXT NOT NULL DEFAULT 'normal',
+    last_calc_at TEXT,
+    retain_until TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- 归档索引表：线程归档到 OSS 后本地仅保留本索引
+  CREATE TABLE IF NOT EXISTS comment_archives (
+    root_id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    oss_key TEXT NOT NULL,
+    archived_at TEXT NOT NULL,
+    root_created_at TEXT NOT NULL,
+    reply_count INTEGER NOT NULL DEFAULT 0,
+    heat_tier TEXT NOT NULL DEFAULT 'normal',
+    last_reply_at TEXT NOT NULL,
+    rehydrated_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_comment_archives_subject ON comment_archives(subject_type, subject_id);
+`;
+
+/**
  * 初始化数据库表结构。
  * 使用 CREATE TABLE IF NOT EXISTS 保证幂等执行，
  * 同时为 admin_logs 创建常用查询字段索引以提升审计日志检索性能。
  */
 const initSchema = async () => {
+  // V3.0.0 前置探测：旧单层 comments（含 article_id）必须在基线 DDL 前改名。
+  // 否则基线中 CREATE TABLE IF NOT EXISTS comments 被跳过，而新索引
+  // idx_comments_subject 会尝试建在无 subject_type 列的旧表上导致初始化失败。
+  // comments_legacy 残留表示上次迁移中断，进入恢复式迁移（行写入均幂等）。
+  const preCommentCols = (await db.all('PRAGMA table_info(comments)')) as Array<{ name: string }>;
+  const commentsNeedsRename = preCommentCols.some((c) => c.name === 'article_id');
+  const legacyTable = await db.get(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='comments_legacy'"
+  );
+  if (commentsNeedsRename) {
+    const v3BackupPath = `${dbPath}.bak-v3-${Date.now()}`;
+    fs.copyFileSync(dbPath, v3BackupPath);
+    console.log(`[DB V3.0.0] 评论迁移前整库备份: ${v3BackupPath}`);
+    await db.run('ALTER TABLE comments RENAME TO comments_legacy');
+  }
+  const commentsLegacyPending = commentsNeedsRename || legacyTable !== undefined;
+
   await db.exec(`
     -- 用户主表：存储注册用户基本信息与第三方登录绑定状态
     -- V2.0.0：全面移除手机号体系，email 为唯一账号标识（仍允许 NULL：仅过渡绑定流程临时存在）；
@@ -70,6 +154,7 @@ const initSchema = async () => {
       aperture TEXT,
       likes INTEGER DEFAULT 0,
       views INTEGER DEFAULT 0,
+      comment_count INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -88,15 +173,8 @@ const initSchema = async () => {
       tags TEXT
     );
 
-    -- 文章评论表：随文章删除级联清理
-    CREATE TABLE IF NOT EXISTS comments (
-      id TEXT PRIMARY KEY,
-      article_id TEXT NOT NULL,
-      author TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
-    );
+    -- V3.0.0：通用三级评论体系（comments/comment_likes/comment_heat/comment_archives）
+    ${commentSchemaSql}
 
     -- 照片点赞表：(photo_id, user_id) 联合主键确保同一用户对同一照片仅能点赞一次
     CREATE TABLE IF NOT EXISTS photo_likes (
@@ -240,6 +318,10 @@ const initSchema = async () => {
   } catch {}
   try {
     await db.run('ALTER TABLE photos ADD COLUMN status TEXT DEFAULT "pending"');
+  } catch {}
+  // V3.0.0 照片评论计数（与 articles.comment_count 同口径）
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN comment_count INTEGER DEFAULT 0');
   } catch {}
   try {
     await db.run('ALTER TABLE photos ADD COLUMN rejection_reason TEXT');
@@ -430,6 +512,56 @@ const initSchema = async () => {
     } finally {
       await db.exec('PRAGMA foreign_keys=ON');
     }
+  }
+
+  // ==========================================================================
+  // V3.0.0：评论体系通用化（subject_type + subject_id，三级嵌套）
+  // 旧表探测/备份/改名在基线 DDL 前完成（见 initSchema 开头），本块负责：
+  // 旧行逐条迁移为 article 型 L1（保留 id/作者/内容/时间）→ 初始化热度 →
+  // 回填文章评论计数 → 校验行数 → 删除旧表。全部步骤幂等，可中断恢复。
+  // ==========================================================================
+  if (commentsLegacyPending) {
+    const legacyRows = (await db.all(
+      'SELECT id, article_id, author, content, created_at FROM comments_legacy ORDER BY created_at'
+    )) as Array<{ id: string; article_id: string; author: string; content: string; created_at: string }>;
+
+    const retainDays = Number(process.env.COMMENT_RETAIN_DAYS) || 10;
+    const now = Date.now();
+
+    for (const row of legacyRows) {
+      await db.run(
+        `INSERT OR IGNORE INTO comments
+           (id, subject_type, subject_id, root_id, parent_id, depth, user_id,
+            author, reply_to_user_id, reply_to_user_name, content, like_count, created_at)
+         VALUES (?, 'article', ?, ?, NULL, 1, NULL, ?, NULL, NULL, ?, 0, ?)`,
+        [row.id, row.article_id, row.id, row.author, row.content, row.created_at]
+      );
+      // 热度初始化：normal 档，retain_until = 发布时间 + 基础保留天数
+      const retainUntil = new Date(new Date(row.created_at).getTime() + retainDays * 86400000).toISOString();
+      await db.run(
+        `INSERT OR IGNORE INTO comment_heat
+           (root_id, reply_count, like_count, score, velocity, tier, last_calc_at, retain_until, pinned)
+         VALUES (?, 0, 0, 0, 0, 'normal', ?, ?, 0)`,
+        [row.id, new Date(now).toISOString(), retainUntil]
+      );
+    }
+
+    // 回填文章评论计数，保证与新表口径一致
+    await db.run(
+      `UPDATE articles SET comment_count =
+         (SELECT COUNT(*) FROM comments
+          WHERE subject_type = 'article' AND subject_id = articles.id)`
+    );
+
+    const migratedCount = (await db.get(
+      "SELECT COUNT(*) AS c FROM comments WHERE subject_type = 'article'"
+    )) as { c: number };
+    if (migratedCount.c !== legacyRows.length) {
+      throw new Error(`评论迁移行数不一致: ${legacyRows.length} -> ${migratedCount.c}`);
+    }
+
+    await db.run('DROP TABLE comments_legacy');
+    console.log(`[DB V3.0.0] 旧单层评论迁移完成: ${migratedCount.c} 条（article L1）`);
   }
 };
 
@@ -818,24 +950,56 @@ const seedMockData = async () => {
     }
   }
 
-  // 评论表为空时插入演示评论，created_at 使用时间偏移模拟递减发布时间
+  // 评论表为空时插入演示评论（V3.0.0：通用三级结构），时间偏移模拟递减发布
   const commentCount = await db.get('SELECT COUNT(*) as count FROM comments');
   if (commentCount.count === 0) {
-    const comments = [
-      { id: 'comment_001', article_id: 'article_001', author: '摄影爱好者', content: '这篇文章太棒了！', created_at: new Date(Date.now() - 3600000).toISOString() },
-      { id: 'comment_002', article_id: 'article_001', author: '技术达人', content: '公式渲染特别清晰！', created_at: new Date(Date.now() - 7200000).toISOString() },
-      { id: 'comment_003', article_id: 'article_002', author: '新手玩家', content: '学到了很多技巧！', created_at: new Date(Date.now() - 1800000).toISOString() },
-      { id: 'comment_004', article_id: 'article_002', author: '资深飞手', content: '补充一点，飞行前一定要检查电池！', created_at: new Date(Date.now() - 5400000).toISOString() },
+    const retainDays = Number(process.env.COMMENT_RETAIN_DAYS) || 10;
+    // 演示数据：文章 L1 评论 + 照片 000001 的三级嵌套线程（含 L3 互回平铺）
+    const seedComments: Array<{
+      id: string; subject_type: string; subject_id: string; root_id: string;
+      parent_id: string | null; depth: number; user_id: string | null; author: string;
+      reply_to_user_id?: string; reply_to_user_name?: string;
+      content: string; created_at: Date;
+    }> = [
+      { id: 'comment_001', subject_type: 'article', subject_id: 'article_001', root_id: 'comment_001', parent_id: null, depth: 1, user_id: null, author: '摄影爱好者', content: '这篇文章太棒了！', created_at: new Date(Date.now() - 3600000) },
+      { id: 'comment_002', subject_type: 'article', subject_id: 'article_001', root_id: 'comment_002', parent_id: null, depth: 1, user_id: null, author: '技术达人', content: '公式渲染特别清晰！', created_at: new Date(Date.now() - 7200000) },
+      { id: 'comment_003', subject_type: 'article', subject_id: 'article_002', root_id: 'comment_003', parent_id: null, depth: 1, user_id: null, author: '新手玩家', content: '学到了很多技巧！', created_at: new Date(Date.now() - 1800000) },
+      { id: 'comment_004', subject_type: 'article', subject_id: 'article_002', root_id: 'comment_004', parent_id: null, depth: 1, user_id: null, author: '资深飞手', content: '补充一点，飞行前一定要检查电池！', created_at: new Date(Date.now() - 5400000) },
+      // 照片三级嵌套演示：L1 → L2 → L3 → 对 L3 再回复（仍 depth=3，平铺）
+      { id: 'pcomment_001', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: null, depth: 1, user_id: null, author: '路过的机长', content: '这张光影抓得太准了！', created_at: new Date(Date.now() - 900000) },
+      { id: 'pcomment_002', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: 'pcomment_001', depth: 2, user_id: null, author: '摄影博主', content: '同意，逆光还能压住高光不容易。', created_at: new Date(Date.now() - 800000) },
+      { id: 'pcomment_003', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: 'pcomment_002', depth: 3, user_id: null, author: '新人小白', reply_to_user_name: '摄影博主', content: '请问这是用什么滤镜拍的？', created_at: new Date(Date.now() - 700000) },
+      { id: 'pcomment_004', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: 'pcomment_003', depth: 3, user_id: null, author: '摄影博主', reply_to_user_name: '新人小白', content: '没用滤镜，RAW 后期拉的阴影。', created_at: new Date(Date.now() - 600000) },
     ];
 
-    for (const comment of comments) {
+    // 每个 L1 线程的基础热度初始化
+    const heatByRoot = new Map<string, { replies: number }>();
+    for (const c of seedComments) {
+      if (c.depth > 1) {
+        const prev = heatByRoot.get(c.root_id) ?? { replies: 0 };
+        prev.replies += 1;
+        heatByRoot.set(c.root_id, prev);
+      }
       await db.run(
-        'INSERT INTO comments (id, article_id, author, content, created_at) VALUES (?, ?, ?, ?, ?)',
-        comment.id,
-        comment.article_id,
-        comment.author,
-        comment.content,
-        comment.created_at
+        `INSERT INTO comments
+           (id, subject_type, subject_id, root_id, parent_id, depth, user_id, author,
+            reply_to_user_id, reply_to_user_name, content, like_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+        [c.id, c.subject_type, c.subject_id, c.root_id, c.parent_id, c.depth, c.user_id,
+         c.author, c.reply_to_user_id ?? null, c.reply_to_user_name ?? null,
+         c.content, c.created_at.toISOString()]
+      );
+    }
+    const roots = new Set(seedComments.map((c) => c.root_id));
+    for (const rootId of roots) {
+      const root = seedComments.find((c) => c.id === rootId)!;
+      const replies = heatByRoot.get(rootId)?.replies ?? 0;
+      const retainUntil = new Date(root.created_at.getTime() + retainDays * 86400000).toISOString();
+      await db.run(
+        `INSERT OR IGNORE INTO comment_heat
+           (root_id, reply_count, like_count, score, velocity, tier, last_calc_at, retain_until, pinned)
+         VALUES (?, ?, 0, ?, 0, 'normal', ?, ?, 0)`,
+        [rootId, replies, replies * 2, new Date().toISOString(), retainUntil]
       );
     }
   }

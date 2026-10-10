@@ -1,12 +1,12 @@
 /**
  * @file 文章 API
  * @description
- *  封装文章（Article）、专栏（Column）与评论（Comment）相关的后端接口。
+ *  封装文章（Article）与专栏（Column）相关的后端接口。
  *  核心功能：
  *   1. 文章列表 / 详情 / 内容获取。
  *   2. 专栏信息获取。
  *   3. 文章点赞 / 取消点赞 / 浏览数自增。
- *   4. 评论列表获取与创建。
+ *  评论自 V3.0.0 起迁移至通用评论模块（src/api/comments.ts）。
  *  Article / Column 类型从 features/column/types 复用，本文件仅做导出别名。
  */
 
@@ -84,35 +84,5 @@ export async function unlikeArticle(id: string): Promise<ApiResponse<{ like_coun
 export async function incrementArticleView(id: string): Promise<ApiResponse<{ read_count: number }>> {
   return request<{ read_count: number }>(`/articles/${id}/view`, {
     method: 'POST',
-  });
-}
-
-/** 评论数据结构 */
-export interface Comment {
-  id: string;
-  author: string;       // 评论者昵称
-  content: string;      // 评论内容
-  created_at: string;   // 创建时间
-}
-
-/**
- * 获取文章评论列表
- * @param articleId - 文章 ID
- * @returns ApiResponse<Comment[]>
- */
-export async function getComments(articleId: string): Promise<ApiResponse<Comment[]>> {
-  return request<Comment[]>(`/articles/${articleId}/comments`);
-}
-
-/**
- * 创建评论
- * @param articleId - 文章 ID
- * @param content - 评论内容
- * @returns ApiResponse<Comment>，返回新建的评论
- */
-export async function createComment(articleId: string, content: string): Promise<ApiResponse<Comment>> {
-  return request<Comment>(`/articles/${articleId}/comments`, {
-    method: 'POST',
-    body: JSON.stringify({ author: '访客', content }),
   });
 }

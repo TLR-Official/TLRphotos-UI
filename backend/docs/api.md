@@ -503,52 +503,230 @@ Content-Type: multipart/form-data
 
 ---
 
-## 评论接口 (Comments)
+## 评论接口 (Comments, V3.0.0)
 
-### 获取文章评论
+> ⚠️ V3.0.0 破坏性变更：旧端点 `GET/POST /api/articles/:id/comments` 已移除（调用返回 404）；评论表重建为通用主题模型。旧单层评论已迁移为 `subject_type=article` 的 L1 主评论（作者/内容/时间戳不变，`user_id` 为空，仅管理员可删）。
 
-**GET** `/api/articles/:id/comments`
+### 层级模型（严格三级）
 
-**响应**:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "comment_001",
-      "author": "摄影爱好者",
-      "content": "这篇文章太棒了！",
-      "created_at": "2024-07-01T09:00:00Z"
-    }
-  ]
-}
-```
+评论以通用主题 `(subject_type, subject_id)` 挂载，一期 `subject_type ∈ {photo, article}`：
 
-### 发表评论
+| 层级 | 含义 | parent_id 指向 | depth |
+|------|------|----------------|-------|
+| L1 | 针对照片/文章的主评论 | null | 1 |
+| L2 | 主评论下的直接回复 | L1 id | 2 |
+| L3 | 回复之间的互相引用回复 | 被回复的 L2/L3 id | 3 |
 
-**POST** `/api/articles/:id/comments`
+- 对 L3 再回复时，新节点 `depth` 仍为 **3**，`parent_id` 指向被回复节点，正文以"回复 @用户"前缀**平铺**展示；系统永不产生 depth=4。
+- 线程内每条评论都冗余 `root_id`（L1 id）。
 
-**请求体**:
-```json
-{
-  "author": "访客",
-  "content": "评论内容"
-}
-```
+**评论行字段**：`id, subject_type, subject_id, root_id, parent_id, depth, user_id, author, reply_to_user_id, reply_to_user_name, content, like_count, created_at`；登录态读取时附加 `is_liked`。
 
-**响应**:
+### 生命周期（归档 / 回迁）
+
+- **基础留存**：L1 发布后本地保留 `COMMENT_RETAIN_DAYS`（默认 10）天。
+- **每日归档作业**：服务启动 30s 后执行一次，此后每 24h 一次（进程内加锁，单实例执行）。对超期且非 pinned 的线程：将整楼序列化为 JSON 上传 OSS（`comments-archive/{rootId}.json`）→ 校验对象存在与大小 → 写归档索引 → 删除本地 comments/likes/heat 行并扣减主题 `comment_count`。
+- **热度续期**（启发式算法，非 ML）：依据回复数、全楼点赞数、时间衰减计算热度分，并以近 `COMMENT_VELOCITY_WINDOW_DAYS`（默认 2）天增量计算增速、线性外推 `COMMENT_PREDICTION_DAYS`（默认 7）天：
+  - `hot`：`retain_until` 滚动续期为 `now + COMMENT_HOT_EXTRA_DAYS`（默认 7）天；
+  - `viral`：长期本地留存至 `root_created_at + COMMENT_VIRAL_DAYS`（默认 365）天；
+  - pinned（管理员置顶）线程永不归档。
+- **回迁语义**：回复已归档线程时，后端先从 OSS 拉取 JSON，经版本/主题/层级校验后**原样写回**（保留 id 与全部时间戳），再写入新回复；归档索引保留并标记 `rehydrated_at`。
+- **读取归档**：客户端先查 IndexedDB 缓存（TTL 7 天）；未命中则调用下方签名 URL 端点取得 24h 预签名 URL，直读 JSON 后回写缓存。签名失效（云端 403）时淘汰缓存并重取。
+
+### 获取 L1 主评论列表
+
+**GET** `/api/comments?subject_type=photo&subject_id=:id&page=1&page_size=20&sort=latest`
+
+**查询参数**：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| subject_type | 是 | `photo` / `article` |
+| subject_id | 是 | 主题 id（≤128 字符） |
+| page | 否 | 默认 1 |
+| page_size | 否 | 默认 20，上限 50 |
+| sort | 否 | `latest`（默认，按创建时间倒序）/ `hottest`（按热度分倒序） |
+
+**响应**（公开读取；携带登录 token 时返回 `is_liked`）：
 ```json
 {
   "success": true,
   "data": {
-    "id": "comment_1234567890",
-    "article_id": "article_001",
-    "author": "访客",
-    "content": "评论内容",
-    "created_at": "2024-07-01T10:00:00Z"
+    "items": [
+      {
+        "id": "c1",
+        "subject_type": "photo",
+        "subject_id": "p1",
+        "root_id": "c1",
+        "parent_id": null,
+        "depth": 1,
+        "user_id": "u1",
+        "author": "alice",
+        "reply_to_user_id": null,
+        "reply_to_user_name": null,
+        "content": "拍得真好",
+        "like_count": 5,
+        "created_at": "2026-10-01T10:00:00Z",
+        "is_liked": false,
+        "replies": [
+          {
+            "id": "c2",
+            "root_id": "c1",
+            "parent_id": "c1",
+            "depth": 2,
+            "user_id": "u2",
+            "author": "bob",
+            "reply_to_user_id": null,
+            "reply_to_user_name": null,
+            "content": "同意",
+            "like_count": 0,
+            "created_at": "2026-10-02T10:00:00Z",
+            "is_liked": false
+          }
+        ],
+        "total_reply_count": 1,
+        "has_more_replies": false
+      }
+    ],
+    "archiveThreads": [
+      {
+        "root_id": "c9",
+        "subject_type": "photo",
+        "subject_id": "p1",
+        "oss_key": "comments-archive/c9.json",
+        "archived_at": "2026-10-09T03:00:00Z",
+        "root_created_at": "2026-09-20T10:00:00Z",
+        "reply_count": 3,
+        "heat_tier": "normal",
+        "last_reply_at": "2026-09-29T10:00:00Z",
+        "rehydrated_at": null
+      }
+    ],
+    "page": 1,
+    "pageSize": 20,
+    "total": 2,
+    "totalPages": 1
   }
 }
 ```
+
+说明：每个 L1 仅内联首批回复（按楼总回复数取至上限），超出时 `has_more_replies=true`，前端用单楼回复端点续载。已回迁（`rehydrated_at != null`）的索引对应线程已在 `items` 活跃列表，客户端不再展示归档提示。
+
+### 发表主评论 / 回复
+
+**POST** `/api/comments`（须登录且邮箱已确权）
+
+**请求体**：
+```json
+{
+  "subject_type": "photo",
+  "subject_id": "p1",
+  "parent_id": "c1",
+  "root_id": "c1",
+  "content": "回复内容，≤1000 字"
+}
+```
+
+- 发表 L1：省略 `parent_id` / `root_id`。
+- 回复活跃线程：提供 `parent_id`（`root_id` 可省略，服务端解析）。
+- 回复归档线程：提供归档线程的 `parent_id` 与 `root_id`；若 parent 本地不存在，服务端自动回迁该线程后再写入。
+- 不能跨主题回复（`PARENT_SUBJECT_MISMATCH` 400）。
+
+**响应**：`201`，`data` 为新建评论行。
+
+### 单楼回复二次加载
+
+**GET** `/api/comments/:rootId/replies?limit=100&offset=2`
+
+**响应**：
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "total": 3,
+    "limit": 100,
+    "offset": 2
+  }
+}
+```
+
+### 点赞 / 取消点赞（幂等）
+
+**POST** `/api/comments/:id/like`（须登录 + 邮箱确权）
+**DELETE** `/api/comments/:id/like`（同上）
+
+**响应**：
+```json
+{
+  "success": true,
+  "data": { "like_count": 6, "is_liked": true }
+}
+```
+
+重复点赞 / 未点赞时取消均幂等返回当前状态。
+
+### 删除评论
+
+**DELETE** `/api/comments/:id`（须登录 + 邮箱确权 + 168h 内人机验证状态）
+
+- L1：整楼删除；若线程已归档，同时删除 OSS 对象与归档索引。
+- L2/L3：仅删除单条（其下子评论保留，孤儿由前端树算法提升展示）。
+- 仅本人可删；V3 迁移产生的历史评论（`user_id` 为空）只能由管理员删除。
+
+**响应**：
+```json
+{
+  "success": true,
+  "data": { "deletedThread": true, "removedCount": 4 }
+}
+```
+
+### 获取归档线程直读 URL
+
+**GET** `/api/comments/archives/:rootId/url`
+
+**响应**（索引存在 → 200）：
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://tlr-main.oss-cn-hongkong.aliyuncs.com/comments-archive/c9.json?Expires=...&Signature=...",
+    "archived_at": "2026-10-09T03:00:00Z",
+    "root_created_at": "2026-09-20T10:00:00Z",
+    "reply_count": 3
+  }
+}
+```
+
+索引不存在 → 404 `ARCHIVE_NOT_FOUND`。URL 有效期 24h。
+
+### 评论错误码
+
+| code | HTTP | 说明 |
+|------|------|------|
+| INVALID_PARAMS | 400 | subject_type / subject_id 等参数不合法 |
+| COMMENT_CONTENT_EMPTY | 400 | 内容 trim 后为空 |
+| COMMENT_CONTENT_TOO_LONG | 400 | 内容超过 1000 字 |
+| PARENT_SUBJECT_MISMATCH | 400 | 不能跨主题回复 |
+| AUTH_REQUIRED | 401 | 未登录 |
+| EMAIL_VERIFICATION_REQUIRED | 403 | 邮箱未确权 |
+| HUMAN_VERIFICATION_REQUIRED | 403 | 删除缺少人机验证状态 |
+| COMMENT_DELETE_FORBIDDEN | 403 | 无权删除 |
+| SUBJECT_NOT_FOUND | 404 | 评论主题不存在 |
+| PARENT_NOT_FOUND | 404 | 被回复评论不存在 |
+| COMMENT_NOT_FOUND | 404 | 评论不存在 |
+| ARCHIVE_NOT_FOUND | 404 | 归档索引/云对象不存在 |
+| ARCHIVE_JOB_LOCKED | 409 | 归档作业正在执行 |
+
+### 管理端点（Admin）
+
+均须管理员 JWT，操作写入 `admin_logs` 审计。
+
+| 方法与路径 | 说明 |
+|------------|------|
+| `DELETE /api/admin/comments/:id` | 删除任意评论（L1 整楼含归档云对象）；审计动作 `comment_delete` |
+| `PUT /api/admin/comments/:rootId/pin` | 置顶 / 取消置顶；请求体 `{ "pinned": true }`（缺省 true）；审计动作 `comment_pin` / `comment_unpin` |
 
 ---
 
@@ -1038,6 +1216,7 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 | /api/photos/upload/complete | POST | photo_upload | 403 验证门 |
 | /api/photos/upload | POST | photo_upload | 403 验证门 |
 | /api/photos/:id | DELETE | photo_delete | 403 验证门 |
+| /api/comments/:id | DELETE | photo_delete | 403 验证门（V3.0.0 新增；验证状态与 action 无关） |
 | /api/admin/users/:id/ban | POST | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/unban | POST | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/permissions | PUT | admin_user_admin | 403 验证门 |

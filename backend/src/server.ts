@@ -17,9 +17,12 @@ import columnRouter from './routes/column';
 import authRouter from './routes/auth';
 import tagsRouter from './routes/tags';
 import adminRouter from './routes/admin';
+import commentsRouter from './routes/comments';
+import adminCommentsRouter from './routes/adminComments';
 import verificationRouter from './routes/verification';
 import everosRouter from './routes/everos';
-import { initDb } from './db';
+import { commentArchiveService } from './services/commentArchiveService';
+import { initDb, db } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
@@ -62,7 +65,10 @@ app.use('/api/photos', photosRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);
 app.use('/api/tags', tagsRouter);
+// 评论管理须先于 /api/admin 挂载（更具体路径优先）
+app.use('/api/admin/comments', adminCommentsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/comments', commentsRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/everos', everosRouter);
 
@@ -115,6 +121,8 @@ app.use(errorHandler);
 // 定时清理任务句柄：保存以便进程退出时清理，避免句柄泄漏阻止优雅退出
 let cleanupTimer: NodeJS.Timeout | null = null;
 let cleanupInterval: NodeJS.Timeout | null = null;
+// 评论归档作业句柄（V3.0.0：启动一次 + 24h 周期）
+let archiveInterval: NodeJS.Timeout | null = null;
 
 /**
  * 调度过期会话清理任务。
@@ -155,6 +163,29 @@ function scheduleCleanup() {
 }
 
 /**
+ * 调度评论每日归档作业（V3.0.0）。
+ * 服务启动后执行一次（延迟 30s，避开启动高峰），之后每 24 小时执行一次。
+ * 单实例保障：进程内作业锁防重入；systemd 单服务实例防多进程并发。
+ * 归档仅迁移 retain_until 已到期的非 pinned 线程，作业失败不影响主服务。
+ */
+function scheduleArchiveJob() {
+  const runArchive = async () => {
+    try {
+      const result = await commentArchiveService.runArchiveJob(db);
+      console.log(
+        `[CommentArchive] 归档作业完成: 归档 ${result.archivedRootIds.length} 个线程, 扫描 ${result.scanned} 个到期线程`
+      );
+    } catch (error) {
+      console.error('[CommentArchive] 归档作业失败:', error);
+    }
+  };
+
+  // 启动后延迟执行一次
+  setTimeout(runArchive, 30 * 1000);
+  archiveInterval = setInterval(runArchive, 24 * 60 * 60 * 1000);
+}
+
+/**
  * 优雅退出：清理定时任务句柄后退出进程。
  * 避免句柄残留导致 process.exit 无法正常退出。
  */
@@ -167,6 +198,10 @@ function gracefulShutdown(signal: string) {
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
+  }
+  if (archiveInterval) {
+    clearInterval(archiveInterval);
+    archiveInterval = null;
   }
   process.exit(0);
 }
@@ -195,6 +230,8 @@ const startServer = async () => {
       }
     }
     scheduleCleanup();
+    // V3.0.0：评论归档作业（启动一次 + 24h 周期）
+    scheduleArchiveJob();
     // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
     memoryManager.start();
     // 仅监听 127.0.0.1：外部访问统一经由 Nginx 反向代理（HTTPS），

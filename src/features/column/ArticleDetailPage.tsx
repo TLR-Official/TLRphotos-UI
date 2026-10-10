@@ -10,10 +10,11 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeSanitize from 'rehype-sanitize';
 import 'katex/dist/katex.min.css';
-import { getArticleById, getArticleContent, getComments, createComment, likeArticle, unlikeArticle } from '../../api/articles';
+import { getArticleById, getArticleContent, likeArticle, unlikeArticle } from '../../api/articles';
 import { useTheme } from '../../shared/ThemeContext';
-import type { Article, Comment } from '../../api/articles';
-import { formatDate, formatRelativeDate } from '../../shared/utils';
+import type { Article } from '../../api/articles';
+import { formatDate } from '../../shared/utils';
+import { CommentList } from '../comments/components/CommentList';
 
 /**
  * 文章详情页组件
@@ -28,9 +29,6 @@ export function ArticleDetailPage() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [article, setArticle] = useState<Article | null>(null);
 
   // 拉取文章元信息后，再并行拉取正文内容与评论列表
@@ -48,12 +46,6 @@ export function ArticleDetailPage() {
             setContent('# 文章加载失败\n\n无法加载文章内容，请稍后重试。');
           }
           setIsLoading(false);
-        });
-
-        getComments(result.data.id).then((commentsResult) => {
-          if (commentsResult.success && commentsResult.data) {
-            setComments(commentsResult.data);
-          }
         });
       } else {
         setIsLoading(false);
@@ -84,27 +76,6 @@ export function ArticleDetailPage() {
       }
       setIsLiked(true);
     }
-  };
-
-  /**
-   * 提交新评论
-   * 成功后将新评论置顶加入列表并更新评论计数。
-   * @param e 表单提交事件
-   */
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim() || isSubmitting || !article) return;
-
-    setIsSubmitting(true);
-    const result = await createComment(article.id, newComment.trim());
-    
-    if (result.success && result.data) {
-      const newCommentData = result.data;
-      setComments((prev) => [newCommentData, ...prev]);
-      setCommentCount((prev) => prev + 1);
-      setNewComment('');
-    }
-    setIsSubmitting(false);
   };
 
   if (!article) {
@@ -447,96 +418,12 @@ export function ArticleDetailPage() {
           </button>
         </div>
 
-        <div className={`mt-8 rounded-2xl shadow-lg p-6 theme-bg-transition ${
-          isDark ? 'glass' : 'bg-white'
-        }`}>
-          <h3 className={`text-lg font-semibold mb-4 ${
-            isDark ? 'text-white' : 'text-gray-900'
-          }`}>
-            评论 ({commentCount})
-          </h3>
-
-          <form onSubmit={handleSubmitComment} className="mb-6">
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="写下你的评论..."
-                className={`flex-1 px-4 py-3 rounded-xl border outline-none transition-all ${
-                  isDark
-                    ? 'bg-white/5 border-white/10 text-white placeholder-slate-500 focus:border-blue-500/50'
-                    : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500'
-                }`}
-              />
-              <button
-                type="submit"
-                disabled={isSubmitting || !newComment.trim()}
-                className={`px-6 py-3 rounded-xl font-medium transition-all ${
-                  isSubmitting || !newComment.trim()
-                    ? isDark
-                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    : isDark
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                {isSubmitting ? '发送中...' : '发送'}
-              </button>
-            </div>
-          </form>
-
-          <div className="space-y-4">
-            {comments.map((comment) => (
-              <div
-                key={comment.id}
-                className={`p-4 rounded-xl ${
-                  isDark ? 'bg-white/5' : 'bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    isDark ? 'bg-blue-500/30' : 'bg-blue-100'
-                  }`}>
-                    <svg className={`w-4 h-4 ${
-                      isDark ? 'text-blue-400' : 'text-blue-600'
-                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <span className={`font-medium text-sm ${
-                      isDark ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {comment.author}
-                    </span>
-                    <span className={`text-xs ml-2 ${
-                      isDark ? 'text-slate-500' : 'text-gray-400'
-                    }`}>
-                      {formatRelativeDate(comment.created_at)}
-                    </span>
-                  </div>
-                </div>
-                <p className={`text-sm ${
-                  isDark ? 'text-slate-300' : 'text-gray-700'
-                }`}>
-                  {comment.content}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {comments.length === 0 && (
-            <div className={`text-center py-8 ${
-              isDark ? 'text-slate-500' : 'text-gray-400'
-            }`}>
-              <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-              <p>暂无评论，快来发表第一条评论吧！</p>
-            </div>
-          )}
+        {/* 通用三级评论区（subject_type=article）；旧单层评论端点已下线 */}
+        <div className="mt-8">
+          <CommentList
+            subject={{ subjectType: 'article', subjectId: id || '' }}
+            title={`文章评论 (${commentCount})`}
+          />
         </div>
       </div>
     </main>

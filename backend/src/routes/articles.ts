@@ -1,8 +1,9 @@
 /**
  * @file articles.ts
  * @description 文章业务路由模块。
- *              提供文章列表、详情、Markdown 原文读取、点赞、浏览量统计、
- *              评论列表与发表评论等接口。文章正文以 Markdown 文件形式存储于本地文件系统。
+ *              提供文章列表、详情、Markdown 原文读取、点赞、浏览量统计等接口。
+ *              文章正文以 Markdown 文件形式存储于本地文件系统。
+ *              V3.0.0：评论统一迁移至 /api/comments（subject_type=article）。
  */
 import express from 'express';
 import { db } from '../db';
@@ -179,69 +180,6 @@ router.post('/:id/view', async (req, res) => {
   } catch (error) {
     console.error('Error incrementing view:', error);
     res.status(500).json({ success: false, message: '更新浏览量失败' });
-  }
-});
-
-/**
- * 获取文章评论列表（按时间倒序）。
- * @param id 文章 ID
- */
-router.get('/:id/comments', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const comments = await db.all('SELECT id, author, content, created_at FROM comments WHERE article_id = ? ORDER BY created_at DESC', id);
-
-    res.json({ success: true, data: comments });
-  } catch (error) {
-    console.error('Error fetching comments:', error);
-    res.status(500).json({ success: false, message: '获取评论失败' });
-  }
-});
-
-/**
- * 发表文章评论（V2.0.0：须邮箱确权的登录用户）。
- * 作者名取自已登录用户资料，校验内容非空后写入评论表，并同步累加文章 comment_count。
- * @param id 文章 ID
- * @body content 评论内容
- */
-router.post('/:id/comments', requireVerifiedEmail, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body || {};
-    const { user } = await loadAuthUser(req);
-    if (!user) {
-      return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '请先登录' });
-    }
-    const author = user.username || user.email || '已验证用户';
-
-    if (!content) {
-      return res.status(400).json({ success: false, message: '评论内容不能为空' });
-    }
-
-    // 评论 ID 使用时间戳生成，保证单进程内唯一
-    const newComment = {
-      id: `comment_${Date.now()}`,
-      article_id: id,
-      author,
-      content,
-      created_at: new Date().toISOString(),
-    };
-
-    await db.run(
-      'INSERT INTO comments (id, article_id, author, content, created_at) VALUES (?, ?, ?, ?, ?)',
-      newComment.id,
-      newComment.article_id,
-      newComment.author,
-      newComment.content,
-      newComment.created_at
-    );
-    // 同步累加文章评论计数
-    await db.run('UPDATE articles SET comment_count = comment_count + 1 WHERE id = ?', id);
-
-    res.json({ success: true, data: newComment });
-  } catch (error) {
-    console.error('Error creating comment:', error);
-    res.status(500).json({ success: false, message: '发表评论失败' });
   }
 });
 
