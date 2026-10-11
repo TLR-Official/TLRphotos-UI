@@ -67,6 +67,15 @@ export function Header() {
           >
             作品集
           </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/forum');
+            }}
+            className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            论坛
+          </button>
           <span className="theme-text-transition text-slate-600">关于我们</span>
 
           {isAuthenticated ? (

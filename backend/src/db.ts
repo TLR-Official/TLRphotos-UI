@@ -297,6 +297,60 @@ const initSchema = async () => {
     CREATE INDEX IF NOT EXISTS idx_verification_codes_target_scene ON verification_codes(target, scene);
     -- expires_at 索引：定时清理过期验证码记录时使用
     CREATE INDEX IF NOT EXISTS idx_verification_codes_expires_at ON verification_codes(expires_at);
+    -- 论坛板块表（V3.1.0）：id 为短标识，sort_order 控制展示顺序
+    CREATE TABLE IF NOT EXISTS forum_boards (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      thread_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 论坛帖子表（V3.1.0）：帖子即 subject_type='thread' 的评论主题
+    CREATE TABLE IF NOT EXISTS forum_threads (
+      id TEXT PRIMARY KEY,
+      board_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content_md TEXT NOT NULL,
+      author_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      is_pinned INTEGER NOT NULL DEFAULT 0,
+      view_count INTEGER NOT NULL DEFAULT 0,
+      like_count INTEGER NOT NULL DEFAULT 0,
+      reply_count INTEGER NOT NULL DEFAULT 0,
+      ref_type TEXT,
+      ref_id TEXT,
+      last_reply_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (board_id) REFERENCES forum_boards(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_forum_threads_board_reply ON forum_threads(board_id, last_reply_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_forum_threads_pinned_reply ON forum_threads(is_pinned DESC, last_reply_at DESC);
+
+    -- 帖子点赞表：与 photo_likes 同构
+    CREATE TABLE IF NOT EXISTS thread_likes (
+      thread_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (thread_id, user_id),
+      FOREIGN KEY (thread_id) REFERENCES forum_threads(id) ON DELETE CASCADE
+    );
+
+    -- 帖子浏览去重表：与 photo_views 同构，24h 窗口
+    CREATE TABLE IF NOT EXISTS thread_views (
+      thread_id TEXT NOT NULL,
+      viewer_key TEXT NOT NULL,
+      last_viewed_at INTEGER NOT NULL,
+      PRIMARY KEY (thread_id, viewer_key),
+      FOREIGN KEY (thread_id) REFERENCES forum_threads(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_views_last_viewed_at ON thread_views(last_viewed_at);
+
   `);
 
   // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，
@@ -1014,6 +1068,22 @@ const seedMockData = async () => {
       '探索航拍世界，分享专业技巧，记录精彩瞬间',
       'https://picsum.photos/seed/column/600/400'
     );
+  }
+
+  // V3.1.0：论坛默认板块（仅在板块表为空时 seed）
+  const boardCount = await db.get('SELECT COUNT(*) as count FROM forum_boards');
+  if (boardCount.count === 0) {
+    const defaultBoards = [
+      { id: 'general', name: '综合讨论', description: '畅所欲言的综合话题区', icon: '💬', sort_order: 1 },
+      { id: 'aerial-photo', name: '航拍作品', description: '分享航拍照片与拍摄心得', icon: '✈️', sort_order: 2 },
+      { id: 'tech-talk', name: '技术交流', description: '器材、后期、飞控技术讨论', icon: '🔧', sort_order: 3 },
+    ];
+    for (const b of defaultBoards) {
+      await db.run(
+        'INSERT OR IGNORE INTO forum_boards (id, name, description, icon, sort_order, is_active) VALUES (?, ?, ?, ?, ?, 1)',
+        [b.id, b.name, b.description, b.icon, b.sort_order]
+      );
+    }
   }
 };
 

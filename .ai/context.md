@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-10-11 09:55 | [release] 论坛二期板块/帖子/帖子流发布 V3.1.0 | backend/src/{db.ts,routes/forum.ts,routes/adminForum.ts,routes/comments.ts,services/commentService.ts,services/verificationService.ts,server.ts}、src/features/forum/*、src/api/{forum.ts,verification.ts,comments.ts}、src/utils/commentTree.ts、src/shared/Header.tsx、src/App.tsx（后端315/前端19用例，帖子详情复用CommentList subject_type=thread） |
 | 2026-10-10 23:28 | [release] 论坛一期三级嵌套评论系统发布 V3.0.0 | 全项目（comments 表重建、归档/回迁/热度三档、照片页与文章页接入、api.md 全量同步） |
 | 2026-10-10 23:28 | [fix] 评审退回修复 F-1~F-4：归档删除越权、回迁并发锁、错误码、管理员人机门 | backend/src/services/commentService.ts、commentArchiveService.ts、routes/comments.ts、adminComments.ts、backend/docs/api.md、comment-archive.test.ts（+2 回归用例，后端 313/前端 19 用例，E2E 13/13） |
 | 2026-10-10 21:59 | [test] 论坛一期回归全绿与13项E2E实测通过 | 全项目（后端311/前端19用例，E2E覆盖三级发布·归档回迁·平铺·点赞·排序·移动端） |

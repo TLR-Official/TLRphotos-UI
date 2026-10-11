@@ -19,6 +19,8 @@ import tagsRouter from './routes/tags';
 import adminRouter from './routes/admin';
 import commentsRouter from './routes/comments';
 import adminCommentsRouter from './routes/adminComments';
+import forumRouter from './routes/forum';
+import adminForumRouter from './routes/adminForum';
 import verificationRouter from './routes/verification';
 import everosRouter from './routes/everos';
 import { commentArchiveService } from './services/commentArchiveService';
@@ -69,6 +71,8 @@ app.use('/api/tags', tagsRouter);
 app.use('/api/admin/comments', adminCommentsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/comments', commentsRouter);
+app.use('/api/forum', forumRouter);
+app.use('/api/admin/forum', adminForumRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/everos', everosRouter);
 

@@ -20,6 +20,8 @@ export type VerificationAction =
   | 'avatar_upload'
   | 'photo_upload'
   | 'photo_delete'
+  | 'thread_create'
+  | 'thread_delete'
   | 'admin_user_admin';
 
 /** 后端验证门拦截响应携带的业务错误码 */

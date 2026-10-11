@@ -39,7 +39,7 @@ import { ossCommentArchiveStore } from '../services/ossCommentArchiveStore';
 
 const router = express.Router();
 
-const SUBJECT_TYPES: readonly CommentSubjectType[] = ['photo', 'article'];
+const SUBJECT_TYPES: readonly CommentSubjectType[] = ['photo', 'article', 'thread'];
 
 /** 领域错误码 → HTTP 状态映射 */
 const COMMENT_ERROR_STATUS: Record<CommentErrorCode, number> = {

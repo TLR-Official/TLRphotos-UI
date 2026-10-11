@@ -10,7 +10,7 @@ import { request } from './client';
 import type { ApiResponse } from './client';
 
 /** 一期支持的评论主题；扩展联合类型即可支持论坛帖子等新主题 */
-export type CommentSubjectType = 'photo' | 'article';
+export type CommentSubjectType = 'photo' | 'article' | 'thread';
 
 /** 评论主题定位（全部接口的通用参数） */
 export interface CommentSubject {

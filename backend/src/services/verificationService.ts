@@ -33,6 +33,8 @@ export const VERIFICATION_ACTIONS = [
   'avatar_upload',
   'photo_upload',
   'photo_delete',
+  'thread_create',
+  'thread_delete',
   'admin_user_admin',
   'admin_login',
   'admin_change_password',

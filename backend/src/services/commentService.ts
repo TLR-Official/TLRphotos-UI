@@ -28,7 +28,7 @@ export const DEFAULT_COMMENT_PAGE_SIZE = 20;
 export const THREAD_REPLY_LIMIT = 100;
 
 /** 一期支持的评论主题；第二阶段扩展 'post' 等即可复用全部模块 */
-export type CommentSubjectType = 'photo' | 'article';
+export type CommentSubjectType = 'photo' | 'article' | 'thread';
 
 /** 评论行（与 comments 表结构一致） */
 export interface CommentRow {
@@ -106,7 +106,7 @@ async function assertSubjectExists(
   subjectType: CommentSubjectType,
   subjectId: string
 ): Promise<void> {
-  const table = subjectType === 'photo' ? 'photos' : 'articles';
+  const table = subjectType === 'photo' ? 'photos' : subjectType === 'thread' ? 'forum_threads' : 'articles';
   const row = await database.get(`SELECT id FROM ${table} WHERE id = ?`, [subjectId]);
   if (!row) {
     throw new CommentServiceError('SUBJECT_NOT_FOUND');
@@ -247,12 +247,19 @@ export async function createComment(
       ]
     );
 
-    // 主题评论计数 +1
-    const subjectTable = params.subjectType === 'photo' ? 'photos' : 'articles';
-    await database.run(
-      `UPDATE ${subjectTable} SET comment_count = comment_count + 1 WHERE id = ?`,
-      [params.subjectId]
-    );
+    // 主题评论计数 +1（thread 额外同步 reply_count 与 last_reply_at）
+    if (params.subjectType === 'thread') {
+      await database.run(
+        `UPDATE forum_threads SET reply_count = reply_count + 1, last_reply_at = ? WHERE id = ?`,
+        [createdAtIso, params.subjectId]
+      );
+    } else {
+      const subjectTable = params.subjectType === 'photo' ? 'photos' : 'articles';
+      await database.run(
+        `UPDATE ${subjectTable} SET comment_count = comment_count + 1 WHERE id = ?`,
+        [params.subjectId]
+      );
+    }
 
     if (depth === 1) {
       // 新线程初始化 heat：normal 档，retain_until = 发布 + 基础保留天数
@@ -641,11 +648,18 @@ export async function deleteComment(
         await database.run('DELETE FROM comment_archives WHERE root_id = ?', [comment.root_id]);
       }
       // 主题计数减去整楼条数（不产生负数）
-      const subjectTable = comment.subject_type === 'photo' ? 'photos' : 'articles';
-      await database.run(
-        `UPDATE ${subjectTable} SET comment_count = MAX(0, comment_count - ?) WHERE id = ?`,
-        [removedCount, comment.subject_id]
-      );
+      if (comment.subject_type === 'thread') {
+        await database.run(
+          `UPDATE forum_threads SET reply_count = 0, last_reply_at = NULL WHERE id = ?`,
+          [comment.subject_id]
+        );
+      } else {
+        const subjectTable = comment.subject_type === 'photo' ? 'photos' : 'articles';
+        await database.run(
+          `UPDATE ${subjectTable} SET comment_count = MAX(0, comment_count - ?) WHERE id = ?`,
+          [removedCount, comment.subject_id]
+        );
+      }
       await database.exec('COMMIT');
     } catch (txError) {
       await database.exec('ROLLBACK');
@@ -660,11 +674,18 @@ export async function deleteComment(
   try {
     await database.run('DELETE FROM comment_likes WHERE comment_id = ?', [commentId]);
     await database.run('DELETE FROM comments WHERE id = ?', [commentId]);
-    const subjectTable = comment.subject_type === 'photo' ? 'photos' : 'articles';
-    await database.run(
-      `UPDATE ${subjectTable} SET comment_count = MAX(0, comment_count - 1) WHERE id = ?`,
-      [comment.subject_id]
-    );
+    if (comment.subject_type === 'thread') {
+      await database.run(
+        `UPDATE forum_threads SET reply_count = MAX(0, reply_count - 1), last_reply_at = (SELECT MAX(created_at) FROM comments WHERE subject_type='thread' AND subject_id=?) WHERE id = ?`,
+        [comment.subject_id, comment.subject_id]
+      );
+    } else {
+      const subjectTable = comment.subject_type === 'photo' ? 'photos' : 'articles';
+      await database.run(
+        `UPDATE ${subjectTable} SET comment_count = MAX(0, comment_count - 1) WHERE id = ?`,
+        [comment.subject_id]
+      );
+    }
     await database.exec('COMMIT');
   } catch (txError) {
     await database.exec('ROLLBACK');
