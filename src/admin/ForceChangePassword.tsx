@@ -92,7 +92,7 @@ export function ForceChangePassword({ onDone, onLogout }: ForceChangePasswordPro
                 type="password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent"
                 placeholder="请输入当前密码"
                 maxLength={128}
                 autoComplete="current-password"
@@ -109,7 +109,7 @@ export function ForceChangePassword({ onDone, onLogout }: ForceChangePasswordPro
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent"
                 placeholder="至少 12 位字符"
                 maxLength={128}
                 autoComplete="new-password"
@@ -126,7 +126,7 @@ export function ForceChangePassword({ onDone, onLogout }: ForceChangePasswordPro
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent"
                 placeholder="再次输入新密码"
                 maxLength={128}
                 autoComplete="new-password"
@@ -154,7 +154,7 @@ export function ForceChangePassword({ onDone, onLogout }: ForceChangePasswordPro
           <button
             type="submit"
             disabled={loading || !currentPassword || !newPassword || !confirmPassword || !turnstileToken}
-            className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            className="w-full py-3 bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
           >
             {loading ? '提交中...' : '确认修改并进入后台'}
           </button>

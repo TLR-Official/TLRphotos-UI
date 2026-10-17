@@ -53,12 +53,12 @@ export function NewThreadPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
       <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
-        <Link to="/forum" className="hover:text-teal-600">论坛</Link>
+        <Link to="/forum" className="hover:text-blue-700">论坛</Link>
         <span>/</span>
         <span className="text-slate-700">发帖</span>
       </div>
 
-      <h1 className="text-xl font-bold text-slate-800 mb-6">发布新帖</h1>
+      <h1 className="text-xl font-bold text-black mb-6">发布新帖</h1>
 
       <div className="space-y-4">
         <div>
@@ -66,10 +66,10 @@ export function NewThreadPage() {
           <select
             value={boardId}
             onChange={(e) => setBoardId(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-teal-400"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-blue-700"
           >
             {boards.map((b) => (
-              <option key={b.id} value={b.id}>{b.icon} {b.name}</option>
+              <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
         </div>
@@ -82,7 +82,7 @@ export function NewThreadPage() {
             onChange={(e) => setTitle(e.target.value)}
             maxLength={120}
             placeholder="请输入帖子标题"
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-teal-400"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-700"
           />
         </div>
 
@@ -91,7 +91,7 @@ export function NewThreadPage() {
             <label className="block text-sm text-slate-600">正文 <span className="text-slate-400">({content.length}/20000)</span></label>
             <button
               onClick={() => setShowPreview((v) => !v)}
-              className="text-xs text-teal-600 hover:text-teal-700"
+              className="text-xs text-blue-700 hover:text-blue-800"
             >
               {showPreview ? '编辑' : '预览'}
             </button>
@@ -106,7 +106,7 @@ export function NewThreadPage() {
               onChange={(e) => setContent(e.target.value)}
               maxLength={20000}
               placeholder="支持 Markdown 语法…"
-              className="w-full min-h-[200px] px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-teal-400 resize-y font-mono text-sm"
+              className="w-full min-h-[200px] px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-700 resize-y font-mono text-sm"
             />
           )}
         </div>
@@ -117,7 +117,7 @@ export function NewThreadPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors font-medium"
+            className="px-6 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors font-medium"
           >
             {submitting ? '发布中…' : '发布'}
           </button>

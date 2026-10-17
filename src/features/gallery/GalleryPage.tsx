@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPhotos, searchPhotos } from '../../api/photos';
+import { getPhotos, searchPhotos, getTagsWithCounts } from '../../api/photos';
 import { getTagCategories } from '../../api/tags';
 import type { TagCategory } from '../../api/tags';
 import { TagSelector } from '../../components/TagSelector';
@@ -68,6 +68,9 @@ export function GalleryPage() {
   const [sortBy, setSortBy] = useState<SortOption>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(true);
+  // 热门标签 chips 行
+  const [hotTags, setHotTags] = useState<{ name: string; count: number }[]>([]);
+  const [hotTag, setHotTag] = useState<string | null>(null);
 
   /** 拉取分区列表，首次加载自动选中第一个分区 */
   useEffect(() => {
@@ -75,6 +78,15 @@ export function GalleryPage() {
       if (res.success && res.data && res.data.length > 0) {
         setCategories(res.data);
         setSelectedCategory(res.data[0].id);
+      }
+    });
+  }, []);
+
+  /** 拉取热门标签列表（按数量降序），取前 12 个 */
+  useEffect(() => {
+    getTagsWithCounts().then((res) => {
+      if (res.success && res.data) {
+        setHotTags(res.data.slice(0, 12));
       }
     });
   }, []);
@@ -89,12 +101,16 @@ export function GalleryPage() {
       // 已选标签的 objectName 列表，用逗号拼接传给 search 接口的 tag 参数
       const tagNames = selectedTags.map((t) => t.objectName).join(',');
       const hasAdvancedConditions =
-        keyword || tagNames || sortBy !== 'created_at' || sortOrder !== 'desc';
+        keyword || tagNames || hotTag || sortBy !== 'created_at' || sortOrder !== 'desc';
       let response;
       if (hasAdvancedConditions) {
+        // 将 TagSelector 的 tag 与热门标签 chip 合并（去重）
+        const combinedTags = [
+          ...new Set([...selectedTags.map((t) => t.objectName), ...(hotTag ? [hotTag] : [])]),
+        ].join(',');
         response = await searchPhotos({
           keyword,
-          tag: tagNames || undefined,
+          tag: combinedTags || undefined,
           category: selectedCategory || undefined,
           sortBy,
           sortOrder,
@@ -122,7 +138,7 @@ export function GalleryPage() {
     }, 300);
     return () => clearTimeout(debounce);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, selectedTags, sortBy, sortOrder, selectedCategory]);
+  }, [keyword, selectedTags, sortBy, sortOrder, selectedCategory, hotTag]);
 
   /**
    * 切换排序字段或方向
@@ -164,7 +180,7 @@ export function GalleryPage() {
                   }}
                   className={`px-6 py-3 font-medium transition-all border-b-2 ${
                     selectedCategory === cat.id
-                      ? 'border-teal-600 text-teal-700'
+                      ? 'border-blue-700 text-blue-800'
                       : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -174,6 +190,29 @@ export function GalleryPage() {
               ))}
             </div>
 
+            {/* 热门标签 chips 行：点击切换 tag 筛选，为空时整行隐藏 */}
+            {hotTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-6">
+                <span className="text-sm text-gray-500">热门标签:</span>
+                {hotTags.map((t) => {
+                  const selected = hotTag === t.name;
+                  return (
+                    <button
+                      key={t.name}
+                      onClick={() => setHotTag(selected ? null : t.name)}
+                      className={`px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors ${
+                        selected
+                          ? 'bg-blue-700 border-blue-700 text-white'
+                          : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                      }`}
+                    >
+                      {t.name} ({t.count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="flex gap-6">
               {/* 左侧侧边栏：搜索框 + 标签选择器 */}
               <div className="w-72 flex-shrink-0">
@@ -181,10 +220,10 @@ export function GalleryPage() {
                   <SearchIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="搜索标题或描述..."
+                    placeholder="搜索标题、描述或飞机注册号"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
+                    className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
                   />
                 </div>
                 {selectedCategory && (
@@ -205,7 +244,7 @@ export function GalleryPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-medium">共 {photos.length} 张照片</span>
                     {selectedTags.length > 0 && (
-                      <span className="px-2 py-0.5 text-sm rounded-full bg-teal-100 text-teal-700">
+                      <span className="px-2 py-0.5 text-sm rounded-full bg-blue-50 text-blue-800">
                         {selectedTags.length} 个标签
                       </span>
                     )}
@@ -216,7 +255,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('created_at')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'created_at'
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-blue-700 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -230,7 +269,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('likes')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'likes'
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-blue-700 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -244,7 +283,7 @@ export function GalleryPage() {
                       onClick={() => handleSortChange('views')}
                       className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-all ${
                         sortBy === 'views'
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-blue-700 text-white'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -259,7 +298,7 @@ export function GalleryPage() {
 
                 {isLoading ? (
                   <div className="flex items-center justify-center py-16">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-600 border-t-transparent" />
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-700 border-t-transparent" />
                   </div>
                 ) : photos.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-gray-500">

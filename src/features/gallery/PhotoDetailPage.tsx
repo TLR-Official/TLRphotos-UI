@@ -297,7 +297,7 @@ export function PhotoDetailPage() {
                 <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
                   photo.uploader?.avatar_url
                     ? ''
-                    : 'bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center'
+                    : 'bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center'
                 }`}>
                   {photo.uploader?.avatar_url ? (
                     <img
@@ -342,6 +342,12 @@ export function PhotoDetailPage() {
                 theme === 'dark' ? 'text-white' : 'text-gray-900'
               }`}>照片信息</h2>
               <div className="space-y-4">
+                {photo.registration_number && (
+                  <div className="flex justify-between items-center">
+                    <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>注册号</span>
+                    <span className={`font-medium text-sm font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{photo.registration_number}</span>
+                  </div>
+                )}
                 <DetailRow label="拍摄工具" value={photo.vehicle} theme={theme} />
                 <DetailRow label="相机型号" value={photo.camera_model} theme={theme} />
                 <DetailRow label="拍摄地点" value={photo.location} theme={theme} />

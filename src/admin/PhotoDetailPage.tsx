@@ -180,7 +180,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                   </span>
                 </div>
                 {photo.watermark_config && (
-                  <span className="flex items-center gap-1 text-teal-700">
+                  <span className="flex items-center gap-1 text-blue-800">
                     <ImageIcon className="w-4 h-4" />
                     已添加水印
                   </span>
@@ -257,6 +257,13 @@ export function PhotoDetailPage({ id }: { id: string }) {
             <div className="space-y-3 text-sm">
               <InfoRow label="标题" value={photo.title} />
               <InfoRow
+                label="飞机注册号"
+                value={photo.registration_number || '（未填写）'}
+              />
+              {photo.is_hot === 1 && (
+                <p className="text-sm text-gray-600">用户热门意愿: 是</p>
+              )}
+              <InfoRow
                 label="描述"
                 value={photo.description || '（未填写）'}
                 multiline
@@ -268,7 +275,7 @@ export function PhotoDetailPage({ id }: { id: string }) {
                     {photo.tags.map((tag, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs"
+                        className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs"
                       >
                         {tag}
                       </span>
@@ -532,7 +539,7 @@ function ThumbButton({
     <button
       onClick={onClick}
       className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
-        active ? 'border-teal-600 ring-2 ring-teal-200' : 'border-gray-200 hover:border-gray-300'
+        active ? 'border-blue-700 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300'
       }`}
     >
       <CachedImage

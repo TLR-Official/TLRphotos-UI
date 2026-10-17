@@ -325,7 +325,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
               {pendingCount > 0 && (
                 <button
                   onClick={handleUploadAll}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                  className="px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm"
                 >
                   全部上传
                 </button>
@@ -407,7 +407,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
                   {uploadFile.status === 'pending' && (
                     <button
                       onClick={() => handleUploadFile(uploadFile)}
-                      className="mt-2 w-full px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm"
+                      className="mt-2 w-full px-3 py-1.5 bg-blue-700 text-white rounded-md hover:bg-blue-800 transition-colors text-sm"
                     >
                       上传
                     </button>
@@ -418,7 +418,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
                       <div className="text-xs text-blue-500 mb-1">{uploadFile.message}</div>
                       <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
                         <div
-                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                          className="bg-blue-700 h-2 rounded-full transition-all duration-300"
                           style={{ width: `${uploadFile.progress}%` }}
                         ></div>
                       </div>
@@ -438,7 +438,7 @@ export function PhotoUploader({ onSuccess, onError }: PhotoUploaderProps) {
                         onClick={() => setFiles((prev) =>
                           prev.map((f) => (f.id === uploadFile.id ? { ...f, status: 'pending', message: '' } : f))
                         )}
-                        className="mt-1 w-full px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs"
+                        className="mt-1 w-full px-3 py-1 bg-blue-700 text-white rounded-md hover:bg-blue-800 transition-colors text-xs"
                       >
                         重试
                       </button>

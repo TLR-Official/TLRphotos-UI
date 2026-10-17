@@ -11,6 +11,10 @@ export interface PhotoListItem {
   tags: string[];
   width?: number;
   height?: number;
+  /** 飞机注册号（旧数据可能为 null） */
+  registration_number?: string | null;
+  /** 热门意愿标记：1=上传者愿意推荐为热门 */
+  is_hot?: number;
 }
 
 /** 上传者信息（嵌入在照片详情中，用于展示上传者头像与昵称） */

@@ -177,6 +177,96 @@ describe('POST /api/photos/upload/complete', () => {
 });
 
 // ============================================================================
+// V3.2.0 注册号必填 / 热门意愿标记 / 注册号检索 / 大标签聚合
+// ============================================================================
+describe('V3.2.0 注册号与热门标记', () => {
+  const REG_PHOTO_ID = 'reg-test-001';
+  const HOT_PHOTO_ID = 'reg-test-002';
+  const PLAIN_PHOTO_ID = 'reg-test-003';
+
+  beforeAll(async () => {
+    const now = new Date().toISOString();
+    const insert = `INSERT OR REPLACE INTO photos
+      (id, title, thumbnail_path, original_url, status, registration_number, is_hot, tags, created_at)
+      VALUES (?, ?, 't', 'o', 'approved', ?, ?, ?, ?)`;
+    await db.run(insert, REG_PHOTO_ID, '注册号测试机', 'B-1234', 0, '["regtagx"]', now);
+    await db.run(insert, HOT_PHOTO_ID, '热门意愿机', 'B-9999', 1, '["regtagx","hottagx"]', now);
+    await db.run(insert, PLAIN_PHOTO_ID, '存量无注册号机', null, 0, '["hottagx"]', now);
+  });
+
+  it('upload/complete 缺注册号返回 400 REGISTRATION_REQUIRED（先于 OSS 调用）', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/test/x.webp', title: '缺注册号' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('REGISTRATION_REQUIRED');
+  });
+
+  it('upload/complete 注册号格式非法返回 400 REGISTRATION_REQUIRED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/test/x.webp', title: '非法注册号', registration_number: '!!' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('REGISTRATION_REQUIRED');
+  });
+
+  it('搜索 registration 参数大小写不敏感命中', async () => {
+    const res = await request(app).get('/api/photos/search').query({ registration: 'b-1234' });
+
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((p: any) => p.id);
+    expect(ids).toContain(REG_PHOTO_ID);
+    expect(ids).not.toContain(HOT_PHOTO_ID);
+  });
+
+  it('搜索 keyword 命中注册号（归一化大写匹配）', async () => {
+    const res = await request(app).get('/api/photos/search').query({ keyword: 'b-9999' });
+
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((p: any) => p.id);
+    expect(ids).toContain(HOT_PHOTO_ID);
+  });
+
+  it('搜索 is_hot=1 仅返回勾选热门意愿的照片', async () => {
+    const res = await request(app).get('/api/photos/search').query({ is_hot: '1' });
+
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((p: any) => p.id);
+    expect(ids).toContain(HOT_PHOTO_ID);
+    expect(ids).not.toContain(REG_PHOTO_ID);
+    expect(ids).not.toContain(PLAIN_PHOTO_ID);
+  });
+
+  it('GET /tags?with_counts=1 返回带计数大标签且按计数降序', async () => {
+    const res = await request(app).get('/api/photos/tags').query({ with_counts: '1' });
+
+    expect(res.status).toBe(200);
+    const list = res.body.data as { name: string; count: number }[];
+    expect(Array.isArray(list)).toBe(true);
+    const hot = list.find((t) => t.name === 'hottagx');
+    const reg = list.find((t) => t.name === 'regtagx');
+    // hottagx 见于 HOT+PLAIN 两张已审核照片；regtagx 见于 REG+HOT 两张
+    expect(hot?.count).toBe(2);
+    expect(reg?.count).toBe(2);
+    for (let i = 1; i < list.length; i++) {
+      expect(list[i - 1].count).toBeGreaterThanOrEqual(list[i].count);
+    }
+  });
+
+  it('GET /tags 默认仍返回字符串数组（向后兼容）', async () => {
+    const res = await request(app).get('/api/photos/tags');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data).toContain('hottagx');
+  });
+});
+
+// ============================================================================
 // 图片统计与点赞 — V1.4.0 新增
 // 覆盖：浏览去重（登录 user_id + 未登录 IP + 24h 窗口）、点赞强制登录、幂等、并发一致性
 // ============================================================================

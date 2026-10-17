@@ -78,7 +78,7 @@ export function ArchiveBanner({
         </div>
       )}
       {node.children.length > 0 && (
-        <div className="ml-4 mt-3 space-y-4 border-l border-teal-100 pl-3 md:ml-6 md:pl-4">
+        <div className="ml-4 mt-3 space-y-4 border-l border-blue-100 pl-3 md:ml-6 md:pl-4">
           {node.children.map(renderNode)}
         </div>
       )}
@@ -86,15 +86,15 @@ export function ArchiveBanner({
   );
 
   return (
-    <div className="rounded-xl border border-teal-200 bg-teal-50/60 p-4">
+    <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2">
-          <Archive className="mt-0.5 h-4 w-4 flex-shrink-0 text-teal-600" />
+          <Archive className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-700" />
           <div>
-            <p className="text-sm font-medium text-teal-800">
+            <p className="text-sm font-medium text-blue-900">
               该评论线程已归档（{archive.reply_count + 1} 条）
             </p>
-            <p className="mt-0.5 text-xs text-teal-700/80">
+            <p className="mt-0.5 text-xs text-blue-800/80">
               超过本地留存周期，已迁移至云存储；回复时将自动回迁本地
             </p>
           </div>
@@ -105,7 +105,7 @@ export function ArchiveBanner({
               type="button"
               aria-label="删除归档线程"
               onClick={() => onDelete(archive.root_id)}
-              className="rounded-md p-1.5 text-teal-700 transition-colors hover:bg-red-50 hover:text-red-500"
+              className="rounded-md p-1.5 text-blue-800 transition-colors hover:bg-red-50 hover:text-red-500"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -113,7 +113,7 @@ export function ArchiveBanner({
           <button
             type="button"
             onClick={toggleExpand}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-800 transition-colors hover:bg-blue-100"
           >
             {expanded ? (
               <>
@@ -129,7 +129,7 @@ export function ArchiveBanner({
       </div>
 
       {expanded && (
-        <div className="mt-3 rounded-lg border border-teal-100 bg-white p-4">
+        <div className="mt-3 rounded-lg border border-blue-100 bg-white p-4">
           {state === 'loading' && (
             <div className="flex items-center justify-center gap-2 py-8 text-xs text-gray-400">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -142,7 +142,7 @@ export function ArchiveBanner({
               <button
                 type="button"
                 onClick={() => open(archive.root_id, true)}
-                className="mt-2 text-xs font-medium text-teal-600 hover:underline"
+                className="mt-2 text-xs font-medium text-blue-700 hover:underline"
               >
                 重试
               </button>
@@ -185,7 +185,7 @@ export function ArchiveBanner({
               </div>
               {/* L2/L3 树 */}
               {replyTree.length > 0 && (
-                <div className="ml-4 space-y-5 border-l border-teal-100 pl-3 md:ml-6 md:pl-4">
+                <div className="ml-4 space-y-5 border-l border-blue-100 pl-3 md:ml-6 md:pl-4">
                   {replyTree.map(renderNode)}
                 </div>
               )}

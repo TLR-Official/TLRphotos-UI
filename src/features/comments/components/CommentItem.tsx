@@ -23,11 +23,11 @@ export interface CommentItemProps {
   ) => Promise<{ success: boolean; message?: string }> | void;
 }
 
-/** 头像：取作者名首字符的 teal 圆 */
+/** 头像：取作者名首字符的圆形色块 */
 function Avatar({ author }: { author: string }) {
   const initial = (author || '?').trim().charAt(0).toUpperCase();
   return (
-    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-teal-100 text-sm font-semibold text-teal-700">
+    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-800">
       {initial}
     </div>
   );
@@ -58,7 +58,7 @@ export function CommentItem({
       <div className="mt-2 pl-10 text-sm leading-relaxed text-gray-700">
         {/* L3 平铺互回：前缀"回复 @用户"，永不出现第四级 */}
         {comment.depth === 3 && comment.reply_to_user_name && (
-          <span className="mr-1 text-teal-600">
+          <span className="mr-1 text-blue-700">
             回复 @{comment.reply_to_user_name}：
           </span>
         )}
@@ -84,7 +84,7 @@ export function CommentItem({
           <button
             type="button"
             onClick={() => onReply?.(comment)}
-            className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-teal-600"
+            className="inline-flex items-center gap-1 text-gray-500 transition-colors hover:text-blue-700"
           >
             <Reply className="h-3.5 w-3.5" />
             回复

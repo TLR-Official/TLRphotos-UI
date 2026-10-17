@@ -410,16 +410,16 @@ export function AuthPage() {
   };
 
   // 输入框通用样式
-  const inputClass = 'w-full pl-12 pr-4 py-4 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition-all duration-300';
+  const inputClass = 'w-full pl-12 pr-4 py-4 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-all duration-300';
 
   return (
     <div className="flex items-center justify-center py-8">
       <div className="relative w-full max-w-md">
-        <div className="absolute inset-0 bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-500 rounded-3xl blur-xl opacity-30 animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 rounded-3xl blur-xl opacity-30 animate-pulse" />
 
         <div className="relative backdrop-blur-lg rounded-3xl p-8 border bg-gray-50/90 border-gray-200 shadow-2xl shadow-gray-200 transition-all duration-500">
           <div className="flex justify-center mb-8">
-            <div className="text-4xl font-bold bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            <div className="text-4xl font-bold bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 bg-clip-text text-transparent">
               TLRphotos
             </div>
           </div>
@@ -430,7 +430,7 @@ export function AuthPage() {
                 onClick={() => setIsLogin(true)}
                 className={`absolute inset-y-0 left-0 right-1/2 flex items-center justify-center rounded-full transition-all duration-500 ease-out ${
                   isLogin
-                    ? 'bg-gradient-to-r from-teal-600 to-blue-600 text-white shadow-lg transform scale-105'
+                    ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white shadow-lg transform scale-105'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -440,7 +440,7 @@ export function AuthPage() {
                 onClick={() => setIsLogin(false)}
                 className={`absolute inset-y-0 left-1/2 right-0 flex items-center justify-center rounded-full transition-all duration-500 ease-out ${
                   !isLogin
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg transform scale-105'
+                    ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white shadow-lg transform scale-105'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -453,7 +453,7 @@ export function AuthPage() {
             {/* 登录第二段：邮箱验证码确认 */}
             {isLogin && stage === 'otp' ? (
               <>
-                <div className="rounded-xl p-4 text-sm bg-teal-50 border border-teal-200 text-teal-700">
+                <div className="rounded-xl p-4 text-sm bg-blue-50 border border-blue-200 text-blue-800">
                   验证码已发送至{maskedTarget ? ` ${maskedTarget} ` : '您的邮箱'}，请在 10 分钟内完成验证
                 </div>
 
@@ -489,7 +489,7 @@ export function AuthPage() {
                     className={`text-sm font-medium transition-colors duration-300 ${
                       otpCooldown > 0 || otpSending
                         ? 'text-gray-400 cursor-not-allowed'
-                        : 'text-teal-700 hover:text-teal-500'
+                        : 'text-blue-800 hover:text-blue-600'
                     }`}
                   >
                     {otpSending ? '发送中...' : otpCooldown > 0 ? `${otpCooldown}s 后重新发送` : '重新发送验证码'}
@@ -561,7 +561,7 @@ export function AuthPage() {
                     className={`flex-shrink-0 px-4 rounded-xl text-sm font-medium transition-all duration-300 ${
                       bindCooldown > 0 || bindSending
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg'
+                        : 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700 shadow-lg'
                     }`}
                   >
                     {bindSending ? '发送中...' : bindCooldown > 0 ? `${bindCooldown}s` : '发送验证码'}
@@ -625,7 +625,7 @@ export function AuthPage() {
                         type="checkbox"
                         checked={remember}
                         onChange={(e) => setRemember(e.target.checked)}
-                        className="w-5 h-5 rounded border-2 border-gray-300 text-teal-700 bg-white transition-all duration-300 focus:ring-2 focus:ring-teal-600"
+                        className="w-5 h-5 rounded border-2 border-gray-300 text-blue-800 bg-white transition-all duration-300 focus:ring-2 focus:ring-blue-700"
                       />
                       <span className="ml-2 text-sm text-gray-600">
                         保存登录状态（30天内有效）
@@ -700,7 +700,7 @@ export function AuthPage() {
                       className={`flex-shrink-0 px-4 rounded-xl text-sm font-medium transition-all duration-300 ${
                         regCooldown > 0 || regSending
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 shadow-lg'
+                          : 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700 shadow-lg'
                       }`}
                     >
                       {regSending ? '发送中...' : regCooldown > 0 ? `${regCooldown}s` : '发送验证码'}
@@ -754,7 +754,7 @@ export function AuthPage() {
               className={`w-full py-4 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] ${
                 isLoading
                   ? 'bg-gray-200 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-teal-600 via-blue-600 to-cyan-600 hover:from-teal-500 hover:via-blue-500 hover:to-cyan-500 shadow-lg hover:shadow-xl'
+                  : 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 hover:from-blue-600 hover:via-blue-500 hover:to-blue-400 shadow-lg hover:shadow-xl'
               }`}
             >
               {isLoading ? (
@@ -812,7 +812,7 @@ export function AuthPage() {
               {isLogin ? '还没有账号？' : '已有账号？'}
               <button
                 onClick={() => setIsLogin(!isLogin)}
-                className="ml-2 font-semibold text-teal-700 hover:text-teal-500 transition-colors duration-300"
+                className="ml-2 font-semibold text-blue-800 hover:text-blue-600 transition-colors duration-300"
               >
                 {isLogin ? '立即注册' : '立即登录'}
               </button>

@@ -117,7 +117,7 @@ export function CommentThread({
           type="button"
           onClick={handleLoadMore}
           disabled={loadingMore || busy}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-blue-800 transition-colors hover:bg-blue-50 disabled:opacity-50"
         >
           {loadingMore ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

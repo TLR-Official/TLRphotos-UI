@@ -33,6 +33,8 @@ export interface User {
   can_download: number;
   can_like: number;
   email_verified: number;
+  // V3.2.0 邮件验证周期化：最近一次邮箱验证成功时间（NULL=从未验证）
+  last_email_verified_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,7 +42,7 @@ export interface User {
 /** 用户查询统一列集（含密码哈希，调用方不得外泄） */
 const USER_COLUMNS = `id, email, password_hash, username, avatar_url, bio, website, location,
   custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like,
-  email_verified, created_at, updated_at`;
+  email_verified, last_email_verified_at, created_at, updated_at`;
 
 /**
  * 校验邮箱格式：含 @ 且域名含点，不允许空白。
@@ -88,15 +90,18 @@ export async function register(email: string, password: string, username?: strin
   const userId = `user_${Date.now()}`;
   const finalUsername = username || null;
 
+  // 注册即完成邮箱确权：email_verified=1 且 last_email_verified_at=注册时刻（V3.2.0 周期锚点）
+  const now = new Date().toISOString();
   await db.run(
-    `INSERT INTO users (id, email, password_hash, username, email_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    `INSERT INTO users (id, email, password_hash, username, email_verified, last_email_verified_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
     userId,
     email,
     passwordHash,
     finalUsername,
-    new Date().toISOString(),
-    new Date().toISOString()
+    now,
+    now,
+    now
   );
 
   const newUser = await getUserById(userId);
@@ -294,11 +299,13 @@ export async function updateUser(userId: string, data: Partial<User>): Promise<U
 
 /**
  * 标记用户邮箱已确权（登录验证码校验成功后调用）。
+ * V3.2.0：同时刷新 last_email_verified_at，作为周期性验证的时间锚点。
  */
 export async function markEmailVerified(userId: string): Promise<void> {
+  const now = new Date().toISOString();
   await db.run(
-    'UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?',
-    [new Date().toISOString(), userId]
+    'UPDATE users SET email_verified = 1, last_email_verified_at = ?, updated_at = ? WHERE id = ?',
+    [now, now, userId]
   );
 }
 
@@ -307,9 +314,10 @@ export async function markEmailVerified(userId: string): Promise<void> {
  * 调用前路由层必须已完成新邮箱的验证码校验。
  */
 export async function bindUserEmail(userId: string, email: string): Promise<void> {
+  const now = new Date().toISOString();
   await db.run(
-    'UPDATE users SET email = ?, email_verified = 1, updated_at = ? WHERE id = ?',
-    [email, new Date().toISOString(), userId]
+    'UPDATE users SET email = ?, email_verified = 1, last_email_verified_at = ?, updated_at = ? WHERE id = ?',
+    [email, now, now, userId]
   );
 }
 

@@ -403,6 +403,25 @@ const initSchema = async () => {
     await db.run('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
   } catch {}
 
+  // V3.2.0 邮件验证周期化：最近一次邮箱验证成功时间（登录按周期跳过 OTP 的依据；
+  // NULL 表示从未完成验证，下次登录必须验码）
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN last_email_verified_at TEXT');
+  } catch {}
+
+  // V3.2.0 飞机注册号（新上传必填，供全局检索与审核校验；存量数据允许 NULL）
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN registration_number TEXT');
+  } catch {}
+  // V3.2.0 热门图片意愿标记：用户上传时勾选"愿意上传为热门图片"置 1，审核员可见
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN is_hot INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  // 注册号检索索引（全局检索按注册号前缀/模糊匹配）
+  try {
+    await db.run('CREATE INDEX IF NOT EXISTS idx_photos_registration_number ON photos(registration_number)');
+  } catch {}
+
   // V1.13.0 管理员安全：强制改密标记 + JWT 版本号（改密即作废旧 JWT）
   try {
     await db.run('ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');

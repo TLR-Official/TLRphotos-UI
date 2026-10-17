@@ -47,7 +47,7 @@ export function CommentReplyBox({
   return (
     <form onSubmit={handleSubmit} className="mt-2 space-y-2">
       <p className="text-xs text-gray-500">
-        回复 <span className="font-medium text-teal-700">@{targetAuthor}</span>
+        回复 <span className="font-medium text-blue-800">@{targetAuthor}</span>
       </p>
       <textarea
         ref={textareaRef}
@@ -55,7 +55,7 @@ export function CommentReplyBox({
         onChange={(event) => setContent(event.target.value.slice(0, 1000))}
         rows={2}
         placeholder="写下你的回复…"
-        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
       />
       <div className="flex items-center gap-2">
         <button
@@ -64,7 +64,7 @@ export function CommentReplyBox({
           className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
             !trimmed || submitting
               ? 'cursor-not-allowed bg-gray-100 text-gray-400'
-              : 'bg-teal-600 text-white hover:bg-teal-700 active:scale-95'
+              : 'bg-blue-700 text-white hover:bg-blue-800 active:scale-95'
           }`}
         >
           <CornerDownLeft className="h-3.5 w-3.5" />

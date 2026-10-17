@@ -187,6 +187,7 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-10-17 08:01 | [release] 界面优化八项发布 V3.2.0-beta — 邮件验码周期化/注册号必填+检索/热门意愿/大标签聚合/三色色板/页脚/论坛去AI化 | backend/src/{db.ts,routes/auth.ts,routes/photos.ts,services/authService.ts}、backend/docs/api.md、backend/.env.example、src/index.css、src/shared/{Footer,Header}.tsx、src/features/{auth,gallery,upload,forum,profile,comments}/*、src/admin/*、后端327用例通过 |
 | 2026-10-11 17:42 | [release] 正式上线前版本号挂预发布标识 V3.1.0-beta（SemVer §9，GA 时去后缀） | package.json、package-lock.json、.trae/rules/版本管理规则.md（新增 2.4 预发布规范） |
 | 2026-10-11 09:55 | [release] 论坛二期板块/帖子/帖子流发布 V3.1.0 | backend/src/{db.ts,routes/forum.ts,routes/adminForum.ts,routes/comments.ts,services/commentService.ts,services/verificationService.ts,server.ts}、src/features/forum/*、src/api/{forum.ts,verification.ts,comments.ts}、src/utils/commentTree.ts、src/shared/Header.tsx、src/App.tsx（后端315/前端19用例，帖子详情复用CommentList subject_type=thread） |
 | 2026-10-10 23:28 | [release] 论坛一期三级嵌套评论系统发布 V3.0.0 | 全项目（comments 表重建、归档/回迁/热度三档、照片页与文章页接入、api.md 全量同步） |

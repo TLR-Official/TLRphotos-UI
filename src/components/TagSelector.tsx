@@ -108,7 +108,7 @@ export function TagSelector({ categoryId, selectedTags, onTagsChange, disabled }
               </span>
               <span
                 className={`text-sm px-2 py-1 rounded ${
-                  isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'
+                  isSelected ? 'bg-blue-700 text-white' : 'bg-gray-200 text-gray-600'
                 }`}
               >
                 {isSelected ? '已选择' : '点击选择'}

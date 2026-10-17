@@ -23,6 +23,8 @@ export interface SearchParams {
   category?: string;                                  // 分区 ID（aviation/railway/automobile）
   sortBy?: 'created_at' | 'likes' | 'views' | 'title'; // 排序字段
   sortOrder?: 'asc' | 'desc';                         // 排序方向
+  registration?: string;                              // 飞机注册号（模糊匹配，大小写不敏感）
+  is_hot?: string;                                    // 传 '1' 时仅返回热门意愿照片
 }
 
 /** 照片上传元数据（含 EXIF 信息与水印配置） */
@@ -44,6 +46,8 @@ export interface PhotoUploadMeta {
   watermarkY?: number;       // 水印 Y 坐标
   watermarkOpacity?: number; // 水印透明度
   watermarkSize?: number;    // 水印字号
+  registration_number?: string; // 飞机注册号（必填，2-20 位字母/数字/连字符，后端统一存大写）
+  is_hot?: number;           // 热门意愿：1=愿意推荐为热门，0=否
 }
 
 /** 预签名 URL 响应（用于 OSS 直传） */
@@ -85,6 +89,8 @@ export async function searchPhotos(params: SearchParams): Promise<ApiResponse<Ph
   if (params.category) query.set('category', params.category);
   if (params.sortBy) query.set('sortBy', params.sortBy);
   if (params.sortOrder) query.set('sortOrder', params.sortOrder);
+  if (params.registration) query.set('registration', params.registration);
+  if (params.is_hot) query.set('is_hot', params.is_hot);
   return request<PhotoListItem[]>(`/photos/search?${query.toString()}`);
 }
 
@@ -94,6 +100,14 @@ export async function searchPhotos(params: SearchParams): Promise<ApiResponse<Ph
  */
 export async function getTags(): Promise<ApiResponse<string[]>> {
   return request<string[]>('/photos/tags');
+}
+
+/**
+ * 获取带照片计数的标签列表（按计数降序）
+ * @returns ApiResponse<{ name: string; count: number }[]>
+ */
+export async function getTagsWithCounts(): Promise<ApiResponse<{ name: string; count: number }[]>> {
+  return request<{ name: string; count: number }[]>('/photos/tags?with_counts=1');
 }
 
 /**

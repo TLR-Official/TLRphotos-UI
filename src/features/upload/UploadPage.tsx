@@ -62,6 +62,9 @@ export function UploadPage() {
   const [exif, setExif] = useState<ExifData>({});
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [safetyAgreement, setSafetyAgreement] = useState(false);
+  // 飞机注册号（必填，输入时自动转大写）与热门意愿（可选，默认不勾选）
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [isHot, setIsHot] = useState(false);
 
   const watermarkText = 'TLRphotos';
   // 水印位置/透明度/字号，初始居中
@@ -234,12 +237,18 @@ export function UploadPage() {
     setWatermarkOpacity(60);
     setWatermarkSize(32);
     setSafetyAgreement(false);
+    setRegistrationNumber('');
+    setIsHot(false);
     setStep('select');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 提交前置条件：标题非空、已选分类、已勾选安全声明
-  const canSubmit = title.trim() && category && safetyAgreement;
+  // 飞机注册号校验：2-20 位字母/数字/连字符（首位不允许连字符），与后端规则一致
+  const trimmedRegistration = registrationNumber.trim();
+  const isRegistrationValid = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(trimmedRegistration);
+
+  // 提交前置条件：标题非空、注册号合法、已选分类、已勾选安全声明
+  const canSubmit = title.trim() && isRegistrationValid && category && safetyAgreement;
 
   /** 水印拖动开始：阻止默认行为并进入拖动状态 */
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -282,6 +291,11 @@ export function UploadPage() {
    */
   const handleSubmit = async () => {
     if (!file || !canSubmit) return;
+    // 防御性校验：注册号不合法时阻止提交并提示（按钮禁用时不会走到这里）
+    if (!isRegistrationValid) {
+      setError('请填写有效的飞机注册号（2-20 位字母/数字/连字符）');
+      return;
+    }
 
     setStep('uploading');
     setProgress(10);
@@ -310,6 +324,8 @@ export function UploadPage() {
         tags: tagsList,
         category: category,
         structured_tags: JSON.stringify(structuredTags),
+        registration_number: trimmedRegistration,
+        is_hot: isHot ? 1 : 0,
         ...exif,
       };
 
@@ -350,7 +366,7 @@ export function UploadPage() {
           <p className="text-gray-600 dark:text-gray-400 mb-4">上传图片需要登录账户</p>
           <button
             onClick={() => navigate('/auth')}
-            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+            className="px-6 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors"
           >
             前往登录
           </button>
@@ -427,7 +443,7 @@ export function UploadPage() {
 
             {step === 'uploading' && (
               <div className="w-full bg-gray-200 rounded-full h-2 mb-6 dark:bg-gray-700">
-                <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                <div className="bg-blue-700 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
               </div>
             )}
 
@@ -442,7 +458,7 @@ export function UploadPage() {
                       disabled={step === 'uploading'}
                       className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
                         category === cat.id
-                          ? 'bg-blue-500 text-white shadow-lg'
+                          ? 'bg-blue-700 text-white shadow-lg'
                           : theme === 'dark'
                           ? 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -458,6 +474,22 @@ export function UploadPage() {
               <div>
                 <label className={labelCls}>标题 <span className="text-red-500">*</span></label>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片标题" className={inputCls} />
+              </div>
+
+              <div>
+                <label className={labelCls}>飞机注册号 <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={registrationNumber}
+                  onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
+                  disabled={step === 'uploading'}
+                  placeholder="如 B-1234"
+                  maxLength={20}
+                  className={inputCls}
+                />
+                {registrationNumber.trim() && !isRegistrationValid && (
+                  <p className="mt-1 text-xs text-red-500">请填写有效的飞机注册号（2-20 位字母/数字/连字符）</p>
+                )}
               </div>
 
               <div>
@@ -581,6 +613,21 @@ export function UploadPage() {
                 </div>
               </div>
 
+              <div className={`flex items-start gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-slate-700/50' : 'bg-gray-50'}`}>
+                <input
+                  type="checkbox"
+                  id="hot-recommendation"
+                  checked={isHot}
+                  onChange={(e) => setIsHot(e.target.checked)}
+                  disabled={step === 'uploading'}
+                  className="mt-1"
+                />
+                <label htmlFor="hot-recommendation" className={`text-sm flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  愿意将图片上传为热门图片
+                  <span className="block mt-0.5 text-xs text-gray-500">勾选后，审核员将在审核时看到您的热门推荐意愿</span>
+                </label>
+              </div>
+
               <div className={`flex items-start gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-red-900/20 border border-red-700/50' : 'bg-red-50 border border-red-200'}`}>
                 <input
                   type="checkbox"
@@ -609,7 +656,7 @@ export function UploadPage() {
                   disabled={!canSubmit || step === 'uploading'}
                   className={`px-8 py-2 rounded-lg transition-colors font-medium ${
                     canSubmit && step !== 'uploading'
-                      ? 'bg-blue-500 text-white hover:bg-blue-600'
+                      ? 'bg-blue-700 text-white hover:bg-blue-800'
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
@@ -620,8 +667,9 @@ export function UploadPage() {
               {!canSubmit && step === 'fill' && (
                 <p className="text-xs text-center text-gray-400">
                   {!title.trim() && '请填写标题'}
-                  {title.trim() && !category && '请选择分类'}
-                  {title.trim() && category && !safetyAgreement && '请勾选安全声明'}
+                  {title.trim() && !isRegistrationValid && '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'}
+                  {title.trim() && isRegistrationValid && !category && '请选择分类'}
+                  {title.trim() && isRegistrationValid && category && !safetyAgreement && '请勾选安全声明'}
                 </p>
               )}
             </div>

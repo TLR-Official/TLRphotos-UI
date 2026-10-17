@@ -51,6 +51,41 @@ function getCurrentUserId(req: express.Request): string | null {
 const VIEW_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * 飞机注册号格式：2-20 位大写字母/数字/连字符，须以字母或数字开头（如 B-1234、N123AB、9H-ABC）。
+ * 上传时统一 trim + 转大写后落库，检索按归一化值匹配。
+ */
+const REGISTRATION_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
+
+/**
+ * 归一化并校验飞机注册号。
+ * @returns 合法时返回归一化（大写）注册号；非法/为空返回 null
+ */
+function normalizeRegistrationNumber(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const value = input.trim().toUpperCase();
+  return REGISTRATION_PATTERN.test(value) ? value : null;
+}
+
+/** is_hot 意愿标记入参归一化：接受 true/'true'/'1'/1，其余视为未勾选 */
+function normalizeIsHot(input: unknown): number {
+  return input === true || input === 'true' || input === '1' || input === 1 ? 1 : 0;
+}
+
+/**
+ * 解析 photos.tags 字段为字符串数组。
+ * 新数据为 JSON 数组字符串；旧数据兼容空格分隔。
+ */
+function parsePhotoTags(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return raw.split(' ').filter(Boolean);
+  }
+}
+
+/**
  * 提取客户端真实 IP（项目部署在 Nginx 反代后）。
  * 优先取 X-Forwarded-For 首段（最接近客户端的代理 IP），避免反代后所有请求都显示为 127.0.0.1。
  */
@@ -157,25 +192,42 @@ const handleUploadError = (err: any, req: express.Request, res: express.Response
 
 /**
  * 搜索已审核通过的照片。
- * 支持按关键词（标题/描述模糊匹配）和标签过滤，并提供安全排序字段。
- * @query keyword 标题或描述关键词
+ * 支持按关键词（标题/描述/注册号模糊匹配）、注册号、标签、热门标记过滤，并提供安全排序字段。
+ * @query keyword 标题、描述或注册号关键词
+ * @query registration 飞机注册号（归一化大写后模糊匹配，V3.2.0）
  * @query tag 标签名（JSON 子串匹配）
+ * @query category 分区
+ * @query is_hot 传 '1' 时仅返回用户勾选"热门意愿"的照片（V3.2.0）
  * @query sortBy 排序字段（白名单校验，防 SQL 注入）
  * @query sortOrder 排序方向 asc/desc
  */
 router.get('/search', photoReadLimiter, async (req, res) => {
   try {
-    const { keyword, tag, category, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
+    const { keyword, registration, tag, category, is_hot, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
-    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, created_at FROM photos WHERE status = "approved"';
+    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, is_hot, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
     const conditions: string[] = [];
 
-    // 关键词匹配：转义 LIKE 特殊字符防止用户输入干扰 SQL 通配符
+    // 关键词匹配：转义 LIKE 特殊字符防止用户输入干扰 SQL 通配符；注册号同步纳入关键词检索
     if (keyword) {
       const escapedKeyword = escapeLikePattern(String(keyword));
-      conditions.push('(title LIKE ? OR description LIKE ?)');
-      params.push(`%${escapedKeyword}%`, `%${escapedKeyword}%`);
+      conditions.push('(title LIKE ? OR description LIKE ? OR UPPER(registration_number) LIKE ?)');
+      params.push(`%${escapedKeyword}%`, `%${escapedKeyword}%`, `%${escapedKeyword.toUpperCase()}%`);
+    }
+
+    // 注册号检索（V3.2.0）：归一化大写后模糊匹配，支持完整注册号或片段
+    if (registration) {
+      const normalized = String(registration).trim().toUpperCase();
+      if (normalized) {
+        conditions.push('UPPER(registration_number) LIKE ?');
+        params.push(`%${escapeLikePattern(normalized)}%`);
+      }
+    }
+
+    // 热门意愿过滤（V3.2.0）
+    if (is_hot === '1' || is_hot === 'true') {
+      conditions.push('is_hot = 1');
     }
 
     // 标签匹配：tags 字段以 JSON 数组字符串存储，使用子串匹配
@@ -229,26 +281,31 @@ router.get('/search', photoReadLimiter, async (req, res) => {
 
 /**
  * 聚合查询所有已审核照片的标签集合。
- * 返回去重并按字典序排序的标签数组，供前端标签云展示。
+ * 默认返回去重并按字典序排序的标签数组（string[]，向后兼容）。
+ * @query with_counts 传 '1' 时返回 [{ name, count }]，按照片数降序，供"大标签"检索筛选展示（V3.2.0）
  */
 router.get('/tags', async (req, res) => {
   try {
+    const withCounts = req.query.with_counts === '1' || req.query.with_counts === 'true';
     const photos = await db.all('SELECT tags FROM photos WHERE status = "approved"');
-    const tagSet = new Set<string>();
 
+    if (withCounts) {
+      // 大标签聚合：统计每个标签关联的已审核照片数，降序返回
+      const tagCounts = new Map<string, number>();
+      photos.forEach((photo: any) => {
+        parsePhotoTags(photo.tags).forEach((tag) => {
+          tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+        });
+      });
+      const tags = Array.from(tagCounts.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      return res.json({ success: true, data: tags });
+    }
+
+    const tagSet = new Set<string>();
     photos.forEach((photo: any) => {
-      if (photo.tags) {
-        try {
-          const tags = JSON.parse(photo.tags);
-          if (Array.isArray(tags)) {
-            tags.forEach((tag: string) => tagSet.add(tag));
-          }
-        } catch {
-          // 旧数据兼容：空格分隔字符串
-          const tags = photo.tags.split(' ').filter(Boolean);
-          tags.forEach((tag: string) => tagSet.add(tag));
-        }
-      }
+      parsePhotoTags(photo.tags).forEach((tag) => tagSet.add(tag));
     });
 
     const tags = Array.from(tagSet).sort();
@@ -774,10 +831,20 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       return res.status(denied.status).json(denied.payload);
     }
 
-    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height } = req.body;
+    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot } = req.body;
 
     if (!key) {
       return res.status(400).json({ success: false, message: '文件Key不能为空' });
+    }
+
+    // V3.2.0：飞机注册号必填（归一化大写落库），供全局检索与审核校验
+    const normalizedRegistration = normalizeRegistrationNumber(registration_number);
+    if (!normalizedRegistration) {
+      return res.status(400).json({
+        success: false,
+        code: 'REGISTRATION_REQUIRED',
+        message: '请填写有效的飞机注册号（2-20 位字母/数字/连字符，如 B-1234）',
+      });
     }
 
     // 确认 OSS 上传结果，返回原图与缩略图 URL
@@ -801,6 +868,8 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       iso: iso || 0,
       shutter_speed: shutter_speed || '',
       aperture: aperture || '',
+      registration_number: normalizedRegistration,
+      is_hot: normalizeIsHot(is_hot),
       likes: 0,
       views: 0,
       created_at: new Date().toISOString(),
@@ -823,7 +892,7 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       newId = String(currentMaxId + 1).padStart(6, '0');
 
       await db.run(
-        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         newId,
         newPhoto.title,
         newPhoto.thumbnail_path,
@@ -841,6 +910,8 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
         newPhoto.iso,
         newPhoto.shutter_speed,
         newPhoto.aperture,
+        newPhoto.registration_number,
+        newPhoto.is_hot,
         newPhoto.likes,
         newPhoto.views,
         newPhoto.created_at
@@ -964,11 +1035,23 @@ router.post(
       watermarkSize,
       category,
       structured_tags,
+      registration_number,
+      is_hot,
     } = req.body;
 
     // 分区必填校验：未提供 category 时早期返回，避免后续无意义的图片处理与 OSS 上传
     if (!category) {
       return res.status(400).json({ success: false, message: '请选择照片分区' });
+    }
+
+    // V3.2.0：飞机注册号必填（归一化大写落库），供全局检索与审核校验
+    const normalizedRegistration = normalizeRegistrationNumber(registration_number);
+    if (!normalizedRegistration) {
+      return res.status(400).json({
+        success: false,
+        code: 'REGISTRATION_REQUIRED',
+        message: '请填写有效的飞机注册号（2-20 位字母/数字/连字符，如 B-1234）',
+      });
     }
 
     // 水印配置：仅当提供水印文本时构造配置对象，否则留空
@@ -1051,6 +1134,8 @@ router.post(
       iso: iso || 0,
       shutter_speed: shutter_speed || '',
       aperture: aperture || '',
+      registration_number: normalizedRegistration,
+      is_hot: normalizeIsHot(is_hot),
       likes: 0,
       views: 0,
       created_at: new Date().toISOString(),
@@ -1058,11 +1143,11 @@ router.post(
 
     // 写入照片记录，状态固定为 pending 等待管理员审核
     await db.run(
-      `INSERT INTO photos 
+      `INSERT INTO photos
         (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
-         category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, 
-         focal_length, iso, shutter_speed, aperture, likes, views, status, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude,
+         focal_length, iso, shutter_speed, aperture, registration_number, is_hot, likes, views, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
@@ -1085,6 +1170,8 @@ router.post(
       newPhoto.iso,
       newPhoto.shutter_speed,
       newPhoto.aperture,
+      newPhoto.registration_number,
+      newPhoto.is_hot,
       newPhoto.likes,
       newPhoto.views,
       'pending',

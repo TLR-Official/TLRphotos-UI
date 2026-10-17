@@ -45,7 +45,7 @@
 - **bind_ticket**：无邮箱老用户在 `/login` 密码校验通过后获得的绑定票据，HMAC 签名 + IP 绑定，10 分钟有效；仅可用于 `/email/code/send`（bind_email）与 `/email/bind`
 - **校验目标防伪造**：`/login/verify` 的验证目标由服务端从用户记录取 `user.email`，客户端不可传入 target
 - **邮箱确权门**：上传/点赞/评论/资料修改等账户类操作要求 `email_verified=1`，否则返回 403 `EMAIL_VERIFICATION_REQUIRED`；新注册用户验码通过即确权，老用户首次登录验码后自动确权
-- **配置依赖**：验证码邮件统一走阿里云 DirectMail SMTP（`ALIYUN_SMTP_HOST/PORT/USER/PASSWORD/FROM_NAME`）；未配置时发送返回 503（fail-closed）。已删除配置：`SPUG_SMS_TEMPLATE`、`SUPER_ADMIN_PHONES`、`ADMIN_SMS_REQUIRED`
+- **配置依赖**：验证码邮件统一走阿里云 DirectMail SMTP（`ALIYUN_SMTP_HOST/PORT/USER/PASSWORD/FROM_NAME`）；未配置时发送返回 503（fail-closed）。已删除配置：`SPUG_SMS_TEMPLATE`、`SUPER_ADMIN_PHONES`、`ADMIN_SMS_REQUIRED`。V3.2.0 新增 `EMAIL_VERIFY_INTERVAL_DAYS`（登录邮箱验码周期天数，默认 30；0/负数恢复每次登录均验码）。
 
 ---
 
@@ -80,8 +80,10 @@
 **查询参数**:
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| keyword | string | 关键词（匹配标题、描述） |
+| keyword | string | 关键词（匹配标题、描述、**飞机注册号（V3.2.0，归一化大写模糊匹配）**） |
 | tag | string | 标签筛选 |
+| registration | string | 飞机注册号检索（V3.2.0）：大小写不敏感，按归一化大写值 LIKE 模糊匹配（如 `b-1234` 命中 `B-1234`） |
+| is_hot | string | 热门意愿过滤（V3.2.0）：传 `1`/`true` 时仅返回上传者勾选「愿意推荐为热门」的照片 |
 | sortBy | string | 排序字段（created_at/likes/views/title），默认created_at |
 | sortOrder | string | 排序顺序（asc/desc），默认desc |
 
@@ -99,21 +101,41 @@
       "height": 800,
       "likes": 1256,
       "views": 8932,
+      "registration_number": "B-1234",
+      "is_hot": 0,
       "created_at": "2024-05-15T18:30:00Z"
     }
   ]
 }
 ```
 
+> V3.2.0 起列表项新增 `registration_number`（飞机注册号，存量数据可能为 `null`）与 `is_hot`（0/1）字段。
+
 ### 获取所有标签
 
 **GET** `/api/photos/tags`
 
-**响应**:
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| with_counts | string | 传 `1`/`true` 时返回带计数的大标签聚合（V3.2.0），按计数降序；缺省保持向后兼容返回字符串数组 |
+
+**响应**（缺省，向后兼容）:
 ```json
 {
   "success": true,
   "data": ["城市", "航拍", "日落", "自然", "全景"]
+}
+```
+
+**响应**（`?with_counts=1`，仅统计已审核照片）:
+```json
+{
+  "success": true,
+  "data": [
+    { "name": "航拍", "count": 42 },
+    { "name": "城市", "count": 17 }
+  ]
 }
 ```
 
@@ -301,6 +323,8 @@
   "title": "城市天际线",
   "tags": ["城市", "航拍"],
   "description": "傍晚时分的城市天际线",
+  "registration_number": "B-1234",
+  "is_hot": 1,
   "camera_model": "Sony A7R IV",
   "vehicle": "DJI Mavic 3 Pro",
   "location": "上海市浦东新区",
@@ -312,6 +336,10 @@
   "height": 800
 }
 ```
+
+> **V3.2.0 新增字段**：
+> - `registration_number`（string，**必填**）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验，缺失或非法返回 `400 { code: "REGISTRATION_REQUIRED" }`，校验先于 OSS 完成调用。
+> - `is_hot`（number/boolean/string，可选）：上传者「愿意推荐为热门图片」意愿标记，接受 `true`/`"true"`/`"1"`/`1`，其余视为未勾选（0）。仅作审核参考，不公开展示。
 
 **响应**:
 ```json
@@ -343,6 +371,8 @@ Content-Type: multipart/form-data
 |------|------|------|------|
 | image | file | 是 | 图片文件（JPG/PNG/WebP/HEIC，最大50MB） |
 | category | string | 是 | 照片分区，未提供时返回 400 `请选择照片分区` |
+| registration_number | string | 是 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）；服务端 trim + 转大写校验，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }` |
+| is_hot | string | 否 | 「愿意推荐为热门图片」意愿标记（V3.2.0）：`true`/`1` 视为勾选，其余为未勾选（0）；仅作审核参考，不公开展示 |
 | title | string | 否 | 照片标题，默认"未命名照片" |
 | tags | string/array | 否 | 标签，支持数组或中英文逗号分隔字符串 |
 | description | string | 否 | 照片描述 |
@@ -732,7 +762,9 @@ Content-Type: multipart/form-data
 
 ## 认证接口 (Auth)
 
-> **V2.0.0 账号体系**：**仅支持邮箱**注册与登录（手机/短信通道全面移除）；登录保持「密码校验 → 邮箱验证码确认」两段式且**每次登录均须验码**；老用户首次登录验码通过即自动完成邮箱确权（`email_verified=1`）；账号无邮箱时进入强制邮箱绑定流程。
+> **V2.0.0 账号体系**：**仅支持邮箱**注册与登录（手机/短信通道全面移除）；登录保持「密码校验 → 邮箱验证码确认」两段式；老用户首次登录验码通过即自动完成邮箱确权（`email_verified=1`）；账号无邮箱时进入强制邮箱绑定流程。
+>
+> **V3.2.0 邮件验证周期化**：邮箱验证码按周期触发，不再每次登录强制验码。用户最近确权时间锚点为 `users.last_email_verified_at`（注册/验码成功/换绑邮箱时刷新）。环境变量 `EMAIL_VERIFY_INTERVAL_DAYS`（逐请求读取，正整数天数）控制触发周期：上次确权距今未超过该周期时登录直接签发 JWT；超过周期或锚点为 NULL 时仍走两段式验码。默认 `30`（每月一次），设 `90` 为每三月一次，设 `0` 或负数恢复 V2.0.0「每次登录均须验码」旧行为。
 
 ### 发送邮箱验证码（V2.0.0）
 
@@ -847,11 +879,13 @@ Content-Type: multipart/form-data
 | 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
 | 500 | REGISTER_FAILED | 注册失败 |
 
-### 用户登录 · 第一步：密码校验（V2.0.0 两段式）
+### 用户登录 · 第一步：密码校验（V2.0.0 两段式 / V3.2.0 周期化）
 
 **POST** `/api/auth/login`
 
-> 第一步仅校验密码，**不签发 JWT**；成功后返回 `login_ticket`，客户端须先调 [`POST /api/auth/email/code/send`](#发送邮箱验证码v200)（scene=login）再调 [`POST /api/auth/login/verify`](#用户登录--第二步邮箱验证码确认v200) 完成确认。每次登录均须完成邮箱验证码确认。
+> 第一步仅校验密码。默认返回 `otp_required + login_ticket`（**不签发 JWT**），客户端须先调 [`POST /api/auth/email/code/send`](#发送邮箱验证码v200)（scene=login）再调 [`POST /api/auth/login/verify`](#用户登录--第二步邮箱验证码确认v200) 完成确认。
+>
+> **V3.2.0 周期跳过**：`EMAIL_VERIFY_INTERVAL_DAYS > 0` 且该用户 `last_email_verified_at` 距今未超期时，跳过验证码段，直接签发 JWT（响应结构与第二步成功一致，含 `user/token/session_token`，**不含** `otp_required` 字段）。客户端须同时兼容两种响应：检测到 `otp_required === true` 进入验码段，否则按已登录处理。
 
 **请求体**:
 ```json
@@ -877,6 +911,18 @@ Content-Type: multipart/form-data
     "otp_required": true,
     "login_ticket": "eyJ1c2VySWQiOi...xxx.c2ln...",
     "expires_minutes": 10
+  }
+}
+```
+
+**响应**（V3.2.0 周期内跳过验码，直接签发）:
+```json
+{
+  "success": true,
+  "data": {
+    "user": { "id": "u_001", "email": "user@example.com", "username": "飞友" },
+    "token": "eyJhbGciOi...",
+    "session_token": "sess_xxx"
   }
 }
 ```

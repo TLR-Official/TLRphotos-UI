@@ -20,11 +20,11 @@ export function GridOverlayTool({ showGrid, showDiagonal }: GridOverlayToolProps
       {showGrid && (
         <div className="absolute inset-0 pointer-events-none z-10">
           {/* 垂直线：1/3 和 2/3 处 */}
-          <div className="absolute top-0 bottom-0 left-1/3 w-px bg-teal-500/70" />
-          <div className="absolute top-0 bottom-0 left-2/3 w-px bg-teal-500/70" />
+          <div className="absolute top-0 bottom-0 left-1/3 w-px bg-blue-600/70" />
+          <div className="absolute top-0 bottom-0 left-2/3 w-px bg-blue-600/70" />
           {/* 水平线：1/3 和 2/3 处 */}
-          <div className="absolute left-0 right-0 top-1/3 h-px bg-teal-500/70" />
-          <div className="absolute left-0 right-0 top-2/3 h-px bg-teal-500/70" />
+          <div className="absolute left-0 right-0 top-1/3 h-px bg-blue-600/70" />
+          <div className="absolute left-0 right-0 top-2/3 h-px bg-blue-600/70" />
           {/* 交叉点高亮 */}
           {[
             { left: '33.33%', top: '33.33%' },
@@ -34,7 +34,7 @@ export function GridOverlayTool({ showGrid, showDiagonal }: GridOverlayToolProps
           ].map((pos, i) => (
             <div
               key={i}
-              className="absolute w-2 h-2 rounded-full bg-teal-500 -translate-x-1/2 -translate-y-1/2"
+              className="absolute w-2 h-2 rounded-full bg-blue-600 -translate-x-1/2 -translate-y-1/2"
               style={{ left: pos.left, top: pos.top }}
             />
           ))}

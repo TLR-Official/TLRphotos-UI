@@ -47,7 +47,7 @@ export function MyWorksPage() {
           <p className="text-gray-500 mb-6">登录后即可查看您上传的所有照片</p>
           <button
             onClick={() => navigate('/auth')}
-            className="px-6 py-3 rounded-lg font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+            className="px-6 py-3 rounded-lg font-medium bg-blue-700 text-white hover:bg-blue-800 transition-colors"
           >
             前往登录
           </button>
@@ -80,7 +80,7 @@ export function MyWorksPage() {
               onClick={() => setPhotoFilter(key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 photoFilter === key
-                  ? 'bg-teal-600 text-white'
+                  ? 'bg-blue-700 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >

@@ -92,7 +92,7 @@ export function Header() {
                 className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-300 bg-gray-100 hover:bg-gray-200 hover:shadow-md cursor-pointer group"
                 title="点击访问个人资料"
               >
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
                   {user?.avatar_url ? (
                     <img
                       src={user.avatar_url.startsWith('/') ? `/api${user.avatar_url}` : user.avatar_url}
@@ -168,7 +168,7 @@ export function Header() {
                 e.stopPropagation();
                 navigate('/auth');
               }}
-              className="theme-text-transition px-4 py-2 rounded-full bg-gradient-to-r from-teal-600 to-blue-600 text-white hover:from-teal-500 hover:to-blue-500 transition-all duration-300 shadow-lg"
+              className="theme-text-transition px-4 py-2 rounded-full bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-lg"
             >
               登录
             </button>

@@ -136,7 +136,7 @@ function HomePageContent() {
         </div>
 
         <section className="mt-16">
-          <h2 className="text-xl font-semibold mb-8 text-gray-900">精选作品</h2>
+          <h2 className="text-xl font-semibold mb-8 text-black">精选作品</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {bottomPhotos.map((photo: PhotoListItem) => (
               <div

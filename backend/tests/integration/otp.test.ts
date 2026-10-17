@@ -14,7 +14,7 @@
  *              测试库经 DB_PATH 隔离；60s 冷却用例经 RATE_LIMIT_ENABLED=1 +
  *              vi.resetModules() 构建独立限速应用，不影响其余用例（默认测试环境限速放行）。
  */
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import path from 'path';
@@ -53,6 +53,9 @@ beforeAll(async () => {
   process.env.JWT_SECRET = 'test-jwt-secret';
   process.env.ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('base64');
   process.env.TEST_BYPASS_TOKEN = 'test-verification-bypass';
+  // V3.2.0：本套件默认锁定"每次登录均须 OTP"旧行为（interval=0），
+  // 周期化行为由文末专属 describe 按需切换 env 覆盖
+  process.env.EMAIL_VERIFY_INTERVAL_DAYS = '0';
 
   const dbModule = await import('../../src/db');
   await dbModule.initDb();
@@ -477,5 +480,88 @@ describe('POST /api/auth/email/bind 更换邮箱（JWT 路径）', () => {
       .send({ email: `noauth-${Date.now()}@example.com`, code: '123456', turnstile_token: 'x' });
 
     expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * 邮件验证周期化（V3.2.0）：EMAIL_VERIFY_INTERVAL_DAYS 控制登录 OTP 触发频率。
+ * env 逐请求读取，用例间切换无需重建应用；每个用例结束复位为 '0' 防串扰。
+ */
+describe('邮件验证周期化（EMAIL_VERIFY_INTERVAL_DAYS）', () => {
+  afterEach(() => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '0';
+  });
+
+  it('周期内已验证用户登录直接签发 JWT，无 otp_required', async () => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '30';
+    const email = `periodic-skip-${Date.now()}@example.com`;
+    await registerUser(email); // 注册即写入 last_email_verified_at = now
+
+    const res = await loginStep1(email, 'Test123456');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.otp_required).toBeUndefined();
+    expect(res.body.data.token).toBeTruthy();
+    expect(res.body.data.user.email).toBe(email);
+  });
+
+  it('超期用户登录仍返回 otp_required + login_ticket', async () => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '30';
+    const email = `periodic-expired-${Date.now()}@example.com`;
+    await registerUser(email);
+    // 将验证时间锚点改为 40 天前（超出 30 天周期）
+    const stale = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    await db.run('UPDATE users SET last_email_verified_at = ? WHERE email = ?', stale, email);
+
+    const res = await loginStep1(email, 'Test123456');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.otp_required).toBe(true);
+    expect(res.body.data.login_ticket).toBeTruthy();
+    expect(res.body.data.token).toBeUndefined();
+  });
+
+  it('超期用户完成 OTP 后刷新锚点，再次登录跳过 OTP', async () => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '30';
+    const email = `periodic-refresh-${Date.now()}@example.com`;
+    await registerUser(email);
+    const stale = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    await db.run('UPDATE users SET last_email_verified_at = ? WHERE email = ?', stale, email);
+
+    // 第一步拿票据 → 发码 → 第二步验码
+    const step1 = await loginStep1(email, 'Test123456');
+    const { code } = await requestEmailCode(email, 'login');
+    const verify = await request(app)
+      .post('/api/auth/login/verify')
+      .set('X-Forwarded-For', FIXED_IP)
+      .send({ login_ticket: step1.body.data.login_ticket, code });
+    expect(verify.status).toBe(200);
+    expect(verify.body.data.token).toBeTruthy();
+
+    // 锚点已刷新：再次登录直接签发
+    const again = await loginStep1(email, 'Test123456');
+    expect(again.body.data.otp_required).toBeUndefined();
+    expect(again.body.data.token).toBeTruthy();
+  });
+
+  it('从未验证（last_email_verified_at 为 NULL）的存量用户登录仍须 OTP', async () => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '90';
+    const email = `periodic-null-${Date.now()}@example.com`;
+    await registerUser(email);
+    await db.run('UPDATE users SET last_email_verified_at = NULL WHERE email = ?', email);
+
+    const res = await loginStep1(email, 'Test123456');
+
+    expect(res.body.data.otp_required).toBe(true);
+  });
+
+  it('interval=0 时注册当天登录仍须 OTP（恢复旧行为）', async () => {
+    process.env.EMAIL_VERIFY_INTERVAL_DAYS = '0';
+    const email = `periodic-zero-${Date.now()}@example.com`;
+    await registerUser(email);
+
+    const res = await loginStep1(email, 'Test123456');
+
+    expect(res.body.data.otp_required).toBe(true);
   });
 });

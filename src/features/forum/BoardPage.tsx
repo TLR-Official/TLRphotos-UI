@@ -45,24 +45,24 @@ export function BoardPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
       <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
-        <Link to="/forum" className="hover:text-teal-600">论坛</Link>
+        <Link to="/forum" className="hover:text-blue-700">论坛</Link>
         <span>/</span>
-        <span className="text-slate-700">{board?.icon} {board?.name || boardId}</span>
+        <span className="text-slate-700">{board?.name || boardId}</span>
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-slate-800">{board?.name || '板块'}</h1>
+        <h1 className="text-xl font-bold text-black">{board?.name || '板块'}</h1>
         <button
           onClick={() => navigate(`/forum/new?board_id=${boardId}`)}
-          className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition-colors text-sm font-medium"
         >
           + 发帖
         </button>
       </div>
 
       <div className="flex gap-2 mb-4">
-        <button onClick={() => { setSort('latest'); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-sm ${sort === 'latest' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>最新</button>
-        <button onClick={() => { setSort('hot'); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-sm ${sort === 'hot' ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>最热</button>
+        <button onClick={() => { setSort('latest'); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-sm ${sort === 'latest' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'}`}>最新</button>
+        <button onClick={() => { setSort('hot'); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-sm ${sort === 'hot' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'}`}>最热</button>
       </div>
 
       {loading ? (
@@ -72,22 +72,19 @@ export function BoardPage() {
       ) : (
         <div className="space-y-2">
           {threads.map((t) => (
-            <Link key={t.id} to={`/forum/t/${t.id}`} className="block p-4 bg-white rounded-lg border border-slate-100 hover:border-teal-200 transition-all">
+            <Link key={t.id} to={`/forum/t/${t.id}`} className="block p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    {t.is_pinned === 1 && <span className="text-xs text-red-500 font-medium">置顶</span>}
-                    <h3 className="font-medium text-slate-800 truncate">{t.title}</h3>
+                    {t.is_pinned === 1 && <span className="text-xs text-gray-500">置顶</span>}
+                    <h3 className="font-medium text-black truncate">{t.title}</h3>
                   </div>
-                  <div className="text-xs text-slate-400 mt-1 flex gap-3">
+                  <div className="text-xs text-gray-500 mt-1 flex gap-3">
                     <span>{t.author_name}</span>
                     <span>{formatTime(t.last_reply_at || t.created_at)}</span>
                   </div>
                 </div>
-                <div className="text-xs text-slate-400 text-right shrink-0">
-                  <div>💬 {t.reply_count}</div>
-                  <div>❤️ {t.like_count}</div>
-                </div>
+                <span className="text-xs text-gray-500 shrink-0">{t.reply_count} 回复 · {t.like_count} 点赞 · {t.view_count} 浏览</span>
               </div>
             </Link>
           ))}

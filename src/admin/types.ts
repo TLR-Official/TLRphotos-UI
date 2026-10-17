@@ -53,6 +53,10 @@ export interface AdminPhoto {
   uploader_name?: string;
   uploader_avatar?: string;
   created_at: string;
+  /** 飞机注册号（旧数据可能为 null） */
+  registration_number?: string | null;
+  /** 热门意愿标记：1=上传者愿意推荐为热门 */
+  is_hot?: number;
 }
 
 /** 管理员照片详情（包含完整元数据） */
@@ -91,6 +95,10 @@ export interface AdminPhotoDetail {
   likes: number;
   views: number;
   created_at: string;
+  /** 飞机注册号（旧数据可能为 null） */
+  registration_number?: string | null;
+  /** 热门意愿标记：1=上传者愿意推荐为热门 */
+  is_hot?: number;
 }
 
 /** 照片审核统计 */

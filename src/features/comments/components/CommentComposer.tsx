@@ -33,7 +33,7 @@ export function CommentComposer({
         <button
           type="button"
           onClick={onLogin}
-          className="font-medium text-teal-600 hover:text-teal-700 hover:underline"
+          className="font-medium text-blue-700 hover:text-blue-800 hover:underline"
         >
           登录
         </button>
@@ -66,7 +66,7 @@ export function CommentComposer({
         onChange={(event) => setContent(event.target.value.slice(0, MAX_LENGTH))}
         placeholder={placeholder}
         rows={3}
-        className="w-full resize-y rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+        className="w-full resize-y rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
       />
       <div className="flex items-center justify-between">
         <span
@@ -80,7 +80,7 @@ export function CommentComposer({
           className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
             !trimmed || submitting
               ? 'cursor-not-allowed bg-gray-100 text-gray-400'
-              : 'bg-teal-600 text-white hover:bg-teal-700 active:scale-95'
+              : 'bg-blue-700 text-white hover:bg-blue-800 active:scale-95'
           }`}
         >
           <SendHorizontal className="h-4 w-4" />

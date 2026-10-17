@@ -86,7 +86,7 @@ export function PhotosPage() {
               <div
                 key={photo.id}
                 onClick={() => handlePhotoClick(photo.id)}
-                className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-teal-300 hover:shadow-md transition-all"
+                className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
               >
                 <div className="relative">
                   <CachedImage
@@ -98,13 +98,19 @@ export function PhotosPage() {
                   />
                   <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
                     <div className="opacity-0 hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2">
-                      <Eye className="w-5 h-5 text-teal-700" />
+                      <Eye className="w-5 h-5 text-blue-800" />
                     </div>
                   </div>
                 </div>
                 <div className="p-4">
                   <h3 className="text-gray-800 font-medium truncate">{photo.title}</h3>
                   <p className="text-gray-500 text-sm mt-1">{photo.uploader_name || '匿名用户'}</p>
+                  {photo.registration_number && (
+                    <p className="text-gray-600 text-xs mt-1 font-mono">注册号: {photo.registration_number}</p>
+                  )}
+                  {photo.is_hot === 1 && (
+                    <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded border border-violet-200 bg-violet-50 text-violet-700">热门意愿</span>
+                  )}
                   <p className="text-gray-400 text-xs mt-1">{new Date(photo.created_at).toLocaleString('zh-CN')}</p>
                 </div>
               </div>

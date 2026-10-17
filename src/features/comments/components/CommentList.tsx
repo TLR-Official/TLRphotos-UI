@@ -49,8 +49,8 @@ export function CommentList({ subject, title = '评论' }: CommentListProps) {
     <section className="space-y-5" aria-label={title}>
       {/* 标题 + 数量 + 排序 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-          <MessageSquare className="h-5 w-5 text-teal-600" />
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-black">
+          <MessageSquare className="h-5 w-5 text-blue-700" />
           {title}
           {data && <span className="text-sm font-normal text-gray-400">{data.total}</span>}
         </h2>
@@ -59,7 +59,7 @@ export function CommentList({ subject, title = '评论' }: CommentListProps) {
             type="button"
             onClick={() => setSort('latest')}
             className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-              sort === 'latest' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500'
+              sort === 'latest' ? 'bg-white text-blue-800 shadow-sm' : 'text-gray-500'
             }`}
           >
             最新
@@ -68,7 +68,7 @@ export function CommentList({ subject, title = '评论' }: CommentListProps) {
             type="button"
             onClick={() => setSort('hottest')}
             className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-              sort === 'hottest' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500'
+              sort === 'hottest' ? 'bg-white text-blue-800 shadow-sm' : 'text-gray-500'
             }`}
           >
             <Flame className="h-3.5 w-3.5" />

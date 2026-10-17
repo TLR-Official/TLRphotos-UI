@@ -387,12 +387,14 @@ router.post('/register', authLimiter, async (req, res) => {
 });
 
 /**
- * 用户登录第一步（V2.0.0：仅邮箱，两段式；每次登录均须完成邮箱验证码确认）。
+ * 用户登录第一步（V2.0.0：仅邮箱，两段式；V3.2.0：邮箱验证码按周期触发）。
  * 入参 { email, password, turnstile_token }。
  * 密码校验通过后不签发 JWT、不创建会话，仅返回 login_ticket（HMAC-SHA256 签名，
  * 绑定 userId + 过期时间 + 客户端 IP，10 分钟有效）。
  * 账号无邮箱（过渡态）时返回 403 EMAIL_BIND_REQUIRED + bind_ticket，
  * 客户端须先调用 /email/code/send（bind_email）再调用 /email/bind 完成绑定与登录。
+ * V3.2.0：若用户在 EMAIL_VERIFY_INTERVAL_DAYS（默认 30 天，90 即每三月一次，
+ * <=0 恢复每次登录均验证）内已完成过邮箱验证，则跳过 OTP 直接签发 JWT + 会话。
  *
  * 测试兼容（仅 NODE_ENV=test 且 turnstile_token/tokens 命中绕过口径）：
  * 直接签发 JWT + 创建会话，保证测试套件效率。
@@ -462,6 +464,27 @@ router.post('/login', authLimiter, async (req, res) => {
         message: '该账号尚未绑定邮箱，请先完成邮箱绑定',
         data: { bind_ticket: signTicket('bind', user.id, vIp), expires_minutes: 10 },
       });
+    }
+
+    // V3.2.0 邮件验证周期化：周期内已完成过邮箱验证的账号跳过 OTP 直接签发。
+    // EMAIL_VERIFY_INTERVAL_DAYS：默认 30（每月一次）；置 90 即每三月一次；
+    // <=0 或非数字表示每次登录均须验证（V2.0.0 旧行为）。
+    // 逐请求读取 env，与 ADMIN_SMS_REQUIRED 紧急开关同口径，改配置重启即生效。
+    const intervalDays = Number.parseInt(process.env.EMAIL_VERIFY_INTERVAL_DAYS ?? '30', 10);
+    if (Number.isFinite(intervalDays) && intervalDays > 0 && user.last_email_verified_at) {
+      const lastVerifiedMs = Date.parse(user.last_email_verified_at);
+      if (Number.isFinite(lastVerifiedMs) && Date.now() - lastVerifiedMs < intervalDays * 24 * 60 * 60 * 1000) {
+        const result = await issueLoginResult(user, true, ipAddress);
+        await saveVerification('user', user.id, vIp, 'login');
+        return res.json({
+          success: true,
+          data: {
+            user: buildLoginResponseUser(result.user),
+            token: result.token,
+            session_token: result.session_token,
+          },
+        });
+      }
     }
 
     // 第二步前置：返回 login_ticket（10 分钟内完成邮箱验证码确认）
