@@ -67,7 +67,14 @@ export function ThreadDetailPage() {
           <span>{thread.author_name} · {new Date(thread.created_at).toLocaleDateString('zh-CN')}</span>
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-500">{thread.reply_count} 回复 · {likeCount} 点赞 · {thread.view_count} 浏览</span>
-            <button onClick={handleLike} className={`text-xs ${liked ? 'text-blue-700' : 'text-gray-500 hover:text-blue-700'}`}>
+            <button
+              onClick={handleLike}
+              className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                liked
+                  ? 'bg-blue-700 border-blue-700 text-white'
+                  : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
               {liked ? '已点赞' : '点赞'}
             </button>
           </div>
