@@ -187,6 +187,8 @@ TLRphotos/
 ***
 
 ## Changelog
+| 2026-10-17 17:00 | [docs] 新增V4迭代PRD规划稿：通知召回/论坛/新闻区/关于我们 (V3.2.0-beta.2) | docs/prd-v4-iteration.md、package.json、.trae/rules/版本管理规则.md |
+| 2026-10-17 09:56 | [fix] 强化论坛帖子点赞按钮可见度：灰字改为淡蓝描边pill/已赞深蓝实底（纯文字无图标）(V3.2.0-beta.1) | src/features/forum/ThreadDetailPage.tsx、dist（index-Du4hPM4O.js） |
 | 2026-10-17 08:04 | [deploy] V3.2.0-beta 生产部署完成并冒烟通过 — 服务重启/新列已自动迁移/接口返回正常 | backend/.env（EMAIL_VERIFY_INTERVAL_DAYS=30）、tlrphotos-backend.service |
 | 2026-10-17 08:01 | [release] 界面优化八项发布 V3.2.0-beta — 邮件验码周期化/注册号必填+检索/热门意愿/大标签聚合/三色色板/页脚/论坛去AI化 | backend/src/{db.ts,routes/auth.ts,routes/photos.ts,services/authService.ts}、backend/docs/api.md、backend/.env.example、src/index.css、src/shared/{Footer,Header}.tsx、src/features/{auth,gallery,upload,forum,profile,comments}/*、src/admin/*、后端327用例通过 |
 | 2026-10-11 17:42 | [release] 正式上线前版本号挂预发布标识 V3.1.0-beta（SemVer §9，GA 时去后缀） | package.json、package-lock.json、.trae/rules/版本管理规则.md（新增 2.4 预发布规范） |
