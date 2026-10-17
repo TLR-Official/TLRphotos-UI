@@ -1,4 +1,5 @@
 @startuml
+!pragma layout smetana
 !theme plain
 skinparam defaultFontName "Noto Sans CJK SC"
 skinparam defaultFontSize 11
@@ -10,182 +11,294 @@ skinparam RectangleBackgroundColor #dae8fc
 skinparam PackageBorderColor #999999
 skinparam PackageBackgroundColor #f8f9fa
 
-title TLRphotos 系统架构图（详细版）· V1.8.3\n单台 ECS + 阿里云 OSS + Cloudflare 边缘｜62 个 API · 13 张表 · 7 个服务 · 48 个前端组件
+title TLRphotos 系统架构图（详细版）· V4.0.0-beta · 2026-10-17\n单台 ECS + 阿里云 OSS + Cloudflare 边缘｜114 个 API（17 组挂载）· 27 张表（主库 24 + 标签库 3）· 17 个服务 · 用户前台 18 页 · 管理后台 12 页
 
 ' ==================== 用户层 ====================
 package "用户层" #ffffff {
-  package "用户前台 SPA\n（React + Vite + TypeScript + Tailwind）" #ffffff {
-    rectangle "AuthPage\n登录/注册" as P1 #dae8fc
-    rectangle "GalleryPage\n画廊（分区标签）" as P2 #dae8fc
-    rectangle "PhotoDetailPage\n照片详情 + 点赞" as P3 #dae8fc
+  package "用户前台 SPA\n（React + Vite + TypeScript + Tailwind）" as FE #ffffff {
+    rectangle "AuthPage\n邮箱 + 验证码登录/注册\n（两段式 · V2.0.0 纯邮箱）" as P1 #dae8fc
+    rectangle "GalleryPage\n画廊（分区标签 + 注册号/\n大标签聚合检索）" as P2 #dae8fc
+    rectangle "PhotoDetailPage\n详情 + 点赞 + 申诉卡\n（rejected 可发起申诉）" as P3 #dae8fc
     rectangle "PhotoCarousel\n照片轮播" as P4 #dae8fc
-    rectangle "UploadPage\n上传 + 水印预览" as P5 #dae8fc
-    rectangle "ProfilePage\n个人资料/改密/头像" as P6 #dae8fc
-    rectangle "UserProfilePage\n他人主页" as P7 #dae8fc
-    rectangle "ColumnList + ArticleDetail\n专栏文章" as P8 #dae8fc
-    rectangle "TurnstileWidget\n+ HumanVerificationModal\n（V1.8.0 验证门）" as P9 #e1d5e7
+    rectangle "UploadPage\n上传 + 水印预览\n注册号必填 + 热门意愿" as P5 #dae8fc
+    rectangle "ProfilePage\n资料/改密/换绑邮箱" as P6 #dae8fc
+    rectangle "MyWorksPage\n我的作品 + 申诉状态" as P7 #dae8fc
+    rectangle "UserProfilePage\n他人主页" as P8 #dae8fc
+    rectangle "ColumnList + ArticleDetailPage\n专栏文章" as P9 #dae8fc
+    rectangle "论坛四页\nForumHome / Board /\nThreadDetail / NewThread\n（点赞 pill · 去 AI 化）" as P10 #e1d5e7
+    rectangle "NewsListPage + NewsDetailPage\n新闻区（编辑账号发布）" as P11 #e1d5e7
+    rectangle "NotificationPage\n通知中心（未读角标）" as P12 #e1d5e7
+    rectangle "AboutPage\n关于我们（团队/站点数据）" as P13 #e1d5e7
+    rectangle "通用评论区（V3.0.0）\nCommentList / Composer /\nItem / Thread / ReplyBox\nsubject_type 复用于照片·文章·帖子" as P14 #e1d5e7
+    rectangle "共享层\nHeader + Footer + UserContext\nCachedImage + TagSelector\nTurnstileWidget + 验证门 Hook" as P15 #f8cecc
+    P1 -[hidden]right- P2
+    P2 -[hidden]right- P3
+    P3 -[hidden]right- P4
+    P4 -[hidden]right- P5
+    P6 -[hidden]right- P7
+    P7 -[hidden]right- P8
+    P8 -[hidden]right- P9
+    P9 -[hidden]right- P10
+    P11 -[hidden]right- P12
+    P12 -[hidden]right- P13
+    P13 -[hidden]right- P14
+    P14 -[hidden]right- P15
+    P1 -[hidden]down- P6
+    P6 -[hidden]down- P11
   }
-  package "管理后台 SPA\n（React + Vite + TypeScript + Tailwind）" #ffffff {
-    rectangle "LoginPage\n管理员登录" as A1 #dae8fc
+  package "管理后台 SPA\n（React + Vite + TypeScript + Tailwind）" as AD #ffffff {
+    rectangle "LoginPage 单阶段登录\n+ ForceChangePassword 首登改密" as A1 #dae8fc
     rectangle "DashboardPage\n仪表盘 + 健康检查" as A2 #dae8fc
-    rectangle "PhotosPage\n待审/已审照片" as A3 #dae8fc
-    rectangle "PhotoDetailPage\n审核 + 9 项图像分析工具" as A4 #dae8fc
-    rectangle "UsersPage\n用户封禁/权限" as A5 #dae8fc
-    rectangle "AdminsPage\n管理员分区管理" as A6 #dae8fc
-    rectangle "LogsPage\n操作审计日志" as A7 #dae8fc
+    rectangle "PhotosPage\n待审列表（注册号/热门意愿 chip）" as A3 #dae8fc
+    rectangle "PhotoDetailPage\n审核 + 召回/确认热门/分配\n+ 9 项图像分析工具" as A4 #dae8fc
+    rectangle "AppealsPage\n申诉裁决（答复必填）" as A5 #e1d5e7
+    rectangle "MyAuditsPage\n我的审核工作量" as A6 #e1d5e7
+    rectangle "UsersPage\n封禁/权限/处罚 + 处罚历史" as A7 #dae8fc
+    rectangle "AdminsPage\n管理员分区管理" as A8 #dae8fc
+    rectangle "NewsPage + NewsEditorPage\n新闻编辑（图库选图）" as A9 #e1d5e7
+    rectangle "LogsPage\n操作审计日志" as A10 #dae8fc
+    rectangle "Layout 角色门\nsuper / zone_master / zone_auditor\nforum_moderator / news_editor" as A11 #f8cecc
+    A1 -[hidden]right- A2
+    A2 -[hidden]right- A3
+    A3 -[hidden]right- A4
+    A4 -[hidden]right- A5
+    A6 -[hidden]right- A7
+    A7 -[hidden]right- A8
+    A8 -[hidden]right- A9
+    A9 -[hidden]right- A10
+    A10 -[hidden]right- A11
+    A1 -[hidden]down- A6
   }
 }
 
 ' ==================== Cloudflare 边缘层 ====================
 package "Cloudflare 边缘层" #f7f0fa {
-  rectangle "CDN · DNS · TLS\n全站 HTTPS 加速与缓存\ncf-cache-status: DYNAMIC" as CF1 #e1d5e7
-  rectangle "Zero Trust Access\n管理后台统一身份准入\n（admin.tlrphotos.com）" as CF2 #e1d5e7
+  rectangle "CDN · DNS · TLS\n全站 HTTPS 加速与缓存\nWAF 自定义规则：/api/* 跳过安全组件" as CF1 #e1d5e7
   rectangle "Turnstile 人机验证\n无感 / 交互式挑战\nSite Key 内嵌 SPA" as CF3 #e1d5e7
+  CF1 -[hidden]right- CF3
 }
 
 ' ==================== 接入层 ====================
-package "接入层 — Nginx（TLS 终止 · 反向代理）\n监听 443 · 证书：tlrphotos.com / admin.tlrphotos.com" #fff8f0 {
-  rectangle "vhost: tlrphotos.com\n• SPA 静态资源\n• /api 反代 → 127.0.0.1:3001\n• /uploads · /articles 反代" as N1 #ffe6cc
-  rectangle "vhost: admin.tlrphotos.com\n• SPA 静态资源\n• /api 反代 → 127.0.0.1:3001" as N2 #ffe6cc
+package "接入层 — Nginx（TLS 终止 · 反向代理）\n监听 80→443 强制跳转 · 证书：tlrphotos.com / admin.tlrphotos.com · Let's Encrypt" #fff8f0 {
+  rectangle "vhost: tlrphotos.com\n• SPA 静态资源（dist 指纹hash）\n• /api 反代 → 127.0.0.1:3001\n• /uploads · /articles 反代\n• HTTP Desync 防护（map TE/CL）" as N1 #ffe6cc
+  rectangle "vhost: admin.tlrphotos.com\n• 管理后台 SPA 静态资源\n• /api 反代 → 127.0.0.1:3001" as N2 #ffe6cc
+  N1 -[hidden]right- N2
 }
 
 ' ==================== 应用层 ====================
-package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeScript · 监听 127.0.0.1:3001 · systemd 托管\n启动流程：initDb → initTagsDb → initSuperAdmin → scheduleCleanup → memoryManager.start → listen" #f5f8ff {
+package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeScript · 仅监听 127.0.0.1:3001 · systemd（--expose-gc）托管\n启动流程：initDb → initTagsDb → initSuperAdmin → checkAdminJwtConfig → scheduleCleanup → scheduleArchiveJob → memoryManager.start → listen" #f5f8ff {
 
   package "全局中间件链" #ffffff {
-    rectangle "cors()\n跨域放行" as M1 #dae8fc
-    rectangle "express.json({limit:50mb})\n兼容大图 Base64" as M2 #dae8fc
-    rectangle "express.urlencoded({limit:50mb})" as M3 #dae8fc
-    rectangle "请求超时 120s → 504" as M4 #dae8fc
+    rectangle "corsWhitelist\n域名白名单（V1.10.1 收紧）" as M1 #dae8fc
+    rectangle "express.json / urlencoded\nlimit 50MB 兼容大图" as M2 #dae8fc
+    rectangle "请求超时 120s → 504\ntrust proxy · 隐藏 X-Powered-By" as M3 #dae8fc
+    rectangle "errorHandler\n/api 404 规范 JSON\n全局错误脱敏 SQLITE_*/errno" as M4 #f8cecc
+    M1 -[hidden]right- M2
+    M2 -[hidden]right- M3
+    M3 -[hidden]right- M4
   }
 
-  package "路由层（7 组 · 62 endpoints）" #ffffff {
-    rectangle "/api/auth (13)\nPOST register · login · logout · refresh\nGET me · users/:id · users/:id/photos · users/:id/stats · me/photos\nPUT me · me/password\nPOST me/avatar" as R1 #dae8fc
-    rectangle "/api/photos (12)\nGET / · search · tags · :id · image/*\nPOST upload/presigned · upload/complete · upload · :id/like · :id/view\nDELETE :id/like · :id" as R2 #dae8fc
-    rectangle "/api/articles (7)\nGET / · :id · :id/content · :id/comments\nPOST :id/like · :id/view · :id/comments\nDELETE :id/like" as R3 #dae8fc
-    rectangle "/api/column (1)\nGET /" as R4 #dae8fc
-    rectangle "/api/tags (4)\nGET / · :categoryId · :categoryId/objects · :categoryId/objects/:objectId/attributes" as R5 #dae8fc
-    rectangle "/api/admin (18)\nPOST login · users · users/:id/ban · users/:id/unban · verification/verify\nGET me · zones · users · users/list · users/:id · photos/pending · photos/stats · photos/:id · logs · stats · dashboard/health · verification/status\nPUT users/:id · photos/:id/approve · photos/:id/reject · users/:id/toggle · users/:id/permissions\nDELETE users/:id" as R6 #dae8fc
-    rectangle "/api/verification (2)\nPOST verify · GET status" as R7 #dae8fc
+  package "用户端路由（13 组 · 66 endpoints）" #ffffff {
+    rectangle "/api/auth (15)\nPOST email/code/send（60s+5/h+20 IP/h 限速）\nPOST register · login · login/verify · email/bind\nPOST logout · refresh · me/avatar\nGET me · me/photos · users/:id\nGET users/:id/photos · users/:id/stats\nPUT me · me/password" as R1 #dae8fc
+    rectangle "/api/photos (13)\nGET / · search（注册号/keyword/is_hot）\nGET tags（with_counts 聚合）· :id\nGET image/*（水印代理下载）\nPOST :id/like · :id/view · :id/appeal\nPOST upload/presigned · upload/complete · upload\nDELETE :id/like · :id（三重确认级联删）" as R2 #dae8fc
+    rectangle "/api/comments (7)  V3.0.0\nGET / · archives/:rootId/url · :rootId/replies\nPOST / · :id/like\nDELETE :id · :id/like" as R3 #e1d5e7
+    rectangle "/api/forum (7)  V3.1.0\nGET boards · threads · threads/:id\nPOST threads · threads/:id/like\nDELETE threads/:id · threads/:id/like" as R4 #e1d5e7
+    rectangle "/api/articles (6)\nGET / · :id · :id/content\nPOST :id/like · :id/view\nDELETE :id/like" as R5 #dae8fc
+    rectangle "/api/notifications (4)  V4.0.0\nGET / · unread-count\nPUT read-all · :id/read" as R6 #e1d5e7
+    rectangle "/api/tags (4)\nGET / · :categoryId\n· :categoryId/objects\n· :categoryId/objects/:objectId/attributes" as R7 #dae8fc
+    rectangle "/api/my-appeals (2)  V4.0.0\nGET / · DELETE /:id（撤回申诉）" as R8 #e1d5e7
+    rectangle "/api/verification (2)\nPOST verify · GET status" as R9 #dae8fc
+    rectangle "/api/everos (2)\nPOST memory · search\n（AI 记忆持久化）" as R10 #dae8fc
+    rectangle "/api/news (2)  V4.0.0\nGET / · :id（公开端·限速）" as R11 #e1d5e7
+    rectangle "/api/column (1)\nGET /" as R12 #dae8fc
+    rectangle "/api/about (1)  V4.0.0\nGET stats（站点数据）" as R13 #e1d5e7
+    R1 -[hidden]right- R2
+    R2 -[hidden]right- R3
+    R3 -[hidden]right- R4
+    R4 -[hidden]right- R5
+    R5 -[hidden]right- R6
+    R7 -[hidden]right- R8
+    R8 -[hidden]right- R9
+    R9 -[hidden]right- R10
+    R10 -[hidden]right- R11
+    R11 -[hidden]right- R12
+    R12 -[hidden]right- R13
+    R1 -[hidden]down- R7
   }
 
-  package "中间件 & 鉴权" #ffffff {
-    rectangle "adminAuthMiddleware\nBearer Token 校验 → req.admin" as MW1 #dae8fc
-    rectangle "requireRole(roles[])\n角色白名单：super/zone_master/zone_auditor" as MW2 #dae8fc
-    rectangle "canManageZone(zone, admin)\n分区权限隔离" as MW3 #dae8fc
-    rectangle "loadAuthUser\nJWT 解析 + banned_at 检查" as MW4 #dae8fc
+  package "管理端路由（4 组挂载 + server 内联 · 47 endpoints）" #ffffff {
+    rectangle "/api/admin (33)\nPOST login（adminLoginLimiter）· GET me\nPOST me/password · GET zones\nusers×13：POST · GET · GET list · GET/PUT/DELETE :id\nPUT toggle · POST ban/unban · PUT permissions\nPUT email · POST penalty · GET penalties\nphotos×8：GET pending · stats · :id\nPUT approve · reject · recall（3分钟两级）\nPUT hot · assign\nGET my-audits · appeals · logs · stats\nPUT appeals/:id/decide · GET dashboard/health\nPOST verification/verify · GET verification/status" as RA1 #dae8fc
+    rectangle "/api/admin/comments (2)\nDELETE :id（人机门）\nPUT :rootId/pin" as RA2 #dae8fc
+    rectangle "/api/admin/news (4)  V4.0.0\nPOST / · PUT :id\nGET / · DELETE :id\n（news_editor 编辑账号）" as RA3 #e1d5e7
+    rectangle "/api/admin/forum (6)  V3.1.0\nGET/POST boards · PUT/DELETE boards/:id\nPUT threads/:id/pin · DELETE threads/:id（级联）" as RA4 #e1d5e7
+    rectangle "server.ts 内联\nGET /api/health 探活\nGET /api/admin/memory/snapshot\nPOST /api/admin/memory/release" as RA5 #dae8fc
+    RA1 -[hidden]right- RA2
+    RA2 -[hidden]right- RA3
+    RA3 -[hidden]right- RA4
+    RA4 -[hidden]right- RA5
   }
 
-  package "服务层（7 个服务）" #ffffff {
-    rectangle "authService\nJWT 签发/校验 · bcrypt 密码哈希\n会话管理 · 第三方登录绑定" as S1 #dae8fc
-    rectangle "ossService (8 方法)\ngeneratePresignedUploadUrl\ncompleteUpload · uploadBufferToOSS\ndeleteFromOSS · getPublicUrl" as S2 #dae8fc
-    rectangle "imageService\nsharp 缩略图/预览/水印 webp\nprocessImage · disposeProcessedBuffers\nuploadProcessedImages" as S3 #dae8fc
-    rectangle "memoryManager\nRSS 分级自保护\n60% soft / 75% medium / 90% hard\n30s 采样 · GC + sharp缓存 + vips.shutdown" as S4 #dae8fc
-    rectangle "verificationService (9 方法)\nverifyTurnstileToken (siteverify)\nensureHumanVerified (12 高危端点)\n168h TTL · IP 绑定 · 登出清除\n测试绕过（NODE_ENV=test）" as S5 #e1d5e7
-    rectangle "cookieService\n会话 Cookie CRUD · encrypted_ip\ncleanupExpired（午夜定时）" as S6 #dae8fc
-    rectangle "adminService\n管理员 CRUD · verifyAdminToken\ninitSuperAdmin · 角色/分区权限" as S7 #dae8fc
+  package "中间件 & 鉴权（src/middleware · 6 文件）" #ffffff {
+    rectangle "requireAuth / loadAuthUser\nJWT 解析 + banned_at 检查\n（401 USER_BANNED 即时下线）" as MW1 #dae8fc
+    rectangle "adminAuth\nadminAuthMiddleware + requireRole\n角色白名单 · canManageZone 分区隔离" as MW2 #dae8fc
+    rectangle "requireVerifiedEmail\n邮箱已验证确权门\n（V2.0.0 挂接上传/点赞/评论/发帖）" as MW3 #e1d5e7
+    rectangle "rateLimit\nauth 10/min · photoRead 120/min\notp 三层限速 · adminLogin 限速" as MW4 #dae8fc
+    MW1 -[hidden]right- MW2
+    MW2 -[hidden]right- MW3
+    MW3 -[hidden]right- MW4
+  }
+
+  package "服务层（17 个服务）" #ffffff {
+    rectangle "authService\nJWT 签发/校验（iss+aud）· bcrypt\n会话管理 · 改密全端失效" as S1 #dae8fc
+    rectangle "adminService\n管理员 CRUD · initSuperAdmin\nverifyAdminToken · 审计日志" as S2 #dae8fc
+    rectangle "adminLoginGuard\nADMIN_SMS_REQUIRED 紧急开关\n（V1.13.1 默认 on 两阶段）" as S3 #dae8fc
+    rectangle "ossService\n预签名 PUT · uploadBufferToOSS\ndeleteFromOSS · 动态生成 URL" as S4 #dae8fc
+    rectangle "imageService\nsharp 缩略图/预览/水印 webp\nEXIF 旋转 · 显式 dispose" as S5 #dae8fc
+    rectangle "memoryManager\nRSS 分级自保护 60/75/90%\nsoft/medium/hard · 30s 采样" as S6 #dae8fc
+    rectangle "verificationService\nTurnstile siteverify 校验\n12 高危端点验证门 · 168h TTL\nfail-closed · 测试绕过" as S7 #e1d5e7
+    rectangle "cookieService\n会话 Cookie CRUD\ncleanupExpired（午夜）" as S8 #dae8fc
+    rectangle "otpService\n6 位码 · HMAC-SHA256 入库\ntimingSafeEqual · 5 次锁定\n10 分钟有效 · 三层限速" as S9 #e1d5e7
+    rectangle "aliMailService\n阿里云 DirectMail SMTP\nsmtpdm.aliyun.com:465 SSL\nHTML+text 双正文 · 惰性单例" as S10 #e1d5e7
+    rectangle "commentService\n通用三级评论（L1/L2/L3）\nsubject_type 适配\n置顶/软删/回迁并发锁" as S11 #e1d5e7
+    rectangle "commentHeatService\n热度三档 normal/hot/viral\n续期 · 本地留存延长" as S12 #e1d5e7
+    rectangle "commentArchiveService\n+ ArchiveStore / OssArchiveStore\n10 天归档至 OSS JSON\n签名直读 + IndexedDB 缓存" as S13 #e1d5e7
+    rectangle "notificationService\nV4.0.0 通知写读\n未读计数 · 90 天清理" as S14 #e1d5e7
+    rectangle "everosService\nEverOS AI 记忆\naddTurn · searchMemory\n15s AbortController 超时" as S15 #dae8fc
+    S1 -[hidden]right- S2
+    S2 -[hidden]right- S3
+    S3 -[hidden]right- S4
+    S4 -[hidden]right- S5
+    S6 -[hidden]right- S7
+    S7 -[hidden]right- S8
+    S8 -[hidden]right- S9
+    S9 -[hidden]right- S10
+    S10 -[hidden]right- S11
+    S12 -[hidden]right- S13
+    S13 -[hidden]right- S14
+    S14 -[hidden]right- S15
+    S1 -[hidden]down- S6
+    S6 -[hidden]down- S12
   }
 
   package "工具层" #ffffff {
-    rectangle "crypto.ts\nAES-GCM 加解密（session_token / ip）" as U1 #dae8fc
+    rectangle "crypto.ts\nAES-256-GCM 加解密\n（session_token / ip）" as U1 #dae8fc
     rectangle "url.ts\nURL 构建与路径处理" as U2 #dae8fc
-    rectangle "tagsDb\n标签分类库（独立 SQLite）" as U3 #dae8fc
+    rectangle "db/tagsDb.ts\n标签分类库（独立 SQLite）" as U3 #dae8fc
+    U1 -[hidden]right- U2
+    U2 -[hidden]right- U3
   }
 
-  package "定时任务 & 端点" #ffffff {
-    rectangle "午夜清理\ncleanupExpired (sessions)\n+ cleanupExpiredVerifications" as T1 #dae8fc
-    rectangle "GET /api/health\n健康检查探活" as T2 #dae8fc
-    rectangle "GET/POST /api/admin/memory\nsnapshot · release (soft/medium/hard)" as T3 #dae8fc
+  package "定时任务" #ffffff {
+    rectangle "午夜清理（24h 周期）\n过期会话 + 人机验证记录\n+ OTP 验证码 + 已读通知(90天)" as T1 #dae8fc
+    rectangle "评论归档作业（V3.0.0）\n启动 30s 后一次 + 24h 周期\n进程内作业锁防重入" as T2 #dae8fc
+    rectangle "photo_views 每小时清理\n7 天前浏览去重记录" as T3 #dae8fc
+    T1 -[hidden]right- T2
+    T2 -[hidden]right- T3
   }
 }
 
 ' ==================== 数据层 ====================
 package "数据层（ECS 本地 · WAL 模式 · 外键约束）" #f2f9f0 {
-  package "SQLite 数据库（better-sqlite3 / sqlite wrapper）\n13 张业务表" #ffffff {
-    rectangle "users\nid · email · password_hash · username · avatar\n+ banned_at · can_upload · can_view · can_download · can_like" as D1 #d5e8d4
-    rectangle "photos\nid · title · thumbnail_path · original_url\npreview_url · watermarked_url · watermark_config\nuser_id · category · status(pending/approved/rejected)\nEXIF: camera · vehicle · location · focal_length · iso..." as D2 #d5e8d4
-    rectangle "articles · comments\n文章 + 评论（级联删除）" as D3 #d5e8d4
-    rectangle "photo_likes · photo_views\n点赞去重 · 浏览 24h 窗口去重" as D4 #d5e8d4
-    rectangle "article_likes · column_info" as D5 #d5e8d4
-    rectangle "cookie\nsession_token · encrypted_ip · expires_at" as D6 #d5e8d4
-    rectangle "admin_users\nrole(super/zone_master/zone_auditor) · zone" as D7 #d5e8d4
-    rectangle "admin_logs\n审计日志（3 索引）" as D8 #d5e8d4
-    rectangle "user_verifications (V1.8.0)\nsubject_type · subject_id · ip · action\nverified_at · expires_at · UNIQUE(type,id)" as D9 #d5e8d4
+  package "SQLite 主库（better-sqlite3 · 24 张业务表）" #ffffff {
+    rectangle "users\nemail · password_hash · email_verified\nlast_email_verified_at（周期验码锚点）\nbanned_at · can_upload/view/download/like" as D1 #d5e8d4
+    rectangle "photos\nregistration_number（2-20位·索引）\nis_hot 意愿 · watermark_config · status\nEXIF: camera · vehicle · location..." as D2 #d5e8d4
+    rectangle "comments · comment_likes\ncomment_heat · comment_archives\n通用三级评论 · 热度 · 归档索引" as D3 #d5e8d4
+    rectangle "photo_likes · photo_views\n点赞 · 浏览 24h 窗口去重" as D4 #d5e8d4
+    rectangle "articles · article_likes · column_info\n专栏文章与点赞" as D5 #d5e8d4
+    rectangle "forum_boards · forum_threads\nthread_likes · thread_views\n板块 · 帖子 · 点赞/浏览去重" as D6 #d5e8d4
+    rectangle "notifications  V4.0.0\nuser_id · type · related_type/id\nread_at（已读 90 天清理）" as D7 #d5e8d4
+    rectangle "appeals · penalties  V4.0.0\n照片申诉状态机 · 用户处罚历史" as D8 #d5e8d4
+    rectangle "news_images  V4.0.0\n新闻图库（编辑选图 · 授权标注）" as D9 #d5e8d4
+    rectangle "verification_codes\nHMAC 哈希 · 尝试计数 · 过期时间" as D10 #d5e8d4
+    rectangle "user_verifications\nsubject+action 唯一 · 168h TTL" as D11 #d5e8d4
+    rectangle "cookie\nsession_token · encrypted_ip（AES-GCM）" as D12 #d5e8d4
+    rectangle "admin_users\n5 角色：super / zone_master\nzone_auditor / forum_moderator / news_editor\nadmin_logs 审计（3 索引）" as D13 #d5e8d4
+    D1 -[hidden]right- D2
+    D2 -[hidden]right- D3
+    D3 -[hidden]right- D4
+    D4 -[hidden]right- D5
+    D6 -[hidden]right- D7
+    D7 -[hidden]right- D8
+    D8 -[hidden]right- D9
+    D9 -[hidden]right- D10
+    D11 -[hidden]right- D12
+    D12 -[hidden]right- D13
+    D1 -[hidden]down- D6
+    D6 -[hidden]down- D11
   }
-  rectangle "本地静态存储\n/uploads 头像等 · /articles Markdown" as D10 #d5e8d4
+  package "SQLite 标签库（独立文件 · 3 张表）" #ffffff {
+    rectangle "tag_categories · tag_objects\ntag_attributes" as D14 #d5e8d4
+  }
+  rectangle "本地静态存储\n/uploads 头像 · /articles Markdown" as D15 #d5e8d4
 }
 
 ' ==================== 外部服务 ====================
 package "外部服务" #fafafa {
-  rectangle "阿里云 OSS 对象存储（S3 兼容）\n• 原图：浏览器预签名直传 POST\n• 缩略图/预览/水印 webp：imageService 上传\n• 删除：deleteFromOSS" as E1 #f5f5f5
-  rectangle "Cloudflare Turnstile API\nPOST https://challenges.cloudflare.com/turnstile/v0/siteverify\n校验 success · action · hostname 白名单\nfail-closed（网络异常拒绝）" as E2 #e1d5e7
+  rectangle "阿里云 OSS（oss-cn-hongkong）\n• 原图：浏览器预签名直传\n• 缩略图/预览/水印 webp：imageService 上传\n• 评论归档 JSON：上传 + 签名直读\n• 删除：级联清理全部衍生对象" as E1 #f5f5f5
+  rectangle "阿里云 DirectMail\nsmtpdm.aliyun.com:465 SSL\n发件 main@mail.tlrphotos.com\nSPF · MX · DKIM 已验证" as E2 #f5f5f5
+  rectangle "Cloudflare Turnstile API\nchallenges.cloudflare.com/turnstile/v0/siteverify\nsuccess · action · hostname 白名单\nfail-closed（网络异常拒绝）" as E3 #e1d5e7
+  rectangle "EverOS AI Agent API\n持久化记忆层\nEVEROS_PROJECT_ID=tlrphotos\nsender_id 用户隔离" as E4 #f5f5f5
+  E1 -[hidden]right- E2
+  E3 -[hidden]right- E4
+  E1 -[hidden]down- E3
 }
 
-' ==================== 连线：用户 → Cloudflare ====================
-P1 --> CF1 : HTTPS
-P2 --> CF1
-P3 --> CF1
-P4 --> CF1
-P5 --> CF1
-P6 --> CF1
-P7 --> CF1
-P8 --> CF1
-P9 ..> CF3 : Turnstile 挑战（widget 内嵌）
-
-A1 --> CF2 : SSO 登录
-A2 --> CF2
-A3 --> CF2
-A4 --> CF2
-A5 --> CF2
-A6 --> CF2
-A7 --> CF2
-
-' ==================== 连线：Cloudflare → Nginx ====================
-CF1 --> N1 : 回源 · 静态 + API
-CF2 --> N2 : 放行
+' ==================== 连线：用户层 → Cloudflare → Nginx ====================
+FE --> CF1 : HTTPS（静态资源 + API）
+AD --> CF1 : HTTPS
+P15 ..> CF3 : Turnstile 挑战（widget 内嵌）
+CF1 --> N1 : 回源 · 用户站
+CF1 --> N2 : 回源 · 管理站
 
 ' ==================== 连线：Nginx → 应用层 ====================
-N1 --> M1 : api / uploads / articles 反代
-N2 --> M1 : api 反代
+N1 --> M1 : /api · /uploads · /articles 反代
+N2 --> M1 : /api 反代
+M1 --> M2
+M2 --> M3
+M3 --> R1
+M3 --> RA1
 
-M1 --> R1
-M1 --> R2
-M1 --> R3
-M1 --> R4
-M1 --> R5
-M1 --> R6
-M1 --> R7
+' ==================== 连线：路由 → 中间件/服务（骨干） ====================
+R1 --> S1 : JWT/会话
+R1 --> S9 : 验证码校验
+R1 --> S10 : 发送验码邮件
+R1 --> U1 : AES 加密
+R2 --> S4 : OSS 预签名/直传
+R2 --> S5 : 缩略图/水印
+R3 --> S11 : 三级评论
+R3 --> S12 : 热度
+R6 --> S14 : 通知
+R9 --> S7 : 验证状态
+R10 --> S15 : AI 记忆
+RA1 --> MW2 : adminAuth + requireRole
+RA1 --> S2 : 管理员操作/审计
+RA1 --> S14 : 审核/处罚通知
 
-' 路由 → 服务
-R1 --> S1 : 注册/登录/改密
-R1 --> S6 : 会话
-R1 --> U1 : 加密
-R2 --> S2 : OSS 预签名/直传
-R2 --> S3 : 缩略图/水印
-R2 --> S5 : 上传验证门
-R6 --> MW1 : adminAuth
-R6 --> MW2 : requireRole
-R6 --> S7 : 管理员操作
-R6 --> S5 : 管理端验证门
-R7 --> S5
-
-' 服务 → 数据
+' ==================== 连线：服务 → 数据 ====================
 S1 --> D1 : users 读写
-S1 --> D6 : cookie 会话
-S2 --> E1 : OSS 操作
-S3 --> E1 : webp 衍生图上传
-S6 --> D6
-S7 --> D7 : admin_users
-S7 --> D8 : admin_logs
-S5 --> D9 : user_verifications
+S1 --> D12 : cookie 会话
+S9 --> D10 : verification_codes
+S7 --> D11 : user_verifications
+S2 --> D13 : admin_users · admin_logs
+S11 --> D3 : comments 组
+S14 --> D7 : notifications
+U3 --> D14 : 标签库
 
-' Turnstile siteverify
-CF3 ..> S5 : canonical siteverify
-S5 ..> E2 : POST siteverify API
+' ==================== 连线：服务 → 外部 ====================
+S4 --> E1 : OSS 操作
+S5 --> E1 : webp 衍生图上传
+S13 --> E1 : 归档 JSON 上传/签名直读
+S10 ..> E2 : SMTP 发信
+S15 ..> E4 : 记忆读写
+CF3 ..> S7 : canonical siteverify
+S7 ..> E3 : POST siteverify API
 
-' 定时任务
-T1 --> S6 : cleanupExpired
-T1 --> S5 : cleanupExpiredVerifications
-T3 --> S4 : memoryManager
+' ==================== 连线：定时任务 ====================
+T1 --> S8 : cleanupExpired
+T1 --> S7 : cleanupExpiredVerifications
+T1 --> S9 : cleanupExpiredCodes
+T1 --> S14 : cleanupOldNotifications
+T2 --> S13 : runArchiveJob
+T3 --> D4 : photo_views 清理
 
 @enduml
