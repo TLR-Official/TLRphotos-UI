@@ -20,6 +20,25 @@ const dbPath = process.env.DB_PATH ?? path.join(__dirname, '../data/database.db'
 export let db: Database;
 
 /**
+ * 论坛三大基础板块（V4.0.0 收敛）：航空 / 铁路 / 公路。
+ * 单一事实来源，同时供以下三处使用：
+ * - db.ts seedMockData：initDb 时按名判断缺则插入（幂等）
+ * - adminForum.ts：板块创建白名单（仅允许三板块）与删除保护（三板块不可删）
+ * - routes/news.ts：新闻发布板块约束（首批仅允许航空板块）
+ */
+export const CANONICAL_FORUM_BOARDS: ReadonlyArray<{
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  sort_order: number;
+}> = [
+  { id: 'aviation', name: '航空', description: '民航、军航与通航摄影交流', icon: '✈️', sort_order: 1 },
+  { id: 'railway', name: '铁路', description: '铁路摄影与车迷交流', icon: '🚄', sort_order: 2 },
+  { id: 'road', name: '公路', description: '公路与汽车摄影交流', icon: '🛣️', sort_order: 3 },
+];
+
+/**
  * 评论体系完整 DDL（V3.0.0）。
  * 基线建库与存量库 V3 迁移共用本常量，确保两条路径产生完全一致的结构：
  * - comments: 通用三级嵌套评论，按 (subject_type, subject_id) 绑定任意主题
@@ -351,6 +370,67 @@ const initSchema = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_thread_views_last_viewed_at ON thread_views(last_viewed_at);
 
+    -- 通知中心表（V4.0.0）：站内信，type 区分业务来源
+    -- （photo_liked/photo_downloaded/photo_hot/penalty/appeal_approved/appeal_rejected/photo_recalled/forum_reply）
+    -- is_read 0=未读 1=已读；related_type/related_id 指向关联业务对象（如 photo）
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT,
+      related_type TEXT,
+      related_id TEXT,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    -- (user_id, is_read) 复合索引：未读角标计数与"我的通知"列表高频查询
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
+
+    -- 处罚记录表（V4.0.0）：两级处罚留痕
+    -- level 1=限制上传（days 天后解禁，expires_at 非空）；level 2=封禁账号（expires_at 为空）
+    -- user_id 指向 users 表；对管理员（zone_auditor）的处罚同样落本表留痕，但不落 users 表效果
+    CREATE TABLE IF NOT EXISTS penalties (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      level INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      days INTEGER,
+      expires_at TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- 申诉表（V4.0.0）：上传者对被拒绝照片发起申诉，管理员双向裁决
+    -- status: pending（待裁决）/ approved（申诉成立，照片恢复）/ rejected（申诉驳回）/ withdrawn（用户撤回，可重新发起）
+    CREATE TABLE IF NOT EXISTS appeals (
+      id TEXT PRIMARY KEY,
+      photo_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      response TEXT,
+      decided_by TEXT,
+      decided_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    -- 新闻配图表（V4.0.0）：type='news' 的文章与已通过审核照片的授权配图关联
+    -- authorization_confirmed=1 表示编辑已确认获得摄影师授权；sort_order 控制图序（首位为封面）
+    -- article 级联删除：新闻硬删时同步清理配图关联
+    CREATE TABLE IF NOT EXISTS news_images (
+      id TEXT PRIMARY KEY,
+      article_id TEXT NOT NULL,
+      photo_id TEXT NOT NULL,
+      authorization_confirmed INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+      FOREIGN KEY (photo_id) REFERENCES photos(id)
+    );
+    -- (article_id, sort_order)：详情按图序读取、列表取封面首图
+    CREATE INDEX IF NOT EXISTS idx_news_images_article ON news_images(article_id, sort_order);
+
   `);
 
   // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，
@@ -420,6 +500,36 @@ const initSchema = async () => {
   // 注册号检索索引（全局检索按注册号前缀/模糊匹配）
   try {
     await db.run('CREATE INDEX IF NOT EXISTS idx_photos_registration_number ON photos(registration_number)');
+  } catch {}
+
+  // ==========================================================================
+  // V4.0.0 迭代：通知与审核纠错系统
+  // photos 加审核留痕列（reviewed_by/reviewed_at）、热门确认标记（is_hot_confirmed）、
+  // 审核分配列（assigned_to）；articles 加类型列；users 加上传禁令解禁时间
+  // ==========================================================================
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN reviewed_by TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN reviewed_at TEXT');
+  } catch {}
+  // 管理员"确认热门"标记（区别于用户上传时的 is_hot 意愿标记，仅确认后的作品进热门位且不可召回）
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN is_hot_confirmed INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  // 审核分配：管理员将待审照片指派给指定审核员
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN assigned_to TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE articles ADD COLUMN type TEXT NOT NULL DEFAULT \'column\'');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE articles ADD COLUMN board_id TEXT');
+  } catch {}
+  // 一级处罚：限制上传至该时间点（ISO 字符串），到期自动恢复上传能力
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN upload_banned_until TEXT');
   } catch {}
 
   // V1.13.0 管理员安全：强制改密标记 + JWT 版本号（改密即作废旧 JWT）
@@ -1089,17 +1199,14 @@ const seedMockData = async () => {
     );
   }
 
-  // V3.1.0：论坛默认板块（仅在板块表为空时 seed）
-  const boardCount = await db.get('SELECT COUNT(*) as count FROM forum_boards');
-  if (boardCount.count === 0) {
-    const defaultBoards = [
-      { id: 'general', name: '综合讨论', description: '畅所欲言的综合话题区', icon: '💬', sort_order: 1 },
-      { id: 'aerial-photo', name: '航拍作品', description: '分享航拍照片与拍摄心得', icon: '✈️', sort_order: 2 },
-      { id: 'tech-talk', name: '技术交流', description: '器材、后期、飞控技术讨论', icon: '🔧', sort_order: 3 },
-    ];
-    for (const b of defaultBoards) {
+  // V4.0.0：论坛板块收敛为 航空/铁路/公路 三大基础板块。
+  // 按板块名判断，缺则插入（幂等）；历史遗留板块（如 V3.1.0 的 general 等）不删除，
+  // 仅保证三大板块始终存在。CANONICAL_FORUM_BOARDS 同时作为板块管理端点的白名单来源。
+  for (const b of CANONICAL_FORUM_BOARDS) {
+    const exists = await db.get('SELECT id FROM forum_boards WHERE id = ? OR name = ?', [b.id, b.name]);
+    if (!exists) {
       await db.run(
-        'INSERT OR IGNORE INTO forum_boards (id, name, description, icon, sort_order, is_active) VALUES (?, ?, ?, ?, ?, 1)',
+        'INSERT INTO forum_boards (id, name, description, icon, sort_order, is_active) VALUES (?, ?, ?, ?, ?, 1)',
         [b.id, b.name, b.description, b.icon, b.sort_order]
       );
     }

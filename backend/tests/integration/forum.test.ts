@@ -43,7 +43,8 @@ describe('论坛板块', () => {
   it('seed 默认 3 个板块', async () => {
     const boards = await db.all('SELECT id FROM forum_boards ORDER BY sort_order');
     expect(boards.length).toBe(3);
-    expect(boards.map((b: any) => b.id)).toEqual(['general', 'aerial-photo', 'tech-talk']);
+    // V4.0.0 板块收敛：默认板块改为 航空/铁路/公路 三大基础板块
+    expect(boards.map((b: any) => b.id)).toEqual(['aviation', 'railway', 'road']);
   });
 });
 
@@ -53,11 +54,11 @@ describe('帖子与评论同步', () => {
     await db.run(
       `INSERT INTO forum_threads (id,board_id,title,content_md,author_id,author_name,status,is_pinned,created_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ['thread-1', 'general', '标题一', '正文', 'u1', '用户甲', 'published', 0, now, now]
+      ['thread-1', 'aviation', '标题一', '正文', 'u1', '用户甲', 'published', 0, now, now]
     );
-    await db.run('UPDATE forum_boards SET thread_count = thread_count + 1 WHERE id = ?', ['general']);
+    await db.run('UPDATE forum_boards SET thread_count = thread_count + 1 WHERE id = ?', ['aviation']);
 
-    const list = await db.all('SELECT title FROM forum_threads WHERE board_id = ?', ['general']);
+    const list = await db.all('SELECT title FROM forum_threads WHERE board_id = ?', ['aviation']);
     expect(list.length).toBe(1);
 
     // 发表 L1 评论，验证 reply_count 同步

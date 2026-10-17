@@ -178,11 +178,13 @@ export function AdminsPage({ currentAdmin }: AdminsPageProps) {
     setShowEditModal(true);
   };
 
-  /** 角色标识到中文标签的映射，用于表格中显示角色徽章 */
-  const roleLabel = {
+  /** 角色标识到中文标签的映射，用于表格中显示角色徽章（V4.0.0 扩展论坛/新闻角色） */
+  const roleLabel: Record<AdminUser['role'], string> = {
     super: '最高账户',
     zone_master: '分区总审核',
     zone_auditor: '分区审核',
+    forum_moderator: '论坛小审',
+    news_editor: '新闻编辑',
   };
 
   return (

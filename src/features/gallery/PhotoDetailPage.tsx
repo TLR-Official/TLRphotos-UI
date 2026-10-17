@@ -2,9 +2,12 @@
  * 照片详情页
  * 根据路由参数加载单张照片的完整信息，展示原图、上传者、拍摄参数、统计与描述等；
  * 当访问者为上传者本人时，提供两步确认式删除入口。
+ * V4.0.0：被驳回且访问者为所有者时展示申诉状态卡，支持发起申诉（原因必填）。
  */
 import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoById, deletePhoto, likePhoto, unlikePhoto } from '../../api/photos';
+import { createAppeal, getMyAppeals } from '../../api/appeals';
+import type { MyAppeal } from '../../api/appeals';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { useState, useEffect } from 'react';
@@ -51,6 +54,16 @@ export function PhotoDetailPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
 
+  // V4.0.0 申诉状态（仅所有者且照片被驳回时启用）：
+  // - myAppeal：该照片的最新一条申诉记录（含状态与裁决答复）
+  // - appealModalOpen / appealReason / appealLoading：发起申诉弹窗
+  // - appealNotice：申诉操作提示（3 秒自动清空）
+  const [myAppeal, setMyAppeal] = useState<MyAppeal | null>(null);
+  const [appealModalOpen, setAppealModalOpen] = useState(false);
+  const [appealReason, setAppealReason] = useState('');
+  const [appealLoading, setAppealLoading] = useState(false);
+  const [appealNotice, setAppealNotice] = useState('');
+
   // 根据 id 拉取照片详情；cancelled 标志防止组件卸载后异步回调写入 state
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +85,25 @@ export function PhotoDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // V4.0.0：所有者查看被驳回照片时拉取本人申诉记录（后端按创建时间倒序，取该照片最新一条）
+  const isRejectedOwner = !!(user && photo?.status === 'rejected' && photo.user_id === user.id);
+  useEffect(() => {
+    if (!isRejectedOwner || !id) {
+      setMyAppeal(null);
+      return;
+    }
+    let cancelled = false;
+    getMyAppeals()
+      .then((res) => {
+        if (cancelled || !res.success || !res.data) return;
+        setMyAppeal(res.data.find((a) => a.photo_id === id) ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isRejectedOwner, id]);
 
   /**
    * 切换点赞状态：未登录引导登录，已登录调用 likePhoto/unlikePhoto
@@ -218,6 +250,37 @@ export function PhotoDetailPage() {
     }
   };
 
+  /**
+   * 发起申诉（V4.0.0）：原因必填，POST /photos/:id/appeal。
+   * 成功后刷新本人申诉状态；409 APPEAL_IN_PROGRESS 提示已有申诉处理中。
+   */
+  const handleSubmitAppeal = async () => {
+    if (!id || appealLoading) return;
+    const reason = appealReason.trim();
+    if (!reason) return;
+
+    setAppealLoading(true);
+    const result = await createAppeal(id, reason);
+    if (result.success) {
+      setAppealModalOpen(false);
+      setAppealReason('');
+      // 刷新该照片最新申诉状态
+      const listRes = await getMyAppeals();
+      if (listRes.success && listRes.data) {
+        setMyAppeal(listRes.data.find((a) => a.photo_id === id) ?? null);
+      }
+      setAppealNotice('申诉已提交，请等待管理员裁决');
+    } else if (result.code === 'APPEAL_IN_PROGRESS') {
+      setAppealModalOpen(false);
+      setAppealReason('');
+      setAppealNotice('该作品已有待处理的申诉，请耐心等待裁决');
+    } else {
+      setAppealNotice(result.message || '申诉提交失败');
+    }
+    setTimeout(() => setAppealNotice(''), 3000);
+    setAppealLoading(false);
+  };
+
   if (isLoading) {
     return (
       <div className={`min-h-screen flex items-center justify-center theme-bg-transition ${
@@ -253,6 +316,46 @@ export function PhotoDetailPage() {
   return (
     <main className="py-8 px-4">
       {verificationModal}
+
+      {/* V4.0.0：发起申诉弹窗（原因必填） */}
+      {appealModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => !appealLoading && setAppealModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-800 mb-2">发起申诉</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              请说明您认为审核有误的理由，管理员将复核并以站内通知答复裁决结果。
+            </p>
+            <textarea
+              value={appealReason}
+              onChange={(e) => setAppealReason(e.target.value)}
+              className="w-full h-28 p-3 border border-gray-300 rounded-lg text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-700"
+              placeholder="请输入申诉理由（必填）..."
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => setAppealModalOpen(false)}
+                disabled={appealLoading}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSubmitAppeal}
+                disabled={!appealReason.trim() || appealLoading}
+                className="flex-1 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg transition-colors"
+              >
+                {appealLoading ? '提交中...' : '提交申诉'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto">
         <button
           onClick={(e) => {
@@ -334,6 +437,77 @@ export function PhotoDetailPage() {
                 theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
               }`}>{formatDate(photo.created_at)}</p>
             </div>
+
+            {/* V4.0.0：所有者查看被驳回照片时的申诉状态卡 */}
+            {isRejectedOwner && (
+              <div className="rounded-xl shadow-lg p-6 bg-white">
+                <h2 className="text-lg font-semibold mb-3 text-gray-900">审核申诉</h2>
+
+                {appealNotice && (
+                  <p className="mb-3 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    {appealNotice}
+                  </p>
+                )}
+
+                {myAppeal ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          myAppeal.status === 'pending'
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : myAppeal.status === 'approved'
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        {myAppeal.status === 'pending'
+                          ? '申诉处理中'
+                          : myAppeal.status === 'approved'
+                            ? '申诉已通过'
+                            : myAppeal.status === 'rejected'
+                              ? '申诉未通过'
+                              : '申诉已撤回'}
+                      </span>
+                      <span className="text-xs text-gray-400">{formatDate(myAppeal.created_at)}</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      <span className="text-gray-400">申诉理由：</span>
+                      {myAppeal.reason}
+                    </p>
+                    {myAppeal.response && (
+                      <p className="text-sm text-gray-800 bg-gray-50 rounded-lg px-3 py-2">
+                        <span className="text-gray-400">管理员答复：</span>
+                        {myAppeal.response}
+                      </p>
+                    )}
+                    {/* 仅非处理中状态可再次发起（撤回或被驳回后均可重新申诉） */}
+                    {myAppeal.status !== 'pending' && (
+                      <button
+                        onClick={() => setAppealModalOpen(true)}
+                        disabled={appealLoading}
+                        className="mt-2 px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        再次发起申诉
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-3">
+                      您的作品未通过审核。如认为审核有误，可发起申诉，管理员将复核并答复。
+                    </p>
+                    <button
+                      onClick={() => setAppealModalOpen(true)}
+                      disabled={appealLoading}
+                      className="px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      发起申诉
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'

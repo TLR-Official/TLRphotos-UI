@@ -30,6 +30,8 @@ export function Footer(): ReactNode {
             <nav className="flex flex-col gap-2 text-sm">
               <Link to="/profile" className="hover:text-blue-800 transition-colors">个人设置</Link>
               <Link to="/column" className="hover:text-blue-800 transition-colors">专栏</Link>
+              <Link to="/news" className="hover:text-blue-800 transition-colors">新闻</Link>
+              <Link to="/about" className="hover:text-blue-800 transition-colors">关于我们</Link>
             </nav>
           </div>
         </div>

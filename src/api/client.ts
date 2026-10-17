@@ -17,7 +17,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
  * 统一响应结构
  * @template T - data 字段的数据类型
  */
-interface ApiResponse<T = unknown> {
+export interface ApiResponse<T = unknown> {
   success: boolean;   // 业务是否成功
   data?: T;           // 业务数据
   message?: string;   // 提示信息（失败时必填）
@@ -199,4 +199,4 @@ async function request<T = unknown>(
 }
 
 export { request, API_BASE_URL, ErrorType };
-export type { ApiResponse, RequestOptions };
+export type { RequestOptions };

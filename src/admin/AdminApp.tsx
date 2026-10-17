@@ -3,6 +3,8 @@
  * 负责管理员鉴权与页面路由：根据本地 token 校验登录状态，
  * 未登录显示 LoginPage，已登录则按 URL 路径切换页面。
  * 支持 /admin/photos/:id 路由进入照片审核详情页。
+ * V4.0.0：新增 /admin/appeals（申诉裁决）、/admin/my-audits（我的已处理）、
+ * /admin/forum（论坛治理占位页）与 /admin/news（新闻管理：列表 / 新建 / 编辑）。
  */
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -15,6 +17,10 @@ import { PhotoDetailPage } from './PhotoDetailPage';
 import { AdminsPage } from './AdminsPage';
 import { UsersPage } from './UsersPage';
 import { LogsPage } from './LogsPage';
+import { MyAuditsPage } from './MyAuditsPage';
+import { AppealsPage } from './AppealsPage';
+import { NewsPage } from './NewsPage';
+import { NewsEditorPage } from './NewsEditorPage';
 import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
 import type { AdminUser } from './types';
 
@@ -29,6 +35,18 @@ function parsePhotoIdFromPath(pathname: string): string | undefined {
 }
 
 /**
+ * 从 URL 路径解析新闻编辑器模式：
+ * /admin/news/new → 新建（返回 'new'）；/admin/news/:id/edit → 编辑（返回新闻 id）；其余返回 undefined
+ * @param pathname 当前 URL 路径
+ * @returns 'new' | 新闻 id | undefined
+ */
+function parseNewsEditorFromPath(pathname: string): string | undefined {
+  if (pathname.startsWith('/admin/news/new')) return 'new';
+  const match = pathname.match(/^\/admin\/news\/([^/]+)\/edit$/);
+  return match ? match[1] : undefined;
+}
+
+/**
  * 从 URL 路径获取当前页面标识（用于侧边栏高亮）
  * @param pathname 当前 URL 路径
  * @returns 页面标识
@@ -38,8 +56,30 @@ function getPageIdFromPath(pathname: string): string {
   if (pathname.startsWith('/admin/admins')) return 'admins';
   if (pathname.startsWith('/admin/users')) return 'users';
   if (pathname.startsWith('/admin/logs')) return 'logs';
+  if (pathname.startsWith('/admin/appeals')) return 'appeals';
+  if (pathname.startsWith('/admin/my-audits')) return 'my-audits';
+  if (pathname.startsWith('/admin/forum')) return 'forum';
+  if (pathname.startsWith('/admin/news')) return 'news';
   if (pathname.startsWith('/admin/dashboard')) return 'dashboard';
   return 'dashboard';
+}
+
+/**
+ * 占位页（V4 本轮未实现的模块）：论坛治理
+ * @param title 页面标题
+ * @param description 说明文案
+ * @returns 占位卡片 JSX
+ */
+function PlaceholderPage({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
+      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+        <p className="text-gray-800 font-medium">该模块将在下轮迭代开放</p>
+        <p className="text-sm text-gray-500 mt-2">{description}</p>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -110,6 +150,8 @@ export function AdminApp() {
   // 基于 URL 路径计算当前页面标识和照片 ID
   const pageId = getPageIdFromPath(location.pathname);
   const photoId = parsePhotoIdFromPath(location.pathname);
+  // 新闻编辑器路由参数：'new'（新建）或新闻 id（编辑），非编辑器路径为 undefined
+  const newsEditorId = parseNewsEditorFromPath(location.pathname);
 
   /**
    * 处理侧边栏导航：基于 URL 跳转
@@ -123,6 +165,12 @@ export function AdminApp() {
       case 'photos':
         navigate('/admin/photos');
         break;
+      case 'appeals':
+        navigate('/admin/appeals');
+        break;
+      case 'my-audits':
+        navigate('/admin/my-audits');
+        break;
       case 'admins':
         navigate('/admin/admins');
         break;
@@ -132,6 +180,12 @@ export function AdminApp() {
       case 'logs':
         navigate('/admin/logs');
         break;
+      case 'forum':
+        navigate('/admin/forum');
+        break;
+      case 'news':
+        navigate('/admin/news');
+        break;
       default:
         navigate('/admin/dashboard');
     }
@@ -139,9 +193,14 @@ export function AdminApp() {
 
   /** 根据路径渲染对应页面 */
   const renderPage = () => {
-    // 照片详情页（有 photoId 时）
+    // 照片详情页（有 photoId 时）：传入 currentAdmin 供分配下拉做角色判断
     if (pageId === 'photos' && photoId) {
-      return <PhotoDetailPage id={photoId} />;
+      return <PhotoDetailPage id={photoId} currentAdmin={admin} />;
+    }
+
+    // 新闻编辑器（新建 /admin/news/new 或编辑 /admin/news/:id/edit）
+    if (pageId === 'news' && newsEditorId !== undefined) {
+      return <NewsEditorPage newsId={newsEditorId === 'new' ? undefined : newsEditorId} />;
     }
 
     switch (pageId) {
@@ -149,12 +208,20 @@ export function AdminApp() {
         return <DashboardPage />;
       case 'photos':
         return <PhotosPage />;
+      case 'appeals':
+        return <AppealsPage />;
+      case 'my-audits':
+        return <MyAuditsPage />;
       case 'admins':
         return <AdminsPage currentAdmin={admin} />;
       case 'users':
         return <UsersPage />;
       case 'logs':
         return <LogsPage />;
+      case 'forum':
+        return <PlaceholderPage title="论坛治理" description="论坛板块治理与帖子管理功能将在下轮迭代实现。" />;
+      case 'news':
+        return <NewsPage />;
       default:
         return <DashboardPage />;
     }

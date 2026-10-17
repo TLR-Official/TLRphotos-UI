@@ -25,6 +25,10 @@ import { ForumHomePage } from './features/forum/ForumHomePage';
 import { BoardPage } from './features/forum/BoardPage';
 import { ThreadDetailPage } from './features/forum/ThreadDetailPage';
 import { NewThreadPage } from './features/forum/NewThreadPage';
+import { AboutPage } from './features/about/AboutPage';
+import { NewsListPage } from './features/news/NewsListPage';
+import { NewsDetailPage } from './features/news/NewsDetailPage';
+import { NotificationPage } from './features/notifications/NotificationPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
@@ -93,6 +97,10 @@ function AppRouterContent() {
           <Route path="/forum/b/:boardId" element={<BoardPage />} />
           <Route path="/forum/t/:threadId" element={<ThreadDetailPage />} />
           <Route path="/forum/new" element={<NewThreadPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/news" element={<NewsListPage />} />
+          <Route path="/news/:id" element={<NewsDetailPage />} />
+          <Route path="/notifications" element={<NotificationPage />} />
           <Route path="/admin/*" element={<AdminApp />} />
         </Routes>
       </main>

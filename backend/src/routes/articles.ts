@@ -15,11 +15,21 @@ const router = express.Router();
 
 /**
  * 获取文章列表（按发布时间倒序）。
+ * V4.0.0：新增 ?board_id= 筛选（值须为论坛三大板块 id：aviation/railway/road），
+ * 并在返回字段中附带 type/board_id 供前端区分专栏与新闻（type='news'）。
  * 仅返回列表展示所需字段（不含正文），tags 字段反序列化为数组。
  */
 router.get('/', async (req, res) => {
   try {
-    const articles = await db.all('SELECT id, title, excerpt, cover_image, author, published_at, read_count, like_count, comment_count, tags FROM articles ORDER BY published_at DESC');
+    let sql = 'SELECT id, title, excerpt, cover_image, author, published_at, read_count, like_count, comment_count, tags, type, board_id FROM articles WHERE 1=1';
+    const params: (string | number)[] = [];
+    // 板块筛选：可选参数，传入时仅返回归属该板块的文章
+    if (typeof req.query.board_id === 'string' && req.query.board_id.trim()) {
+      sql += ' AND board_id = ?';
+      params.push(req.query.board_id.trim());
+    }
+    sql += ' ORDER BY published_at DESC';
+    const articles = await db.all(sql, params);
 
     const result = articles.map((article: any) => {
       let tags: string[] = [];

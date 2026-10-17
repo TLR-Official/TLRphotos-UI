@@ -1,11 +1,13 @@
 /**
  * 顶部导航栏
- * 提供站点 Logo、作品集入口、关于我们及用户菜单；登录用户显示头像下拉菜单（个人资料/上传/作品/退出），
+ * 提供站点 Logo、作品集入口、关于我们及用户菜单；登录用户显示头像下拉菜单（通知中心/个人资料/上传/作品/退出），
  * 未登录用户显示登录按钮。下拉菜单采用悬停延时关闭以避免误触。
+ * V4.0.0：下拉新增「通知中心」入口与未读数角标（随路由变化与下拉展开刷新）。
  */
-import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from './UserContext';
+import { getUnreadCount } from '../api/notifications';
 
 /**
  * 顶部导航栏组件
@@ -13,11 +15,39 @@ import { useUser } from './UserContext';
  */
 export function Header() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, logout, user } = useUser();
   // showDropdown：用户菜单下拉是否展开
   const [showDropdown, setShowDropdown] = useState(false);
+  // unreadCount：未读通知数（仅登录后拉取）
+  const [unreadCount, setUnreadCount] = useState(0);
   // closeTimeoutRef：下拉关闭延时句柄，用于鼠标移出时延迟关闭
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 拉取未读通知数量（失败静默，角标保持原值） */
+  const refreshUnread = useCallback(() => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    getUnreadCount()
+      .then((res) => {
+        if (res.success && res.data) {
+          setUnreadCount(res.data.count);
+        }
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
+
+  // 路由变化与下拉展开时刷新未读数（无需轮询）
+  useEffect(() => {
+    refreshUnread();
+  }, [location.pathname, showDropdown, refreshUnread]);
+
+  // 退出登录时清零角标
+  useEffect(() => {
+    if (!isAuthenticated) setUnreadCount(0);
+  }, [isAuthenticated]);
 
   // 组件卸载时清除未完成的定时器
   useEffect(() => {
@@ -76,7 +106,24 @@ export function Header() {
           >
             论坛
           </button>
-          <span className="theme-text-transition text-slate-600">关于我们</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/news');
+            }}
+            className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            新闻
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/about');
+            }}
+            className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            关于我们
+          </button>
 
           {isAuthenticated ? (
             <div
@@ -118,6 +165,24 @@ export function Header() {
                 onMouseLeave={handleMouseLeave}
               >
                 <div className="py-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDropdown(false);
+                      navigate('/notifications');
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm transition-colors text-gray-700 hover:bg-gray-100 flex items-center justify-between"
+                  >
+                    <span>通知中心</span>
+                    {unreadCount > 0 && (
+                      <span
+                        className="ml-2 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold leading-none bg-blue-700 text-white"
+                        title={`${unreadCount} 条未读通知`}
+                      >
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

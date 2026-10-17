@@ -33,6 +33,7 @@ import {
 } from '../services/commentService';
 import { commentArchiveService, ArchiveServiceError } from '../services/commentArchiveService';
 import { heatConfigFromEnv } from '../services/commentHeatService';
+import { createNotification } from '../services/notificationService';
 import { deleteFromOSS } from '../services/ossService';
 import { archiveKeyOf } from '../services/commentArchiveStore';
 import { ossCommentArchiveStore } from '../services/ossCommentArchiveStore';
@@ -100,6 +101,52 @@ function parseSubject(input: {
     return null;
   }
   return { subjectType: subjectType as CommentSubjectType, subjectId: subjectId.trim() };
+}
+
+/**
+ * 查询评论主题标题（V4.0.0 回复通知文案用）。
+ * 表名经白名单映射（thread→forum_threads / photo→photos / article→articles），无注入面。
+ * @returns 主题标题；主题已被删除时返回 null（此时跳过通知）
+ */
+async function getSubjectTitle(subjectType: CommentSubjectType, subjectId: string): Promise<string | null> {
+  const table =
+    subjectType === 'thread' ? 'forum_threads' : subjectType === 'photo' ? 'photos' : 'articles';
+  const row = await db.get<{ title?: string }>(`SELECT title FROM ${table} WHERE id = ?`, subjectId);
+  return row?.title ?? null;
+}
+
+/**
+ * 发送论坛回复通知（V4.0.0 Task 5.3 后端侧）。
+ * 触发条件：回复类评论（有父评论）、被回复人存在且非本人（自回复不打扰）。
+ * 通知体：title=`回复 @回复人`；content=`{回复人} 回复了你在《{主题标题}》下的评论`；
+ * related_type/related_id 指向评论主题（thread/photo/article），供前端跳转。
+ * 通知失败仅告警，不影响评论发布主流程。
+ */
+async function notifyForumReply(params: {
+  subjectType: CommentSubjectType;
+  subjectId: string;
+  parentCommentId: string;
+  replierId: string;
+  replierName: string;
+}): Promise<void> {
+  const parent = await db.get<{ user_id: string | null }>(
+    'SELECT user_id FROM comments WHERE id = ?',
+    params.parentCommentId
+  );
+  // 被回复人不存在（历史迁移评论 user_id 为空）或自回复：不通知
+  if (!parent?.user_id || parent.user_id === params.replierId) return;
+
+  const subjectTitle = await getSubjectTitle(params.subjectType, params.subjectId);
+  if (!subjectTitle) return;
+
+  await createNotification({
+    user_id: parent.user_id,
+    type: 'forum_reply',
+    title: `回复 @${params.replierName}`,
+    content: `${params.replierName} 回复了你在《${subjectTitle}》下的评论`,
+    related_type: params.subjectType,
+    related_id: params.subjectId,
+  });
 }
 
 /** 解析正整数查询参数（带回退与上限） */
@@ -204,6 +251,21 @@ router.post('/', requireVerifiedEmail, async (req, res, next) => {
       { userId: user.id, author: user.username || user.email || '已验证用户' },
       { heatConfig: heatConfigFromEnv(), rehydrateGateway }
     );
+
+    // V4.0.0：回复类评论向被回复人发送 forum_reply 站内信（自回复/被回复人缺失时静默跳过）
+    if (created.parent_id) {
+      try {
+        await notifyForumReply({
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          parentCommentId: created.parent_id,
+          replierId: user.id,
+          replierName: user.username || user.email || '已验证用户',
+        });
+      } catch (notifyError) {
+        console.warn('[Comments] forum_reply notification failed:', notifyError);
+      }
+    }
 
     res.status(201).json({ success: true, data: created });
   } catch (error) {

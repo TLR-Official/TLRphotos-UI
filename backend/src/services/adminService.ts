@@ -9,8 +9,18 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { db } from '../db';
 
-/** 管理员角色：super（超级管理员）/ zone_master（区域管理员）/ zone_auditor（区域审计） */
-export type AdminRole = 'super' | 'zone_master' | 'zone_auditor';
+/**
+ * 管理员角色：
+ * - super：超级管理员（全部权限）
+ * - zone_master：区域管理员（本分区审核 + 审核员账号管理）
+ * - zone_auditor：区域审计（本分区照片审核）
+ * - forum_moderator：论坛管理员（V4.0.0，仅论坛治理：删帖/删评论/置顶）
+ * - news_editor：新闻编辑（V4.0.0，仅新闻区：新闻创建/编辑/删除）
+ */
+export type AdminRole = 'super' | 'zone_master' | 'zone_auditor' | 'forum_moderator' | 'news_editor';
+
+/** 图片审核类角色白名单：审核/用户管理等后台核心路由仅允许原有三角色，新角色不得进入 */
+export const PHOTO_AUDIT_ROLES: AdminRole[] = ['super', 'zone_master', 'zone_auditor'];
 
 /** 管理员用户实体（对应 admin_users 表结构，V2.0.0 去手机化） */
 export interface AdminUser {

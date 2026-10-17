@@ -5,6 +5,7 @@
 - **基础路径**: `/api`
 - **后端地址**: `http://localhost:3001`
 - **数据格式**: JSON
+- **文档版本**: V4.0.0-beta（2026-10-17，同步 V4 迭代：通知中心 / 审核召回与处罚 / 申诉双向回执 / 论坛治理 / 新闻区 / 关于我们）
 - **统一响应格式**:
   ```json
   {
@@ -282,6 +283,8 @@
 - 浏览器原生流式下载到磁盘，无需前端 fetch blob 全量加载到内存，速度最快
 - 未审核照片仅所有者（带 `Authorization` 头）可下载；已审核照片为公开资源，任何人可下载
 
+> **V4.0.0 一级处罚上传禁令**：三个上传端点（`/upload`、`/upload/presigned`、`/upload/complete`）在认证后统一校验 `users.upload_banned_until`，处罚未到期返回 `403 { success: false, code: "UPLOAD_BANNED", message: "您的账号已被限制上传至 YYYY-MM-DD HH:mm，在此期间无法上传新作品" }`（解禁时间为服务器本地时区；直传路径在文件解析前拦截，被处罚请求不进入 multer 缓冲）。处罚来源见 [处罚用户](#处罚用户一级--二级)。
+
 ### 获取预签名上传地址
 
 **POST** `/api/photos/upload/presigned`
@@ -549,6 +552,8 @@ Content-Type: multipart/form-data
 
 - 对 L3 再回复时，新节点 `depth` 仍为 **3**，`parent_id` 指向被回复节点，正文以"回复 @用户"前缀**平铺**展示；系统永不产生 depth=4。
 - 线程内每条评论都冗余 `root_id`（L1 id）。
+
+> **V4.0.0 回复通知**：`subject_type` 自 V3.1.0 论坛上线起已含 `thread`（论坛帖子）。回复类评论（提供 `parent_id`）在被回复人存在且非本人（自回复不打扰）、主题未删除时，向被回复人发送 `forum_reply` 站内信（`title="回复 @回复人"`，`content="{回复人} 回复了你在《{主题标题}》下的评论"`，`related_type`/`related_id` 指向评论主题，供前端跳转）；被回复人为历史迁移评论（user_id 为空）时静默跳过，通知失败仅告警、不影响评论发布。
 
 **评论行字段**：`id, subject_type, subject_id, root_id, parent_id, depth, user_id, author, reply_to_user_id, reply_to_user_name, content, like_count, created_at`；登录态读取时附加 `is_liked`。
 
@@ -1730,6 +1735,579 @@ Authorization: Bearer <admin_token>
   }
 }
 ```
+
+---
+
+## 通知中心 (Notifications, V4.0.0)
+
+站内通知由业务事件驱动产生：点赞 / 下载 / 热门确认 / 处罚 / 申诉裁决 / 召回 / 论坛回复。**一次性过审（approve）不产生通知**，仅纠错类动作（recall / hot / appeal / penalty）与互动类事件产生通知。所有端点需用户 JWT（`Authorization: Bearer <token>`），数据严格按 `user_id` 隔离。
+
+**通知行字段**：`id, user_id, type, title, content, related_type, related_id, is_read(0/1), created_at`。
+
+**清理策略**：已读通知 90 天后由每日清理任务删除；未读不清理（避免用户长期未登录丢消息）。
+
+### 通知类型枚举
+
+| type | 触发事件 | related 指向 |
+|------|----------|--------------|
+| photo_liked | 作品收到新点赞（仅点赞状态 false→true 的新增点赞；取消点赞、自赞不通知） | photo |
+| photo_downloaded | 作品被他人下载（同一照片 + 下载人 24h 内仅通知一次） | photo |
+| photo_hot | 管理员确认作品为热门（重复确认幂等不重复通知） | photo |
+| penalty | 一级处罚（限制上传）/ 二级处罚（封禁），通知标题按级别区分 | penalty |
+| appeal_approved | 申诉裁决通过，作品恢复「已通过」（回执含答复内容） | appeal |
+| appeal_rejected | 申诉裁决驳回，作品维持「未通过」（回执含答复内容） | appeal |
+| photo_recalled | 作品被召回重新审核（仅超窗召回通知，窗口内静默召回不通知） | photo |
+| forum_reply | 论坛帖子/照片/文章下收到回复（自回复、被回复人缺失不通知） | thread / photo / article |
+
+### 获取通知列表
+
+**GET** `/api/notifications?page=1&limit=20`
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| page | number | 页码，默认 1 |
+| limit | number | 每页条数，默认 20，上限 100 |
+
+**响应**（按创建时间倒序）:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "0d1b2a3c-4d5e-6f70-8a9b-0c1d2e3f4a5b",
+      "user_id": "user_1234567890123",
+      "type": "photo_liked",
+      "title": "作品收到新点赞",
+      "content": "您的作品《城市天际线》收到了新的点赞",
+      "related_type": "photo",
+      "related_id": "000001",
+      "is_read": 0,
+      "created_at": "2026-10-17T08:30:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1 }
+}
+```
+
+### 获取未读数量
+
+**GET** `/api/notifications/unread-count`
+
+**响应**:
+```json
+{ "success": true, "data": { "count": 3 } }
+```
+
+### 标记单条通知已读
+
+**PUT** `/api/notifications/:id/read`
+
+仅限本人通知；通知不存在或不属于当前用户返回 `404 { success: false, message: "通知不存在" }`。
+
+**响应**:
+```json
+{ "success": true, "message": "已标记为已读" }
+```
+
+### 全部标记已读
+
+**PUT** `/api/notifications/read-all`
+
+**响应**:
+```json
+{ "success": true, "message": "已全部标记为已读", "data": { "changed": 3 } }
+```
+
+`changed` 为本次实际标记为已读的条数。
+
+---
+
+## 申诉接口 (Appeals, V4.0.0)
+
+针对被拒绝作品的申诉与双向回执。申诉状态机：`pending → approved / rejected`（管理员裁决）或 `pending → withdrawn`（用户撤回）；撤回或裁决后可对该照片重新发起申诉。
+
+### 发起申诉
+
+**POST** `/api/photos/:id/appeal`
+
+**需登录**（`loadAuthUser` 统一认证）且邮箱已确权（`requireVerifiedEmail`）。
+
+**约束**：
+- 仅作品所有者可对本人照片发起申诉（非所有者 403）
+- 仅 `status=rejected` 的照片可申诉（其余状态 400）
+- 同一照片已存在 `pending` 申诉时不可重复发起，返回 `409 APPEAL_IN_PROGRESS`（撤回/裁决后可再次发起）
+
+**请求体**:
+```json
+{ "reason": "认为审核误判的申诉理由" }
+```
+
+**响应**（201）:
+```json
+{ "success": true, "message": "申诉已提交，请等待管理员裁决", "data": { "appeal_id": "7c9e66e1-2b3a-4c5d-8e9f-0a1b2c3d4e5f" } }
+```
+
+**错误码**:
+| HTTP | code / 说明 |
+|------|-------------|
+| 401 | AUTH_REQUIRED 未登录 |
+| 403 | EMAIL_VERIFICATION_REQUIRED 邮箱未确权 |
+| 403 | 仅作品所有者可发起申诉（无 code） |
+| 400 | 仅未通过审核的作品可发起申诉 / 请填写申诉理由（无 code） |
+| 404 | 照片不存在 |
+| 409 | APPEAL_IN_PROGRESS 该作品已有待处理的申诉 |
+
+### 我的申诉列表
+
+**GET** `/api/my-appeals`
+
+**需登录**。返回本人全部申诉（按创建时间倒序），联照片标题与当前照片状态。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "7c9e66e1-2b3a-4c5d-8e9f-0a1b2c3d4e5f",
+      "photo_id": "000013",
+      "reason": "认为审核误判的申诉理由",
+      "status": "pending",
+      "response": null,
+      "decided_at": null,
+      "created_at": "2026-10-17T08:00:00.000Z",
+      "photo_title": "城市天际线",
+      "photo_status": "rejected"
+    }
+  ]
+}
+```
+
+### 撤回申诉
+
+**DELETE** `/api/my-appeals/:id`
+
+**需登录**。仅 `pending` 状态可撤回；撤回后 `status=withdrawn` 并记录 `decided_at`，可对该照片重新发起申诉。
+
+**响应**:
+```json
+{ "success": true, "message": "申诉已撤回，可重新发起" }
+```
+
+**错误**：申诉不存在或不属于本人返回 404；已处理完毕（非 pending）返回 400「该申诉已处理完毕，无法撤回」。
+
+---
+
+## 管理后台审核纠错 (V4.0.0)
+
+> 以下接口均需 `Authorization: Bearer <admin_token>`，操作写入 `admin_logs` 审计。
+
+### 管理员角色与权限边界（V4.0.0 更新）
+
+| 角色 | 照片审核（approve/reject） | 召回/热门确认/分配 | 用户处罚 | 论坛治理 | 新闻管理 |
+|------|---------------------------|--------------------|----------|----------|----------|
+| super | 全部分区 | 任意照片 | 全部目标 | ✓ | ✓ |
+| zone_master | 仅本分区 | 任意照片 | 本分区用户 + 本区 zone_auditor | ✓ | ✗ |
+| zone_auditor | 仅本分区 | recall 仅限本人审核的照片 | ✗（仅可被处罚） | ✗ | ✗ |
+| forum_moderator | ✗ | ✗ | ✗ | 仅论坛治理（板块/帖子/评论） | ✗ |
+| news_editor | ✗ | ✗ | ✗ | ✗ | 仅新闻管理（创建/编辑/删除/列表） |
+
+- `forum_moderator`（论坛管理员）与 `news_editor`（新闻编辑）为 V4.0.0 新增角色：前者**仅论坛治理**、后者**仅新闻区**，均无照片审核与用户处罚权限（照片审核角色白名单 `PHOTO_AUDIT_ROLES` 锁定为 super/zone_master/zone_auditor）。
+- 角色不符统一返回 `403 { success: false, message: "权限不足" }`。
+
+### 审核通过 / 驳回（V4.0.0 补记 reviewed_by / reviewed_at）
+
+**PUT** `/api/admin/photos/:id/approve`
+**PUT** `/api/admin/photos/:id/reject`
+
+**鉴权**：`super` / `zone_master` / `zone_auditor`（后两者仅本分区照片，跨区返回 403「该图片不是你所负责的分区」）。
+
+- **approve**：`status→approved`、清空 `rejection_reason`，并记录 **`reviewed_by`**（审核人管理员 ID）与 **`reviewed_at`**（审核时间 ISO 字符串）——这两个字段是召回权限判定（zone_auditor 仅可召回本人审核的照片）与「我的审核记录」列表的数据来源
+- **reject**：请求体 `{ "reason": "驳回理由" }` 必填；`status→rejected` 并写入 `rejection_reason` + `reviewed_by` + `reviewed_at`
+- 仅 `pending` 状态可执行，重复审核返回 400「照片状态不是待审核」
+- 审核通过**不产生通知**；过审后的纠错请走下方召回接口
+
+**召回行为指引**：approve 每次执行都会刷新 `reviewed_at`，即重新起算静默召回窗口。审核通过后 `RECALL_WINDOW_MINUTES`（默认 3 分钟）内召回为**静默召回**（不通知所有者）；超窗召回必须填写原因并向所有者发送 `photo_recalled` 通知。已确认热门的作品不可召回。
+
+**响应**: `{ "success": true, "message": "审核通过" }` / `{ "success": true, "message": "审核拒绝" }`
+
+### 召回已通过照片（三分钟召回两级机制）
+
+**PUT** `/api/admin/photos/:id/recall`
+
+**鉴权**：管理员 JWT。`super`/`zone_master` 可召回任意照片；`zone_auditor` 仅可召回 `reviewed_by=自己` 的照片（无审核记录的历史数据一律 403 拒绝）。
+
+**两级机制**（窗口分钟数 `RECALL_WINDOW_MINUTES` 逐请求读取，默认 3，支持不重启热调）：
+1. **窗口内静默召回**：距 `reviewed_at` 未超窗 → 照片回 `pending` 并清空 `reviewed_by`/`reviewed_at`，**不通知所有者**，响应 `data: { "silent": true }`
+2. **超窗召回**：`reason` 必填（缺失返回 400 `REASON_REQUIRED`）→ 照片回 `pending`，并向所有者发送 `photo_recalled` 通知（含召回原因与时间），响应 `data: { "silent": false }`
+
+**请求体**（仅超窗召回时必填）:
+```json
+{ "reason": "超窗召回原因" }
+```
+
+**响应**:
+```json
+{ "success": true, "message": "照片已召回至待审核", "data": { "silent": false } }
+```
+
+**错误码**:
+| HTTP | code | 触发条件 |
+|------|------|----------|
+| 400 | HOT_NOT_RECALLABLE | 已确认热门（`is_hot_confirmed=1`）的作品不可召回，须先取消热门标记 |
+| 400 | REASON_REQUIRED | 超窗召回未填写原因 |
+| 400 | — | 仅已通过的照片可召回（状态非 approved） |
+| 403 | — | zone_auditor 召回非本人审核的照片 / 照片无审核记录 |
+| 404 | — | 照片不存在 |
+
+### 确认热门
+
+**PUT** `/api/admin/photos/:id/hot`
+
+**鉴权**：管理员 JWT。写入 `is_hot_confirmed=1`（区别于用户上传时的 `is_hot` 意愿标记），并向所有者发送 `photo_hot` 通知。重复确认幂等返回、不重复通知。**已确认热门的照片不可被召回**（返回 `HOT_NOT_RECALLABLE`）。
+
+**响应**:
+```json
+{ "success": true, "message": "已确认为热门作品", "data": { "is_hot_confirmed": 1 } }
+```
+
+### 分配审核员
+
+**PUT** `/api/admin/photos/:id/assign`
+
+**鉴权**：管理员 JWT。将照片分配给指定审核员，写入 `photos.assigned_to` 并审计。
+
+**请求体**:
+```json
+{ "assignee_id": "admin-uuid" }
+```
+
+**约束**：分配对象必须是存在且启用的 `zone_auditor` / `zone_master` 管理员，否则返回 400「分配对象必须是分区审核员或分区总审核」或「分配对象已被停用」。
+
+**响应**:
+```json
+{ "success": true, "message": "照片已分配", "data": { "assigned_to": "admin-uuid", "assignee_name": "auditor01" } }
+```
+
+### 我的审核记录
+
+**GET** `/api/admin/my-audits?page=1&pageSize=20&status=approved`
+
+**鉴权**：管理员 JWT。返回当前登录审核员经手（`reviewed_by=自己`）的照片列表，按 `reviewed_at` 倒序，供个人审核历史回溯。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| page | number | 页码，默认 1 |
+| pageSize | number | 每页数量，默认 20 |
+| status | string | 可选筛选：`pending` / `approved` / `rejected` |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "000013",
+      "title": "城市天际线",
+      "status": "approved",
+      "reviewed_by": "admin-uuid",
+      "reviewed_at": "2026-10-17T08:00:00.000Z",
+      "thumbnail_path": "/api/photos/image/photos%2Fthumbnails%2F000013_thumb.webp?photoId=000013"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 42 }
+}
+```
+
+`data` 为照片全字段行（移除 `altitude`，缩略图地址已转换为代理 URL）。
+
+### 处罚用户（一级 / 二级）
+
+**POST** `/api/admin/users/:id/penalty`
+
+**鉴权**：`super` / `zone_master` + 管理员人机验证门（`ensureHumanVerified`，168h 内同 IP 免重复挑战，与封禁端点同口径）。
+
+**两级处罚**：
+- **level=1（一级，限制上传）**：`days` 必填（1–365 整数），写入 `users.upload_banned_until = now + days`；到期自动恢复，期间三个上传端点返回 403 `UPLOAD_BANNED`
+- **level=2（二级，永久封禁）**：与封禁端点同口径——写入 `banned_at`、`is_active=0`、强制下线（删除全部会话）；目标已封禁时返回 400「该用户已被封禁」
+
+**目标解析**：优先按站点用户解析；未命中时按管理员解析，但仅 `zone_auditor` 可被处罚（对 `super`/`zone_master` 处罚返回 403「不允许对超级管理员或分区总审核实施处罚」；`zone_master` 仅可处罚本分区的 `zone_auditor`，对管理员目标仅留痕不落 users 表效果）。处罚同时向被处罚者发送 `penalty` 通知（一级/二级标题不同）。
+
+**请求体**:
+```json
+{ "level": 1, "reason": "处罚原因（必填）", "days": 7 }
+```
+
+**响应**:
+```json
+{ "success": true, "message": "已限制上传", "data": { "penalty_id": "0d1b2a3c-...", "level": 1, "expires_at": "2026-10-24T08:00:00.000Z" } }
+```
+
+二级处罚响应不含 `expires_at`，`message` 为「已封禁账号」。
+
+**错误**：400 处罚级别必须为 1 或 2 / 请填写处罚原因 / 一级处罚需提供 1-365 的禁传天数 / 该用户已被封禁；403 不允许对超级管理员或分区总审核实施处罚 / 分区总审核仅可处罚本分区的分区审核账户；404 用户不存在。
+
+### 查询处罚历史
+
+**GET** `/api/admin/users/:id/penalties`
+
+**鉴权**：管理员 JWT。返回指定用户的处罚记录（联 `created_by_name` 操作人用户名），按时间倒序。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "0d1b2a3c-...",
+      "user_id": "user_1234567890123",
+      "level": 1,
+      "reason": "违规上传",
+      "days": 7,
+      "expires_at": "2026-10-24T08:00:00.000Z",
+      "created_by": "admin-uuid",
+      "created_at": "2026-10-17T08:00:00.000Z",
+      "created_by_name": "admin"
+    }
+  ]
+}
+```
+
+### 申诉列表（管理侧）
+
+**GET** `/api/admin/appeals?status=pending&page=1&pageSize=20`
+
+**鉴权**：管理员 JWT。联照片标题/状态与申诉人用户名；`pending` 优先置顶，其余按创建时间倒序。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| status | string | 可选筛选：`pending` / `approved` / `rejected` / `withdrawn`，缺省返回全部 |
+| page | number | 页码，默认 1 |
+| pageSize | number | 每页数量，默认 20 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "7c9e66e1-...",
+      "photo_id": "000013",
+      "user_id": "user_1234567890123",
+      "reason": "认为审核误判的申诉理由",
+      "status": "pending",
+      "response": null,
+      "decided_by": null,
+      "decided_at": null,
+      "created_at": "2026-10-17T08:00:00.000Z",
+      "photo_title": "城市天际线",
+      "photo_status": "rejected",
+      "appellant_name": "飞友甲"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 1 }
+}
+```
+
+### 申诉裁决（双向回执）
+
+**PUT** `/api/admin/appeals/:id/decide`
+
+**鉴权**：管理员 JWT。仅 `pending` 申诉可裁决（已处理返回 400「该申诉已处理完毕」）；裁决写 `decided_by`/`decided_at` 并审计；裁决不触碰精修图/预览图等 OSS 对象。
+
+| decision | 效果 | 回执通知 |
+|----------|------|----------|
+| `approve` | 照片恢复 `approved`、清空 `rejection_reason`、`reviewed_by` 更新为裁决人 | `appeal_approved`（含答复内容） |
+| `reject` | 照片维持 `rejected` | `appeal_rejected`（含答复内容） |
+
+**请求体**:
+```json
+{ "decision": "approve", "response": "裁决答复（必填，作为回执内容）" }
+```
+
+**响应**:
+```json
+{ "success": true, "message": "申诉已通过，照片已恢复", "data": { "appeal_id": "7c9e66e1-...", "status": "approved" } }
+```
+
+`reject` 时 `message` 为「申诉已驳回」、`data.status` 为 `"rejected"`。
+
+**错误**：400 裁决结论必须为 approve 或 reject / 请填写裁决答复 / 该申诉已处理完毕 / 关联照片已不存在无法恢复；404 申诉不存在。
+
+---
+
+## 论坛治理 (V4.0.0 更新)
+
+`/api/admin/forum/*` 角色门禁收敛为 **`super` / `zone_master` / `forum_moderator`**（`zone_auditor` 不得进入，返回 403「权限不足」）。端点清单与 V3.1.0 一致，V4.0.0 新增约束如下：
+
+| 方法与路径 | 约束 |
+|------------|------|
+| `GET /api/admin/forum/boards` | 板块列表（含停用） |
+| `POST /api/admin/forum/boards` | 板块创建收敛为三大基础板块白名单（航空/铁路/公路），名称不在白名单返回 `400 BOARD_LIMITED`；板块已存在时幂等返回 200（`data.existed=true`），不重复插入 |
+| `PUT /api/admin/forum/boards/:id` | 更新板块（名称/描述/图标/排序/启停） |
+| `DELETE /api/admin/forum/boards/:id` | 三大基础板块禁止删除，返回 `400 BOARD_PROTECTED`；其余板块仍要求无关联帖子（409） |
+| `PUT /api/admin/forum/threads/:id/pin` | 帖子置顶切换，响应 `data: { "is_pinned": 0 或 1 }` |
+| `DELETE /api/admin/forum/threads/:id` | 管理员删除帖子（级联），需管理员人机验证门 |
+
+**评论回复通知**：论坛帖子（`subject_type=thread`）与照片/文章下的回复类评论均触发 `forum_reply` 站内信，详见[评论接口](#评论接口-comments-v300)的 V4.0.0 说明。
+
+---
+
+## 新闻区 (News, V4.0.0)
+
+新闻落 `articles` 表（`type='news'`），配图关联 `news_images`（`sort_order` 即数组顺序，首位为封面）。正文以 Markdown 写入 `articles/news/{id}.md`，通过既有 `GET /api/articles/:id/content` 端点读取。
+
+### 新闻管理（管理端）
+
+均需管理员 JWT + `requireRole(['super','news_editor'])`（其他角色 403「权限不足」），操作写入审计日志。
+
+| 方法与路径 | 说明 |
+|------------|------|
+| `POST /api/admin/news` | 创建新闻，201 返回 `data: { "id": "uuid" }` |
+| `PUT /api/admin/news/:id` | 编辑新闻（同创建校验；配图全删全插，事务内保证一致性；作者保留创建者不变） |
+| `GET /api/admin/news?page=1&page_size=20` | 新闻管理列表（分页，含作者与配图数；`page_size` 上限 50） |
+| `DELETE /api/admin/news/:id` | 删除新闻（硬删，`news_images` 级联清理，正文文件幂等删除） |
+
+**请求体**（POST/PUT 同构）:
+```json
+{
+  "title": "新闻标题（必填，≤200 字）",
+  "content": "Markdown 正文（必填）",
+  "board_id": "aviation",
+  "images": [
+    { "photo_id": "000001", "authorization_confirmed": true }
+  ]
+}
+```
+
+**配图规范**：`images` 必填且至少 1 张；每张配图的 `photo_id` 必须为已审核通过（approved）的照片，且 `authorization_confirmed` 必须为 `true`（每张均须确认已获得摄影师授权，硬性要求）。
+
+**管理列表响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "uuid",
+        "title": "新闻标题",
+        "excerpt": "摘要（正文压缩空白后前 120 字）",
+        "author": "管理员名",
+        "published_at": "2026-10-17T08:00:00.000Z",
+        "board_id": "aviation",
+        "image_count": 3
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+**错误码**:
+| HTTP | code | 触发条件 |
+|------|------|----------|
+| 400 | TITLE_INVALID | 标题必填且不可超过 200 字 |
+| 400 | CONTENT_REQUIRED | 新闻正文不能为空 |
+| 400 | BOARD_NOT_ALLOWED | 板块不在发布白名单（首批仅支持航空板块） |
+| 400 | IMAGES_REQUIRED | 配图缺失（至少 1 张）/ 配图 photo_id 不合法 |
+| 400 | AUTHORIZATION_REQUIRED | 配图未确认摄影师授权（`authorization_confirmed ≠ true`） |
+| 400 | PHOTO_INVALID | 配图照片不存在或未通过审核 |
+| 404 | — | 新闻不存在（PUT / DELETE） |
+
+### 公开新闻列表
+
+**GET** `/api/news?page=1&page_size=10`
+
+公开（无鉴权），按 IP 限速 120 次/分。按发布时间倒序分页，`page_size` 上限 50。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "uuid",
+        "title": "新闻标题",
+        "excerpt": "摘要",
+        "board_id": "aviation",
+        "author_name": "管理员名",
+        "created_at": "2026-10-17T08:00:00.000Z",
+        "cover_image": "/api/photos/image/photos%2Fpreview%2F000001_preview.webp?photoId=000001"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 10
+  }
+}
+```
+
+`cover_image` 为封面首图（`sort_order` 最小）的代理 URL，优先预览图、其次水印图、最后缩略图；无配图时为 `null`。
+
+### 公开新闻详情
+
+**GET** `/api/news/:id`
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "title": "新闻标题",
+    "excerpt": "摘要",
+    "content_path": "/articles/news/uuid.md",
+    "board_id": "aviation",
+    "author_name": "管理员名",
+    "created_at": "2026-10-17T08:00:00.000Z",
+    "images": [
+      {
+        "photo_id": "000001",
+        "title": "配图照片标题",
+        "thumbnail_url": "/api/photos/image/...?photoId=000001",
+        "preview_url": "/api/photos/image/...?photoId=000001"
+      }
+    ],
+    "copyright_notice": "@管理员名 ©TLRphotos 2026 版权所有"
+  }
+}
+```
+
+**字段说明**：
+- `images`：按 `sort_order` 升序的配图数组，URL 均为代理 URL；`preview_url` 缺失时回退水印图 URL，两者皆无则为 `null`
+- `copyright_notice`：后端拼好的版权声明（`@{作者} ©TLRphotos {当前年} 版权所有`），前端直接展示
+- 正文经 `content_path` 调 `GET /api/articles/:id/content` 获取
+
+**错误**：404 新闻不存在。
+
+---
+
+## 关于我们 (About, V4.0.0)
+
+**GET** `/api/about/stats`
+
+公开无鉴权，返回站点公开统计，供「关于我们」页面展示。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "site_days": 63,
+    "approved_count": 173
+  }
+}
+```
+
+**字段说明**：
+- `site_days`：站点运行天数（锚定上线日 2026-08-15，上线当日计第 1 天）
+- `approved_count`：`status=approved` 的照片总数
 
 ---
 

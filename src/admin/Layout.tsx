@@ -1,9 +1,14 @@
 /**
  * 管理后台布局
  * 左侧固定侧边栏（Logo + 按角色过滤的菜单 + 退出登录），右侧为主内容区。
- * 菜单访问权限按 admin.role 控制：super 全部可见，zone_master 部分可见，其他仅基础页。
+ * 菜单访问权限按 admin.role 控制：
+ *   - super：全部菜单；
+ *   - zone_master：仪表盘/照片审核/申诉裁决/我的已处理/管理员管理/日志；
+ *   - zone_auditor：仪表盘/照片审核/我的已处理（V4 扩展个人审核记录）；
+ *   - forum_moderator：仅论坛治理（V4 本轮占位页）；
+ *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 
@@ -25,9 +30,13 @@ interface LayoutProps {
 const menuItems = [
   { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
   { id: 'photos', label: '照片审核', icon: Image },
+  { id: 'appeals', label: '申诉裁决', icon: Scale },
+  { id: 'my-audits', label: '我的已处理', icon: ClipboardList },
   { id: 'admins', label: '管理员管理', icon: Users },
   { id: 'users', label: '用户管理', icon: FileText },
   { id: 'logs', label: '操作日志', icon: Settings },
+  { id: 'forum', label: '论坛治理', icon: MessageSquare },
+  { id: 'news', label: '新闻管理', icon: Newspaper },
 ];
 
 /**
@@ -47,15 +56,26 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
   };
 
   /**
-   * 判断当前管理员是否可访问指定页面
-   * super 全部可见；zone_master 可访问仪表盘/照片/管理员/日志；其他仅仪表盘与照片。
+   * 判断当前管理员是否可访问指定页面（V4.0.0 角色门）
+   * super 全部可见；zone_master 增加申诉裁决与我的已处理；
+   * zone_auditor 维持现状并扩展个人「我的已处理」；
+   * forum_moderator 仅论坛治理；news_editor 仅新闻管理（本轮占位）。
    * @param page 页面标识
    * @returns 是否可访问
    */
   const canAccess = (page: string) => {
     if (admin.role === 'super') return true;
     if (admin.role === 'zone_master') {
-      return ['dashboard', 'photos', 'admins', 'logs'].includes(page);
+      return ['dashboard', 'photos', 'appeals', 'my-audits', 'admins', 'logs'].includes(page);
+    }
+    if (admin.role === 'zone_auditor') {
+      return ['dashboard', 'photos', 'my-audits'].includes(page);
+    }
+    if (admin.role === 'forum_moderator') {
+      return ['forum'].includes(page);
+    }
+    if (admin.role === 'news_editor') {
+      return ['news'].includes(page);
     }
     return ['dashboard', 'photos'].includes(page);
   };

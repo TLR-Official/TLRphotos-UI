@@ -23,12 +23,17 @@ import forumRouter from './routes/forum';
 import adminForumRouter from './routes/adminForum';
 import verificationRouter from './routes/verification';
 import everosRouter from './routes/everos';
+import notificationsRouter from './routes/notifications';
+import myAppealsRouter from './routes/myAppeals';
+import aboutRouter from './routes/about';
+import newsRouter, { adminNewsRouter } from './routes/news';
 import { commentArchiveService } from './services/commentArchiveService';
 import { initDb, db } from './db';
 import { initTagsDb } from './db/tagsDb';
 import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
 import { cleanupExpiredCodes } from './services/otpService';
+import { cleanupOldNotifications } from './services/notificationService';
 import {
   initSuperAdmin,
   checkAdminJwtConfig,
@@ -69,12 +74,19 @@ app.use('/api/column', columnRouter);
 app.use('/api/tags', tagsRouter);
 // 评论管理须先于 /api/admin 挂载（更具体路径优先）
 app.use('/api/admin/comments', adminCommentsRouter);
+// V4.0.0：新闻管理端须先于 /api/admin 挂载（更具体路径优先）
+app.use('/api/admin/news', adminNewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/forum', forumRouter);
 app.use('/api/admin/forum', adminForumRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/everos', everosRouter);
+// V4.0.0：通知中心 / 我的申诉 / 关于我们站点统计 / 新闻区公开端
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/my-appeals', myAppealsRouter);
+app.use('/api/about', aboutRouter);
+app.use('/api/news', newsRouter);
 
 // 静态资源：文章 Markdown 原文与上传文件目录
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));
@@ -145,6 +157,11 @@ function scheduleCleanup() {
       }
       // 同步清理 7 天前的登录验证码记录（含过期与已消费），防止 verification_codes 表膨胀
       await cleanupExpiredCodes();
+      // V4.0.0：同步清理 90 天前的已读通知，防止 notifications 表膨胀
+      const notificationsDeleted = await cleanupOldNotifications();
+      if (notificationsDeleted > 0) {
+        console.log(`[Cleanup] Deleted ${notificationsDeleted} old read notifications at ${new Date().toISOString()}`);
+      }
     } catch (error) {
       console.error('[Cleanup] Failed to clean up expired sessions:', error);
     }

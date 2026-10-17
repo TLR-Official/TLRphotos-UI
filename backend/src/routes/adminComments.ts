@@ -10,6 +10,7 @@
  */
 import express from 'express';
 import { db } from '../db';
+import { adminAuthMiddleware, requireRole } from '../middleware/adminAuth';
 import { verifyAdminToken, logAdminAction, type AdminUser } from '../services/adminService';
 import {
   deleteComment,
@@ -22,6 +23,10 @@ import { ossCommentArchiveStore } from '../services/ossCommentArchiveStore';
 import { ensureHumanVerified, getVerificationIp } from '../services/verificationService';
 
 const router = express.Router();
+
+// V4.0.0：统一挂载管理员认证 + 角色门禁——保持 super/zone_master 原有权不变，
+// 论坛管理员（forum_moderator）可删评论/置顶；zone_auditor 与 news_editor 不得进入
+router.use(adminAuthMiddleware, requireRole(['super', 'zone_master', 'forum_moderator']));
 
 /** OSS 归档对象删除网关（管理员删除归档楼时使用） */
 const archiveGateway: CommentArchiveGateway = {

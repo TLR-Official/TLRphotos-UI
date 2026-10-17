@@ -1,13 +1,15 @@
 /**
  * 用户管理页
  * 分页展示普通用户列表，支持按用户名或邮箱搜索、启用/禁用、封禁/解封、
- * 精细化功能权限控制（上传/查看/下载/点赞）。所有操作有 loading 态防重复点击。
+ * 精细化功能权限控制（上传/查看/下载/点赞）、一级/二级处罚与处罚历史查看。
+ * 所有高危操作挂管理员人机验证门，操作有 loading 态防重复点击。
+ * V4.0.0：新增「处罚」对话框（一级=限制上传 N 天 / 二级=永久封禁，原因必填）与「处罚历史」查看。
  */
 import { useState, useEffect } from 'react';
 import { Search, User, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, Ban, ShieldCheck, Settings, X } from 'lucide-react';
-import { getUsers, toggleUser, banUser, unbanUser, updateUserPermissions, submitAdminVerification } from './api';
+import { getUsers, toggleUser, banUser, unbanUser, updateUserPermissions, submitAdminVerification, penalizeUser, getUserPenalties } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
-import type { User as AdminUser } from './types';
+import type { User as AdminUser, Penalty } from './types';
 
 /** 权限弹窗中四项功能权限的配置（label + 字段 key） */
 const PERMISSION_FIELDS: { key: 'can_upload' | 'can_view' | 'can_download' | 'can_like'; label: string; desc: string }[] = [
@@ -38,6 +40,16 @@ export function UsersPage() {
   // 权限弹窗：正在编辑权限的用户（null 时弹窗关闭）
   const [permUser, setPermUser] = useState<AdminUser | null>(null);
   const [permLoading, setPermLoading] = useState(false);
+  // V4.0.0 处罚弹窗状态：目标用户 / 级别 / 天数 / 原因
+  const [penaltyUser, setPenaltyUser] = useState<AdminUser | null>(null);
+  const [penaltyLevel, setPenaltyLevel] = useState<1 | 2>(1);
+  const [penaltyDays, setPenaltyDays] = useState('7');
+  const [penaltyReason, setPenaltyReason] = useState('');
+  const [penaltyLoading, setPenaltyLoading] = useState(false);
+  // V4.0.0 处罚历史弹窗状态
+  const [historyUser, setHistoryUser] = useState<AdminUser | null>(null);
+  const [historyList, setHistoryList] = useState<Penalty[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // page 或 keyword 变化时重新拉取用户列表（注意：keyword 即时触发，未做防抖）
   useEffect(() => {
@@ -136,6 +148,70 @@ export function UsersPage() {
     if (newPage >= 1 && newPage <= Math.ceil(total / pageSize)) {
       setPage(newPage);
     }
+  };
+
+  /**
+   * 打开处罚对话框（V4.0.0）：重置表单为一级处罚默认值
+   * @param user 目标用户
+   */
+  const openPenalty = (user: AdminUser) => {
+    setPenaltyUser(user);
+    setPenaltyLevel(1);
+    setPenaltyDays('7');
+    setPenaltyReason('');
+  };
+
+  /**
+   * 提交处罚（V4.0.0，高危操作挂人机验证门）
+   * 一级=限制上传 N 天（1-365），二级=永久封禁；原因必填，处罚自动推送通知。
+   */
+  const handlePenalty = async () => {
+    if (!penaltyUser || penaltyLoading) return;
+    const reason = penaltyReason.trim();
+    if (!reason) {
+      alert('请填写处罚原因');
+      return;
+    }
+    const days = Number(penaltyDays);
+    if (penaltyLevel === 1 && (!Number.isInteger(days) || days < 1 || days > 365)) {
+      alert('一级处罚需填写 1-365 的禁传天数');
+      return;
+    }
+    const levelText = penaltyLevel === 1 ? `限制上传 ${days} 天` : '永久封禁账号';
+    if (!confirm(`确定对用户「${penaltyUser.username || penaltyUser.email}」执行${levelText}？\n处罚原因：${reason}`)) return;
+
+    setPenaltyLoading(true);
+    const result = await verificationGuard('admin_user_admin', () =>
+      penalizeUser(penaltyUser.id, penaltyLevel, reason, penaltyLevel === 1 ? days : undefined)
+    );
+    if (result.success) {
+      // 二级处罚同步本地封禁状态；一级处罚不影响列表字段
+      if (penaltyLevel === 2) {
+        const now = new Date().toISOString();
+        setUsers(users.map(u => u.id === penaltyUser.id ? { ...u, is_active: 0, banned_at: now } : u));
+      }
+      setPenaltyUser(null);
+    } else {
+      alert(result.message || '处罚失败');
+    }
+    setPenaltyLoading(false);
+  };
+
+  /**
+   * 打开处罚历史弹窗（V4.0.0）：拉取该用户处罚记录
+   * @param user 目标用户
+   */
+  const openPenaltyHistory = async (user: AdminUser) => {
+    setHistoryUser(user);
+    setHistoryList([]);
+    setHistoryLoading(true);
+    const result = await getUserPenalties(user.id);
+    if (result.success && result.data) {
+      setHistoryList(result.data);
+    } else {
+      alert(result.message || '获取处罚历史失败');
+    }
+    setHistoryLoading(false);
   };
 
   /**
@@ -240,6 +316,23 @@ export function UsersPage() {
                           >
                             <Settings className="w-5 h-5" />
                           </button>
+                          {/* V4.0.0：处罚与处罚历史（纯文字按钮） */}
+                          <button
+                            onClick={() => openPenalty(user)}
+                            disabled={actionLoading === user.id}
+                            title="实施处罚（一级禁传 / 二级永久封禁）"
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors"
+                          >
+                            处罚
+                          </button>
+                          <button
+                            onClick={() => openPenaltyHistory(user)}
+                            disabled={actionLoading === user.id}
+                            title="查看处罚历史"
+                            className="px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium transition-colors"
+                          >
+                            历史
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -325,6 +418,171 @@ export function UsersPage() {
                 className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
               >
                 完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V4.0.0：处罚对话框（一级=限制上传 N 天 / 二级=永久封禁，原因必填，挂人机验证门） */}
+      {penaltyUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => !penaltyLoading && setPenaltyUser(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">实施处罚</h3>
+              <button
+                onClick={() => setPenaltyUser(null)}
+                disabled={penaltyLoading}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-sm text-gray-600">
+                用户：<span className="font-medium text-gray-800">{penaltyUser.username || penaltyUser.email}</span>
+              </p>
+
+              {/* 处罚级别 */}
+              <div className="space-y-2">
+                <label className="flex items-start p-3 rounded-lg bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="penalty-level"
+                    checked={penaltyLevel === 1}
+                    onChange={() => setPenaltyLevel(1)}
+                    className="mt-0.5 accent-blue-700"
+                  />
+                  <span className="ml-2">
+                    <span className="block text-sm font-medium text-gray-800">一级处罚：限制上传</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">处罚期内用户无法上传新作品，其余功能不受影响</span>
+                  </span>
+                </label>
+                {penaltyLevel === 1 && (
+                  <div className="flex items-center gap-2 ml-6">
+                    <label className="text-sm text-gray-600 flex-shrink-0">禁传天数（1-365）</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={penaltyDays}
+                      onChange={(e) => setPenaltyDays(e.target.value)}
+                      className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-700"
+                    />
+                  </div>
+                )}
+                <label className="flex items-start p-3 rounded-lg bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="penalty-level"
+                    checked={penaltyLevel === 2}
+                    onChange={() => setPenaltyLevel(2)}
+                    className="mt-0.5 accent-blue-700"
+                  />
+                  <span className="ml-2">
+                    <span className="block text-sm font-medium text-gray-800">二级处罚：永久封禁</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">立即封禁账号并强制下线，不可恢复（与封禁按钮等效）</span>
+                  </span>
+                </label>
+              </div>
+
+              {/* 处罚原因（必填） */}
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">处罚原因（必填，将通知用户）</label>
+                <textarea
+                  value={penaltyReason}
+                  onChange={(e) => setPenaltyReason(e.target.value)}
+                  className="w-full h-24 p-3 border border-gray-300 rounded-lg text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-700"
+                  placeholder="请输入处罚原因..."
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setPenaltyUser(null)}
+                disabled={penaltyLoading}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handlePenalty}
+                disabled={!penaltyReason.trim() || penaltyLoading}
+                className={`px-4 py-2 rounded-lg text-white transition-colors disabled:bg-gray-300 ${
+                  penaltyLevel === 2 ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-800'
+                }`}
+              >
+                {penaltyLoading ? '提交中...' : '确认处罚'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V4.0.0：处罚历史弹窗 */}
+      {historyUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setHistoryUser(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">处罚历史</h3>
+              <button
+                onClick={() => setHistoryUser(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+              {historyLoading ? (
+                <p className="text-sm text-gray-500 text-center py-6">加载中...</p>
+              ) : historyList.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-6">该用户暂无处罚记录</p>
+              ) : (
+                <div className="space-y-3">
+                  {historyList.map((p) => (
+                    <div key={p.id} className="p-3 rounded-lg bg-gray-50">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          p.level === 2
+                            ? 'bg-red-100 text-red-700 border-red-200'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          {p.level === 2 ? '永久封禁' : `限制上传 ${p.days ?? '-'} 天`}
+                        </span>
+                        {p.expires_at && (
+                          <span className="text-xs text-gray-500">到期：{new Date(p.expires_at).toLocaleString()}</span>
+                        )}
+                        <span className="ml-auto text-xs text-gray-400">
+                          {new Date(p.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-800 mt-2">{p.reason}</p>
+                      {p.created_by_name && (
+                        <p className="text-xs text-gray-400 mt-1">操作人：{p.created_by_name}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setHistoryUser(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
+              >
+                关闭
               </button>
             </div>
           </div>

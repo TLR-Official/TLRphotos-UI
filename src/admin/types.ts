@@ -3,13 +3,13 @@
  * 定义管理员、登录响应、审核照片、统计、操作日志与用户等数据结构，供后台页面与 API 共享。
  */
 
-/** 管理员用户（含角色与所属分区） */
+/** 管理员用户（含角色与所属分区）；V4.0.0 角色枚举扩展 forum_moderator / news_editor */
 export interface AdminUser {
   id: string;
   username: string;
   name?: string;
   email?: string;
-  role: 'super' | 'zone_master' | 'zone_auditor';
+  role: 'super' | 'zone_master' | 'zone_auditor' | 'forum_moderator' | 'news_editor';
   zone: string;
   is_active: number;
   /** V1.13.0：1=必须完成改密后才能访问其他后台接口 */
@@ -99,6 +99,50 @@ export interface AdminPhotoDetail {
   registration_number?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
+  /** V4.0.0：管理员确认热门标记，1=已确认热门（确认后禁止召回） */
+  is_hot_confirmed?: number;
+  /** V4.0.0：审核留痕（存量 approved 可能为 null） */
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  /** V4.0.0：分配的审核员管理员 ID（未分配为 null） */
+  assigned_to?: string | null;
+}
+
+/** V4.0.0：申诉条目（管理端 GET /appeals 联表字段） */
+export type AppealStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
+
+export interface Appeal {
+  id: string;
+  photo_id: string;
+  user_id: string;
+  /** 申诉理由 */
+  reason: string;
+  status: AppealStatus;
+  /** 裁决答复（未裁决为 null） */
+  response: string | null;
+  decided_by?: string | null;
+  decided_at: string | null;
+  created_at: string;
+  /** 联表字段：照片标题与照片当前状态 */
+  photo_title?: string | null;
+  photo_status?: string | null;
+  /** 联表字段：申诉人用户名 */
+  appellant_name?: string | null;
+}
+
+/** V4.0.0：处罚记录（管理端 GET /users/:id/penalties） */
+export interface Penalty {
+  id: string;
+  user_id: string;
+  /** 处罚级别：1=限制上传 N 天，2=永久封禁 */
+  level: 1 | 2;
+  reason: string;
+  days: number | null;
+  expires_at: string | null;
+  created_by: string;
+  created_at: string;
+  /** 联表字段：处罚操作人用户名 */
+  created_by_name?: string | null;
 }
 
 /** 照片审核统计 */

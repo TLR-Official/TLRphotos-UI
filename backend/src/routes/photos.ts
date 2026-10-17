@@ -8,6 +8,7 @@
 import express from 'express';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
@@ -19,6 +20,7 @@ import { memoryManager } from '../services/memoryManager';
 import { requireAuth } from '../middleware/requireAuth';
 import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { createNotification } from '../services/notificationService';
 
 const router = express.Router();
 
@@ -69,6 +71,64 @@ function normalizeRegistrationNumber(input: unknown): string | null {
 /** is_hot 意愿标记入参归一化：接受 true/'true'/'1'/1，其余视为未勾选 */
 function normalizeIsHot(input: unknown): number {
   return input === true || input === 'true' || input === '1' || input === 1 ? 1 : 0;
+}
+
+/**
+ * 上传禁令校验（V4.0.0 一级处罚）：检查 users.upload_banned_until 是否晚于当前时间。
+ * 命中禁令返回 403 响应负载（code=UPLOAD_BANNED，message 含解禁时间 YYYY-MM-DD HH:mm）；
+ * 未命中或未处罚返回 null。四条上传路径（direct /upload、/upload/presigned、
+ * /upload/complete）在认证后统一调用本 helper，每请求仅查一次 users 表。
+ */
+async function checkUploadBan(
+  userId: string
+): Promise<{ status: number; payload: Record<string, unknown> } | null> {
+  const row = await db.get<{ upload_banned_until: string | null }>(
+    'SELECT upload_banned_until FROM users WHERE id = ?',
+    userId
+  );
+  const until = row?.upload_banned_until;
+  if (!until) return null;
+
+  const untilMs = new Date(until).getTime();
+  if (!Number.isFinite(untilMs) || untilMs <= Date.now()) return null;
+
+  // 解禁时间格式化为本地时区 YYYY-MM-DD HH:mm
+  const d = new Date(untilMs);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatted = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return {
+    status: 403,
+    payload: {
+      success: false,
+      code: 'UPLOAD_BANNED',
+      message: `您的账号已被限制上传至 ${formatted}，在此期间无法上传新作品`,
+    },
+  };
+}
+
+/**
+ * 下载通知去重缓存（V4.0.0）：key 为 `${photoId}:${viewerId}`，value 为最近一次通知时间戳。
+ * 同一 (照片, 下载人) 24 小时内只向照片所有者发送一次下载通知；
+ * 进程内存态，重启后窗口重置（可接受，避免为去重建表）。条目超量时惰性清理过期项。
+ */
+const DOWNLOAD_NOTIFY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const downloadNotifiedMap = new Map<string, number>();
+
+function shouldNotifyDownload(photoId: string, viewerId: string): boolean {
+  const key = `${photoId}:${viewerId}`;
+  const last = downloadNotifiedMap.get(key);
+  const now = Date.now();
+  if (last !== undefined && now - last < DOWNLOAD_NOTIFY_WINDOW_MS) {
+    return false;
+  }
+  downloadNotifiedMap.set(key, now);
+  // 惰性清理：超过 1 万条时移除已过期条目，防止 Map 无限膨胀
+  if (downloadNotifiedMap.size > 10000) {
+    for (const [k, ts] of downloadNotifiedMap) {
+      if (now - ts >= DOWNLOAD_NOTIFY_WINDOW_MS) downloadNotifiedMap.delete(k);
+    }
+  }
+  return true;
 }
 
 /**
@@ -493,7 +553,23 @@ router.post('/:id/like', requireVerifiedEmail, async (req, res) => {
     // 注：sqlite3 单连接默认串行化执行，INSERT + UPDATE 之间不会被其他请求插入
     await db.run('INSERT INTO photo_likes (photo_id, user_id) VALUES (?, ?)', id, currentUserId);
     await db.run('UPDATE photos SET likes = likes + 1 WHERE id = ?', id);
-    const updatedPhoto = await db.get<{ likes: number }>('SELECT likes FROM photos WHERE id = ?', id);
+    const updatedPhoto = await db.get<{ likes: number; user_id: string | null; title: string }>(
+      'SELECT likes, user_id, title FROM photos WHERE id = ?',
+      id
+    );
+
+    // V4.0.0：点赞通知——仅"新增点赞"（is_liked false→true）时通知所有者，
+    // 取消点赞不产生通知；自赞（owner === 点赞人）不产生通知
+    if (updatedPhoto?.user_id && updatedPhoto.user_id !== currentUserId) {
+      await createNotification({
+        user_id: updatedPhoto.user_id,
+        type: 'photo_liked',
+        title: '作品收到新点赞',
+        content: `您的作品《${updatedPhoto.title}》收到了新的点赞`,
+        related_type: 'photo',
+        related_id: id,
+      });
+    }
 
     res.json({
       success: true,
@@ -698,6 +774,18 @@ router.get('/image/*', async (req: any, res) => {
       // RFC 5987：ASCII 兜底 filename + UTF-8 编码 filename*，支持中文文件名
       const safeName = encodeURIComponent(`${title}.jpg`).replace(/['%]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${photo.id}.jpg"; filename*=UTF-8''${safeName}`);
+
+      // V4.0.0：下载通知——所有者存在且非下载人本人时通知；同一 (photo, viewer) 24h 内仅发一次
+      if (authUser && photo.user_id && photo.user_id !== authUser.id && shouldNotifyDownload(photo.id, authUser.id)) {
+        await createNotification({
+          user_id: photo.user_id,
+          type: 'photo_downloaded',
+          title: '作品被下载',
+          content: `您的作品《${title}》被 ${authUser.username || '其他用户'} 下载了`,
+          related_type: 'photo',
+          related_id: photo.id,
+        });
+      }
     }
 
     if (response.body) {
@@ -777,6 +865,12 @@ router.post('/upload/presigned', requireVerifiedEmail, async (req, res) => {
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
     }
 
+    // V4.0.0：一级处罚上传禁令校验（认证后、业务处理前拦截）
+    const uploadBanned = await checkUploadBan(authUser.id);
+    if (uploadBanned) {
+      return res.status(uploadBanned.status).json(uploadBanned.payload);
+    }
+
     // V1.8.0：上传为高危操作，需人机验证状态（168h 内同 IP 有效）
     const denied = await ensureHumanVerified('user', authUser.id, req);
     if (denied) {
@@ -822,6 +916,12 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
     }
     if (!authUser.can_upload) {
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
+    }
+
+    // V4.0.0：一级处罚上传禁令校验（认证后、业务处理前拦截）
+    const uploadBanned = await checkUploadBan(authUser.id);
+    if (uploadBanned) {
+      return res.status(uploadBanned.status).json(uploadBanned.payload);
     }
     const userId = authUser.id;
 
@@ -959,9 +1059,15 @@ router.post(
   requireAuth,
   // V2.0.0：邮箱未确权账户同样在文件解析前拒绝
   requireVerifiedEmail,
-  (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (!req.authUser?.can_upload) {
       res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
+      return;
+    }
+    // V4.0.0：一级处罚上传禁令在文件解析前拦截，被处罚请求不进入 multer 缓冲
+    const uploadBanned = await checkUploadBan(req.authUser.id);
+    if (uploadBanned) {
+      res.status(uploadBanned.status).json(uploadBanned.payload);
       return;
     }
     next();
@@ -1005,6 +1111,12 @@ router.post(
     }
     if (!authUser.can_upload) {
       return res.status(403).json({ success: false, message: '您已被禁止上传图片', code: 'PERMISSION_DENIED' });
+    }
+
+    // V4.0.0：一级处罚上传禁令校验（认证后、业务处理前拦截）
+    const uploadBanned = await checkUploadBan(authUser.id);
+    if (uploadBanned) {
+      return res.status(uploadBanned.status).json(uploadBanned.payload);
     }
     const userId = authUser.id;
 
@@ -1284,6 +1396,81 @@ router.delete('/:id', requireVerifiedEmail, async (req, res) => {
   } catch (error) {
     console.error('Error deleting photo:', error);
     res.status(500).json({ success: false, message: '删除照片失败' });
+  }
+});
+
+/**
+ * 对被拒绝的照片发起申诉（V4.0.0，需登录）。
+ * 约束：仅作品所有者、仅 status=rejected 的照片可申诉；
+ * 该照片已存在 pending 状态申诉时返回 409（撤回后可重新发起）；
+ * reason 必填。申诉创建后由管理侧 PUT /api/admin/appeals/:id/decide 裁决。
+ * @param id 照片 ID
+ * @body reason 申诉理由（必填）
+ */
+router.post('/:id/appeal', requireVerifiedEmail, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 强制登录：与点赞/删除同口径，用 loadAuthUser 统一认证
+    const { user: authUser, error: authErr } = await loadAuthUser(req);
+    if (authErr || !authUser) {
+      return res.status(authErr?.status || 401).json({
+        success: false,
+        message: authErr?.message || '请先登录后申诉',
+        code: authErr?.code || 'AUTH_REQUIRED',
+      });
+    }
+
+    const photo = await db.get<{ id: string; user_id: string | null; status: string; title: string }>(
+      'SELECT id, user_id, status, title FROM photos WHERE id = ?',
+      id
+    );
+    if (!photo) {
+      return res.status(404).json({ success: false, message: '照片不存在' });
+    }
+
+    // 仅作品所有者可申诉
+    if (photo.user_id !== authUser.id) {
+      return res.status(403).json({ success: false, message: '仅作品所有者可发起申诉' });
+    }
+
+    // 仅被拒绝的作品可申诉
+    if (photo.status !== 'rejected') {
+      return res.status(400).json({ success: false, message: '仅未通过审核的作品可发起申诉' });
+    }
+
+    // 同一照片存在待处理申诉时不可重复发起（撤回/裁决后可再次发起）
+    const pendingAppeal = await db.get<{ id: string }>(
+      "SELECT id FROM appeals WHERE photo_id = ? AND status = 'pending'",
+      id
+    );
+    if (pendingAppeal) {
+      return res.status(409).json({
+        success: false,
+        code: 'APPEAL_IN_PROGRESS',
+        message: '该作品已有待处理的申诉，请耐心等待裁决',
+      });
+    }
+
+    const { reason } = req.body;
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({ success: false, message: '请填写申诉理由' });
+    }
+
+    const appealId = crypto.randomUUID();
+    await db.run(
+      "INSERT INTO appeals (id, photo_id, user_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+      [appealId, id, authUser.id, reason.trim(), new Date().toISOString()]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: '申诉已提交，请等待管理员裁决',
+      data: { appeal_id: appealId },
+    });
+  } catch (error) {
+    console.error('Error creating appeal:', error);
+    res.status(500).json({ success: false, message: '提交申诉失败' });
   }
 });
 

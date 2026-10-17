@@ -19,6 +19,7 @@ import {
   updateAdminUser,
   deleteAdminUser,
   logAdminAction,
+  PHOTO_AUDIT_ROLES,
   type AdminRole,
 } from '../services/adminService';
 import { getLockRemaining, recordFailure, clearFailures } from '../services/adminLoginGuard';
@@ -27,6 +28,7 @@ import { db } from '../db';
 import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
 import { deleteUserSessions } from '../services/cookieService';
+import { createNotification } from '../services/notificationService';
 import {
   verifyTurnstileToken,
   saveVerification,
@@ -759,9 +761,10 @@ router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
 /**
  * 审核通过照片。
  * 仅对 pending 状态的照片生效，更新为 approved 并清除驳回理由，记录审计日志。
+ * V4.0.0：角色白名单锁定为原有三角色（forum_moderator/news_editor 不得审核照片）。
  * @param id 照片 ID
  */
-router.put('/photos/:id/approve', adminAuthMiddleware, async (req, res) => {
+router.put('/photos/:id/approve', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
@@ -782,20 +785,24 @@ router.put('/photos/:id/approve', adminAuthMiddleware, async (req, res) => {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
   }
 
-  // 通过审核时清除之前的驳回理由
-  await db.run('UPDATE photos SET status = "approved", rejection_reason = NULL WHERE id = ?', [req.params.id]);
+  // 通过审核时清除之前的驳回理由；V4.0.0：记录审核人与审核时间（供召回权限判定与"我的审核"列表）
+  await db.run(
+    'UPDATE photos SET status = "approved", rejection_reason = NULL, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
+    [req.admin.id, new Date().toISOString(), req.params.id]
+  );
   await logAdminAction(req.admin, 'approve_photo', 'photo', req.params.id, { title: photo.title });
-  
+
   res.json({ success: true, message: '审核通过' });
 });
 
 /**
  * 审核拒绝照片。
  * 仅对 pending 状态的照片生效，更新为 rejected 并记录拒绝原因。
+ * V4.0.0：角色白名单锁定为原有三角色（forum_moderator/news_editor 不得审核照片）。
  * @param id 照片 ID
  * @body reason 拒绝原因
  */
-router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
+router.put('/photos/:id/reject', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES), async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
   }
@@ -821,11 +828,262 @@ router.put('/photos/:id/reject', adminAuthMiddleware, async (req, res) => {
     return res.status(400).json({ success: false, message: '照片状态不是待审核' });
   }
 
-  // 存储驳回理由，供上传者查看
-  await db.run('UPDATE photos SET status = "rejected", rejection_reason = ? WHERE id = ?', [reason.trim(), req.params.id]);
+  // 存储驳回理由，供上传者查看；V4.0.0：同样记录审核人与审核时间
+  await db.run(
+    'UPDATE photos SET status = "rejected", rejection_reason = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
+    [reason.trim(), req.admin.id, new Date().toISOString(), req.params.id]
+  );
   await logAdminAction(req.admin, 'reject_photo', 'photo', req.params.id, { title: photo.title, reason });
-  
+
   res.json({ success: true, message: '审核拒绝' });
+});
+
+/**
+ * 召回已通过的照片重新审核（V4.0.0 三分钟召回两级机制）。
+ * 两级机制：
+ * - 窗口内（RECALL_WINDOW_MINUTES，逐请求读取，默认 3 分钟）：静默召回，不发通知；
+ * - 超窗：reason 必填，召回并通知所有者（type=photo_recalled）。
+ * 权限：super/zone_master 可召回任意照片；zone_auditor 仅可召回本人审核
+ * （reviewed_by=自己）的照片，reviewed_by 为空（历史数据）时一律拒绝。
+ * 已确认热门（is_hot_confirmed=1）的照片不可召回，须先取消热门。
+ * @param id 照片 ID
+ * @body reason 召回原因（仅超窗时必填）
+ */
+router.put('/photos/:id/recall', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const photo = await db.get<any>('SELECT * FROM photos WHERE id = ?', [req.params.id]);
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+  if (photo.status !== 'approved') {
+    return res.status(400).json({ success: false, message: '仅已通过的照片可召回' });
+  }
+  if (photo.is_hot_confirmed === 1) {
+    return res.status(400).json({
+      success: false,
+      code: 'HOT_NOT_RECALLABLE',
+      message: '热门作品不可召回，请先取消热门标记',
+    });
+  }
+
+  // zone_auditor 仅可召回本人审核的照片；无审核记录（reviewed_by 为空）一律拒绝
+  if (req.admin.role === 'zone_auditor') {
+    if (!photo.reviewed_by) {
+      return res.status(403).json({ success: false, message: '该照片无本人审核记录，无权召回' });
+    }
+    if (photo.reviewed_by !== req.admin.id) {
+      return res.status(403).json({ success: false, message: '仅可召回本人审核的照片' });
+    }
+  }
+
+  // 召回窗口逐请求读取环境变量（默认 3 分钟），支持不重启热调
+  const rawWindow = process.env.RECALL_WINDOW_MINUTES;
+  const parsedWindow = rawWindow !== undefined && rawWindow !== '' ? Number(rawWindow) : NaN;
+  const windowMinutes = Number.isFinite(parsedWindow) ? parsedWindow : 3;
+
+  const reviewedAtMs = photo.reviewed_at ? new Date(photo.reviewed_at).getTime() : 0;
+  const inWindow = Date.now() - reviewedAtMs <= windowMinutes * 60 * 1000;
+
+  if (inWindow) {
+    // 第一级：窗口内静默召回，仅回 pending 并清空审核留痕，不通知所有者
+    await db.run(
+      'UPDATE photos SET status = "pending", reviewed_by = NULL, reviewed_at = NULL WHERE id = ?',
+      req.params.id
+    );
+    await logAdminAction(req.admin, 'recall_photo', 'photo', req.params.id, {
+      title: photo.title,
+      silent: true,
+      window_minutes: windowMinutes,
+    });
+    return res.json({
+      success: true,
+      message: '照片已召回至待审核（窗口内静默）',
+      data: { silent: true },
+    });
+  }
+
+  // 第二级：超窗召回，必须填写原因并通知所有者
+  const { reason } = req.body;
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, code: 'REASON_REQUIRED', message: '超出召回时限，请填写召回原因' });
+  }
+  const trimmedReason = String(reason).trim();
+
+  await db.run(
+    'UPDATE photos SET status = "pending", reviewed_by = NULL, reviewed_at = NULL WHERE id = ?',
+    req.params.id
+  );
+
+  if (photo.user_id) {
+    const owner = await db.get<{ username: string | null }>(
+      'SELECT username FROM users WHERE id = ?',
+      photo.user_id
+    );
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日${now.getHours()}时${now.getMinutes()}分`;
+    await createNotification({
+      user_id: photo.user_id,
+      type: 'photo_recalled',
+      title: '作品被召回重新审核',
+      content: `${owner?.username ?? ''} 您好，您的作品《${photo.title}》于 ${timeStr} 被召回重新审核，原因：${trimmedReason}。详情请见「待审核」页面。`,
+      related_type: 'photo',
+      related_id: photo.id,
+    });
+  }
+
+  await logAdminAction(req.admin, 'recall_photo', 'photo', req.params.id, {
+    title: photo.title,
+    reason: trimmedReason,
+    silent: false,
+  });
+
+  res.json({ success: true, message: '照片已召回至待审核', data: { silent: false } });
+});
+
+/**
+ * 确认照片为热门（V4.0.0）。
+ * 写入 is_hot_confirmed=1（区别于用户上传时的 is_hot 意愿标记），
+ * 已确认热门的照片不可被召回。重复确认幂等返回，不重复通知。
+ * @param id 照片 ID
+ */
+router.put('/photos/:id/hot', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const photo = await db.get<any>('SELECT * FROM photos WHERE id = ?', [req.params.id]);
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+
+  if (photo.is_hot_confirmed === 1) {
+    return res.json({ success: true, message: '该作品已是热门作品', data: { is_hot_confirmed: 1 } });
+  }
+
+  await db.run('UPDATE photos SET is_hot_confirmed = 1 WHERE id = ?', req.params.id);
+
+  if (photo.user_id) {
+    await createNotification({
+      user_id: photo.user_id,
+      type: 'photo_hot',
+      title: '作品被评为热门',
+      content: `您的作品《${photo.title}》已被评为热门作品，将在热门位展示。`,
+      related_type: 'photo',
+      related_id: photo.id,
+    });
+  }
+
+  await logAdminAction(req.admin, 'confirm_photo_hot', 'photo', req.params.id, { title: photo.title });
+
+  res.json({ success: true, message: '已确认为热门作品', data: { is_hot_confirmed: 1 } });
+});
+
+/**
+ * 将照片分配给指定审核员（V4.0.0 管理端分配优化）。
+ * 分配对象必须是存在且启用的 zone_auditor / zone_master 角色管理员，
+ * 写入 photos.assigned_to 并记录审计日志。
+ * @param id 照片 ID
+ * @body assignee_id 审核员管理员 ID
+ */
+router.put('/photos/:id/assign', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const photo = await db.get<any>('SELECT id, title FROM photos WHERE id = ?', [req.params.id]);
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+
+  const { assignee_id } = req.body;
+  if (!assignee_id || typeof assignee_id !== 'string') {
+    return res.status(400).json({ success: false, message: '请指定分配的审核员' });
+  }
+
+  const assignee = await db.get<{
+    id: string;
+    username: string;
+    name: string | null;
+    role: string;
+    zone: string | null;
+    is_active: number;
+  }>('SELECT id, username, name, role, zone, is_active FROM admin_users WHERE id = ?', [assignee_id]);
+
+  if (!assignee || (assignee.role !== 'zone_auditor' && assignee.role !== 'zone_master')) {
+    return res.status(400).json({ success: false, message: '分配对象必须是分区审核员或分区总审核' });
+  }
+  if (!assignee.is_active) {
+    return res.status(400).json({ success: false, message: '分配对象已被停用' });
+  }
+
+  await db.run('UPDATE photos SET assigned_to = ? WHERE id = ?', [assignee_id, req.params.id]);
+  await logAdminAction(req.admin, 'assign_photo', 'photo', req.params.id, {
+    title: photo.title,
+    assignee_id,
+    assignee_name: assignee.username,
+  });
+
+  res.json({
+    success: true,
+    message: '照片已分配',
+    data: { assigned_to: assignee_id, assignee_name: assignee.username },
+  });
+});
+
+/**
+ * 我的审核记录（V4.0.0）：当前登录审核员经手（reviewed_by=自己）的照片列表。
+ * 供审核员回溯个人审核历史，支持分页与状态筛选。
+ * @query page 页码
+ * @query pageSize 每页数量
+ * @query status 可选，按状态过滤（pending/approved/rejected）
+ */
+router.get('/my-audits', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const pageSize = parseInt(req.query.pageSize as string) || 20;
+  const offset = (page - 1) * pageSize;
+
+  let query = 'SELECT * FROM photos WHERE reviewed_by = ?';
+  let countQuery = 'SELECT COUNT(*) AS count FROM photos WHERE reviewed_by = ?';
+  const params: (string | number)[] = [req.admin.id];
+
+  const status = req.query.status as string | undefined;
+  if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+    query += ' AND status = ?';
+    countQuery += ' AND status = ?';
+    params.push(status);
+  }
+
+  query += ' ORDER BY reviewed_at DESC, id DESC LIMIT ? OFFSET ?';
+  params.push(pageSize, offset);
+
+  const photos = await db.all(query, params);
+  // 计数查询复用筛选参数（去掉末尾的 LIMIT/OFFSET 两个占位符参数）
+  const countParams = params.slice(0, Math.max(1, params.length - 2));
+  const total = await db.get<{ count: number }>(countQuery, countParams);
+
+  const mappedPhotos = (photos as any[]).map((photo) => {
+    const mapped = { ...photo };
+    delete mapped.altitude;
+    mapped.thumbnail_path = getProxyUrl(photo.thumbnail_path, photo.id);
+    return mapped;
+  });
+
+  res.json({
+    success: true,
+    data: mappedPhotos,
+    pagination: {
+      page,
+      pageSize,
+      total: total?.count || 0,
+    },
+  });
 });
 
 /**
@@ -1054,6 +1312,328 @@ router.put('/users/:id/email', adminAuthMiddleware, requireRole(['super']), asyn
     success: true,
     message: '邮箱已更新，用户须在下次登录时完成邮箱验证',
     data: { email: incomingEmail, email_verified: 0 },
+  });
+});
+
+/**
+ * 对站点用户实施两级处罚（V4.0.0，仅 super/zone_master 可访问）。
+ * - 一级（level=1）：限制上传 days 天（1-365），写 users.upload_banned_until，到期自动恢复；
+ * - 二级（level=2）：封禁账号（banned_at + is_active=0）并强制下线所有会话。
+ * 处罚留痕 penalties 表并通知被处罚用户（type=penalty）。
+ * 权限口径：super 可罚任何站点用户；zone_master 可罚站点用户，
+ * 对管理员目标（zone_auditor）仅限本区且仅留痕不落效果；
+ * role 为 super/zone_master 的管理员不可被处罚。
+ * 高危操作：挂管理员人机验证门（与封禁端点同口径）。
+ * @param id 被处罚者 ID（站点用户或 zone_auditor 管理员）
+ * @body level 1 | 2
+ * @body reason 处罚原因（必填）
+ * @body days 禁传天数（仅 level=1 必填，1-365）
+ */
+router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // 高危操作：管理员人机验证门（照抄 ban 端点挂法）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
+  const { level, reason, days } = req.body;
+
+  // 参数校验：level 仅 1/2，reason 必填，days 仅一级且 1-365
+  if (level !== 1 && level !== 2) {
+    return res.status(400).json({ success: false, message: '处罚级别必须为 1 或 2' });
+  }
+  if (!reason || typeof reason !== 'string' || !reason.trim()) {
+    return res.status(400).json({ success: false, message: '请填写处罚原因' });
+  }
+  let daysNum = 0;
+  if (level === 1) {
+    daysNum = Number(days);
+    if (!Number.isInteger(daysNum) || daysNum < 1 || daysNum > 365) {
+      return res.status(400).json({ success: false, message: '一级处罚需提供 1-365 的禁传天数' });
+    }
+  }
+
+  // 目标解析：优先站点用户，其次管理员（仅 zone_auditor 可被处罚）
+  const targetUser = await db.get<{
+    id: string;
+    username: string | null;
+    email: string | null;
+    banned_at: string | null;
+  }>('SELECT id, username, email, banned_at FROM users WHERE id = ?', [req.params.id]);
+  let targetAdmin: {
+    id: string;
+    username: string;
+    role: string;
+    zone: string | null;
+  } | null = null;
+
+  if (!targetUser) {
+    // db.get 无匹配行时返回 undefined，归一化为 null 便于后续判空
+    targetAdmin =
+      (await db.get<{ id: string; username: string; role: string; zone: string | null }>(
+        'SELECT id, username, role, zone FROM admin_users WHERE id = ?',
+        [req.params.id]
+      )) ?? null;
+    if (!targetAdmin) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    // 不允许对 super/zone_master 实施处罚
+    if (targetAdmin.role === 'super' || targetAdmin.role === 'zone_master') {
+      return res.status(403).json({ success: false, message: '不允许对超级管理员或分区总审核实施处罚' });
+    }
+    // zone_master 对管理员目标仅限本区 zone_auditor
+    if (
+      req.admin.role === 'zone_master' &&
+      (targetAdmin.role !== 'zone_auditor' || targetAdmin.zone !== req.admin.zone)
+    ) {
+      return res.status(403).json({ success: false, message: '分区总审核仅可处罚本分区的分区审核账户' });
+    }
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  let expiresAt: string | null = null;
+  let penaltyId = '';
+
+  if (targetUser) {
+    if (level === 2) {
+      if (targetUser.banned_at) {
+        return res.status(400).json({ success: false, message: '该用户已被封禁' });
+      }
+      // 二级处罚：封禁 + 强制下线（与 ban 端点同口径）
+      await db.run('UPDATE users SET banned_at = ?, is_active = 0, updated_at = ? WHERE id = ?', [
+        nowIso,
+        nowIso,
+        targetUser.id,
+      ]);
+      await deleteUserSessions(targetUser.id);
+    } else {
+      // 一级处罚：限制上传至 now + days 天
+      expiresAt = new Date(now.getTime() + daysNum * 86400000).toISOString();
+      await db.run('UPDATE users SET upload_banned_until = ?, updated_at = ? WHERE id = ?', [
+        expiresAt,
+        nowIso,
+        targetUser.id,
+      ]);
+    }
+  }
+  // 管理员目标（zone_auditor）：仅留痕，不落 users 表效果
+
+  // 写处罚记录
+  penaltyId = crypto.randomUUID();
+  await db.run(
+    'INSERT INTO penalties (id, user_id, level, reason, days, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      penaltyId,
+      req.params.id,
+      level,
+      reason.trim(),
+      level === 1 ? daysNum : null,
+      expiresAt,
+      req.admin.id,
+      nowIso,
+    ]
+  );
+
+  // 通知被处罚者（标题按一级/二级处罚区分）
+  const penaltyTitle = level === 1 ? '一级处罚：上传功能已被限制' : '二级处罚：账号已被封禁';
+  const penaltyContent =
+    level === 1
+      ? `因「${reason.trim()}」，您的账号上传功能被限制 ${daysNum} 天，将于 ${new Date(expiresAt!).toLocaleString('zh-CN', { hour12: false })} 自动恢复。`
+      : `因「${reason.trim()}」，您的账号已被封禁。如有异议请联系管理员。`;
+  await createNotification({
+    user_id: req.params.id,
+    type: 'penalty',
+    title: penaltyTitle,
+    content: penaltyContent,
+    related_type: 'penalty',
+    related_id: penaltyId,
+  });
+
+  await logAdminAction(req.admin, 'penalty_user', 'user', req.params.id, {
+    level,
+    reason: reason.trim(),
+    ...(level === 1 ? { days: daysNum, expires_at: expiresAt } : {}),
+    target_type: targetUser ? 'user' : 'admin',
+  }, req.ip);
+
+  res.json({
+    success: true,
+    message: level === 1 ? '已限制上传' : '已封禁账号',
+    data: {
+      penalty_id: penaltyId,
+      level,
+      ...(level === 1 ? { expires_at: expiresAt } : {}),
+    },
+  });
+});
+
+/**
+ * 查询指定用户的处罚历史（V4.0.0）。
+ * 联创建者管理员用户名，按时间倒序，供管理后台用户详情页展示。
+ * @param id 用户 ID
+ */
+router.get('/users/:id/penalties', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const user = await db.get<{ id: string }>('SELECT id FROM users WHERE id = ?', [req.params.id]);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  const penalties = await db.all(
+    `SELECT p.*, a.username AS created_by_name
+     FROM penalties p
+     LEFT JOIN admin_users a ON p.created_by = a.id
+     WHERE p.user_id = ?
+     ORDER BY p.created_at DESC`,
+    req.params.id
+  );
+
+  res.json({ success: true, data: penalties });
+});
+
+/**
+ * 申诉列表（V4.0.0，管理侧）：支持按状态筛选，联照片标题与申诉人用户名。
+ * @query status 可选：pending/approved/rejected/withdrawn，缺省返回全部
+ * @query page 页码
+ * @query pageSize 每页数量
+ */
+router.get('/appeals', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const pageSize = parseInt(req.query.pageSize as string) || 20;
+  const offset = (page - 1) * pageSize;
+
+  let where = '';
+  const params: (string | number)[] = [];
+  const status = req.query.status as string | undefined;
+  if (status && ['pending', 'approved', 'rejected', 'withdrawn'].includes(status)) {
+    where = 'WHERE a.status = ?';
+    params.push(status);
+  }
+
+  const appeals = await db.all(
+    `SELECT a.*, p.title AS photo_title, p.status AS photo_status, u.username AS appellant_name
+     FROM appeals a
+     LEFT JOIN photos p ON a.photo_id = p.id
+     LEFT JOIN users u ON a.user_id = u.id
+     ${where}
+     ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [...params, pageSize, offset]
+  );
+  const total = await db.get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM appeals a ${where}`,
+    params
+  );
+
+  res.json({
+    success: true,
+    data: appeals,
+    pagination: {
+      page,
+      pageSize,
+      total: total?.c || 0,
+    },
+  });
+});
+
+/**
+ * 申诉裁决（V4.0.0，管理侧）：双向回执。
+ * - approve：照片恢复为 approved（reviewed_by 更新为裁决人），通知所有者 type=appeal_approved；
+ * - reject：维持照片 rejected，通知所有者 type=appeal_rejected（回执含答复内容）。
+ * 仅 pending 状态的申诉可裁决；裁决写 decided_by/decided_at 并审计。
+ * 注意：裁决不触碰精修图/预览图等 OSS 对象（既有规则保证）。
+ * @param id 申诉 ID
+ * @body decision 'approve' | 'reject'
+ * @body response 裁决答复（必填，作为回执内容）
+ */
+router.put('/appeals/:id/decide', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const { decision, response } = req.body;
+  if (decision !== 'approve' && decision !== 'reject') {
+    return res.status(400).json({ success: false, message: '裁决结论必须为 approve 或 reject' });
+  }
+  if (!response || typeof response !== 'string' || !response.trim()) {
+    return res.status(400).json({ success: false, message: '请填写裁决答复' });
+  }
+  const trimmedResponse = response.trim();
+
+  const appeal = await db.get<any>('SELECT * FROM appeals WHERE id = ?', [req.params.id]);
+  if (!appeal) {
+    return res.status(404).json({ success: false, message: '申诉不存在' });
+  }
+  if (appeal.status !== 'pending') {
+    return res.status(400).json({ success: false, message: '该申诉已处理完毕' });
+  }
+
+  const nowIso = new Date().toISOString();
+  const photo = await db.get<any>('SELECT id, title, status, user_id FROM photos WHERE id = ?', [
+    appeal.photo_id,
+  ]);
+
+  if (decision === 'approve') {
+    if (!photo) {
+      return res.status(400).json({ success: false, message: '关联照片已不存在，无法恢复' });
+    }
+    // 照片恢复为 approved，reviewed_by 更新为裁决人
+    await db.run(
+      'UPDATE photos SET status = "approved", rejection_reason = NULL, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
+      [req.admin.id, nowIso, appeal.photo_id]
+    );
+    if (appeal.user_id) {
+      await createNotification({
+        user_id: appeal.user_id,
+        type: 'appeal_approved',
+        title: '申诉已通过',
+        content: `您对作品《${photo.title}》的申诉已通过，作品已恢复为「已通过」状态。答复：${trimmedResponse}`,
+        related_type: 'appeal',
+        related_id: appeal.id,
+      });
+    }
+  } else {
+    // 申诉驳回：照片维持 rejected，回执含答复内容
+    if (appeal.user_id) {
+      const title = photo?.title ?? appeal.photo_id;
+      await createNotification({
+        user_id: appeal.user_id,
+        type: 'appeal_rejected',
+        title: '申诉未通过',
+        content: `您对作品《${title}》的申诉未通过，作品维持「未通过」状态。答复：${trimmedResponse}`,
+        related_type: 'appeal',
+        related_id: appeal.id,
+      });
+    }
+  }
+
+  await db.run(
+    "UPDATE appeals SET status = ?, response = ?, decided_by = ?, decided_at = ? WHERE id = ?",
+    [decision === 'approve' ? 'approved' : 'rejected', trimmedResponse, req.admin.id, nowIso, appeal.id]
+  );
+
+  await logAdminAction(req.admin, 'decide_appeal', 'appeal', appeal.id, {
+    decision,
+    photo_id: appeal.photo_id,
+    response: trimmedResponse,
+  });
+
+  res.json({
+    success: true,
+    message: decision === 'approve' ? '申诉已通过，照片已恢复' : '申诉已驳回',
+    data: { appeal_id: appeal.id, status: decision === 'approve' ? 'approved' : 'rejected' },
   });
 });
 

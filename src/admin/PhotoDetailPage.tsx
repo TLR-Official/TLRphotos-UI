@@ -2,6 +2,7 @@
  * 照片审核详情页
  * 展示大图预览、完整元数据（EXIF + 用户填写）、上传者信息，
  * 并在底部提供通过/拒绝审核的操作按钮。
+ * V4.0.0：approved 状态增加「召回」（窗口内静默 / 超窗需原因）、「确认热门」与「分配/转移」操作。
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -22,16 +23,27 @@ import {
   ThumbsUp,
   ShieldAlert,
 } from 'lucide-react';
-import { getPhotoDetail, approvePhoto, rejectPhoto, getAdminToken } from './api';
-import type { AdminPhotoDetail } from './types';
+import {
+  getPhotoDetail,
+  approvePhoto,
+  rejectPhoto,
+  getAdminToken,
+  getAdminUsers,
+  recallPhoto,
+  confirmPhotoHot,
+  assignPhoto,
+} from './api';
+import type { AdminPhotoDetail, AdminUser } from './types';
 import { CachedImage } from '../components/CachedImage';
 import { AuditToolkit } from './audit-tools';
 
 /**
  * 照片审核详情页组件
+ * @param id 照片 ID
+ * @param currentAdmin 当前登录管理员（用于判断是否展示分配下拉：分配对象列表接口仅 super/zone_master 可访问）
  * @returns 加载态 / 详情页 JSX
  */
-export function PhotoDetailPage({ id }: { id: string }) {
+export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin?: AdminUser | null }) {
   const navigate = useNavigate();
   const [photo, setPhoto] = useState<AdminPhotoDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,16 +54,46 @@ export function PhotoDetailPage({ id }: { id: string }) {
   // 管理员 Token：用于加载需要鉴权的未审核照片图片
   const adminToken = getAdminToken();
 
+  // V4.0.0 操作状态
+  // notice：底部操作栏上方的操作结果提示
+  const [notice, setNotice] = useState('');
+  // recallLoading：召回请求进行中；showRecallModal：超窗原因对话框
+  const [recallLoading, setRecallLoading] = useState(false);
+  const [showRecallModal, setShowRecallModal] = useState(false);
+  const [recallReason, setRecallReason] = useState('');
+  // hotLoading：确认热门请求进行中
+  const [hotLoading, setHotLoading] = useState(false);
+  // 分配：候选审核员列表与选中项（仅 super/zone_master 加载）
+  const [assignees, setAssignees] = useState<AdminUser[]>([]);
+  const [assigneeId, setAssigneeId] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  // 是否可展示分配下拉：分配对象列表接口（GET /admin/users）仅 super/zone_master 可访问
+  const canAssign = !currentAdmin || currentAdmin.role === 'super' || currentAdmin.role === 'zone_master';
+
   // 加载照片详情
   useEffect(() => {
     if (!id) return;
     fetchDetail();
   }, [id]);
 
+  // 分配候选：照片进入 approved 状态时拉取管理员列表并过滤启用状态的 zone_auditor / zone_master
+  const photoStatus = photo?.status;
+  useEffect(() => {
+    if (photoStatus === 'approved' && canAssign) {
+      getAdminUsers().then((res) => {
+        if (res.success && res.data) {
+          setAssignees(res.data.filter((a) => a.is_active && (a.role === 'zone_auditor' || a.role === 'zone_master')));
+        }
+      }).catch(() => {});
+    }
+  }, [photoStatus, canAssign]);
+
   /** 拉取照片详情 */
   const fetchDetail = async () => {
     setLoading(true);
     setError('');
+    setNotice('');
     if (!id) return;
     const result = await getPhotoDetail(id);
     if (result.success && result.data) {
@@ -63,6 +105,15 @@ export function PhotoDetailPage({ id }: { id: string }) {
       setError(result.message || '加载失败');
     }
     setLoading(false);
+  };
+
+  /**
+   * 展示操作结果提示（3 秒自动清空）
+   * @param text 提示文本
+   */
+  const showNotice = (text: string) => {
+    setNotice(text);
+    setTimeout(() => setNotice(''), 3000);
   };
 
   /** 通过审核 */
@@ -89,6 +140,61 @@ export function PhotoDetailPage({ id }: { id: string }) {
       setError(result.message || '操作失败');
     }
     setActionLoading(false);
+  };
+
+  /**
+   * 召回已通过照片（V4.0.0）
+   * 流程：先无 reason 调用 → 窗口内静默召回成功直接刷新；
+   * 400 REASON_REQUIRED 弹出原因对话框由用户重发；400 HOT_NOT_RECALLABLE 提示热门不可召回。
+   */
+  const handleRecall = async (reason?: string) => {
+    if (!id || recallLoading) return;
+    setRecallLoading(true);
+    const result = await recallPhoto(id, reason?.trim() || undefined);
+    if (result.success) {
+      setShowRecallModal(false);
+      setRecallReason('');
+      // 按后端响应区分：窗口内静默（不通知所有者）/ 超窗召回（已推送召回通知）
+      showNotice(result.data?.silent ? '已召回至待审核（窗口内静默，未通知所有者）' : '已召回至待审核，已通知作品所有者');
+      await fetchDetail();
+    } else if (result.code === 'REASON_REQUIRED') {
+      // 超窗召回：必须填写原因，弹出原因对话框等待用户重发
+      setShowRecallModal(true);
+      showNotice('已超出召回时限，请填写召回原因');
+    } else {
+      // 含 HOT_NOT_RECALLABLE（热门作品禁止召回）与无权限等场景
+      setShowRecallModal(false);
+      showNotice(result.message || '召回失败');
+    }
+    setRecallLoading(false);
+  };
+
+  /** 确认热门（V4.0.0）：二次确认后调用，成功后刷新详情展示已确认状态 */
+  const handleConfirmHot = async () => {
+    if (!id || hotLoading) return;
+    if (!confirm('确认将该作品标记为热门？确认后将通知作品所有者，且该作品不可再被召回。')) return;
+    setHotLoading(true);
+    const result = await confirmPhotoHot(id);
+    if (result.success) {
+      showNotice(result.message || '已确认为热门作品');
+      await fetchDetail();
+    } else {
+      showNotice(result.message || '操作失败');
+    }
+    setHotLoading(false);
+  };
+
+  /** 分配/转移审核任务（V4.0.0）：将照片指派给下拉选中的审核员 */
+  const handleAssign = async () => {
+    if (!id || !assigneeId || assignLoading) return;
+    setAssignLoading(true);
+    const result = await assignPhoto(id, assigneeId);
+    if (result.success) {
+      showNotice(result.message || '照片已分配');
+    } else {
+      showNotice(result.message || '分配失败');
+    }
+    setAssignLoading(false);
   };
 
   // 加载态
@@ -148,6 +254,11 @@ export function PhotoDetailPage({ id }: { id: string }) {
         </button>
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-gray-800">{photo.title}</h1>
+          {photo.is_hot_confirmed === 1 && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium border bg-violet-50 text-violet-700 border-violet-200">
+              已确认热门
+            </span>
+          )}
           <StatusBadge status={photo.status} />
         </div>
       </div>
@@ -375,6 +486,66 @@ export function PhotoDetailPage({ id }: { id: string }) {
         </div>
       </div>
 
+      {/* 底部操作栏：approved 状态的召回 / 确认热门 / 分配（V4.0.0） */}
+      {photo.status === 'approved' && (
+        <div className="mt-8 rounded-xl border border-gray-200 bg-white p-4">
+          {notice && (
+            <p className="mb-3 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+              {notice}
+            </p>
+          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-sm text-gray-500 mr-auto">
+              {photo.is_hot_confirmed === 1
+                ? '该作品已确认为热门，不可召回'
+                : '审核纠错：召回将使照片回到待审核队列'}
+            </p>
+            {/* 召回：窗口内静默；超窗弹出原因必填对话框 */}
+            <button
+              onClick={() => handleRecall()}
+              disabled={recallLoading}
+              className="px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              {recallLoading ? '召回中...' : '召回'}
+            </button>
+            {/* 确认热门：未确认时显示 */}
+            {photo.is_hot_confirmed !== 1 && (
+              <button
+                onClick={handleConfirmHot}
+                disabled={hotLoading}
+                className="px-4 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 disabled:opacity-50 text-violet-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                {hotLoading ? '提交中...' : '确认热门'}
+              </button>
+            )}
+            {/* 分配/转移：仅 super/zone_master 展示（分配对象列表接口权限） */}
+            {canAssign && assignees.length > 0 && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={assigneeId}
+                  onChange={(e) => setAssigneeId(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-700"
+                >
+                  <option value="">分配/转移给审核员...</option>
+                  {assignees.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name || a.username}（{a.role === 'zone_master' ? '总审核' : '审核员'} · {a.zone || '-'}）
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAssign}
+                  disabled={!assigneeId || assignLoading}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {assignLoading ? '分配中...' : '分配'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 底部操作栏 */}
       {photo.status === 'pending' && (
         <div className="sticky bottom-0 mt-8 py-4 bg-white border-t border-gray-200">
@@ -440,6 +611,48 @@ export function PhotoDetailPage({ id }: { id: string }) {
                 className="flex-1 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
               >
                 {actionLoading ? '提交中...' : '确认拒绝'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 超窗召回原因弹窗（V4.0.0）：400 REASON_REQUIRED 触发，原因必填后重发召回 */}
+      {showRecallModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => {
+            if (!recallLoading) setShowRecallModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full mx-4 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-800 mb-2">填写召回原因</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              已超出静默召回时限，召回将通知作品所有者，请填写召回原因：
+            </p>
+            <textarea
+              value={recallReason}
+              onChange={(e) => setRecallReason(e.target.value)}
+              className="w-full h-28 p-3 border border-gray-300 rounded-lg text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-700"
+              placeholder="请输入召回原因，例如：误判..."
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => setShowRecallModal(false)}
+                disabled={recallLoading}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleRecall(recallReason)}
+                disabled={!recallReason.trim() || recallLoading}
+                className="flex-1 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg transition-colors"
+              >
+                {recallLoading ? '提交中...' : '确认召回'}
               </button>
             </div>
           </div>
