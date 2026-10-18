@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-10-18 10:05 | [docs] 版本号升级至 V4.0.0-beta.2 — 架构图连线可读性重构：30+ 条细粒度交叉线收敛为 9 条按流向配色的包级粗箭头（蓝=用户端调用/橙=管理端/绿=数据读写/红=外部服务/青虚线=定时任务/紫虚线=工具），新增底部颜色图例，smetana 重渲染 PNG（6255×2148） | docs/architecture-detailed.puml、docs/architecture-detailed.png、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-17 22:25 | [docs] 版本号升级至 V4.0.0-beta.1 — 重绘 PlantUML 详细版架构图至 V4 架构：17 组路由挂载/114 端点（用户端 66+管理端 47+health）、17 服务、主库 24 表+标签库 3 表、用户新增论坛/新闻/通知/申诉/关于我们模块与管理端 12 页面，smetana 引擎网格布局渲染 PNG（7496×2256） | docs/architecture-detailed.puml、docs/architecture-detailed.png、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-17 19:20 | [deploy] V4.0.0-beta 生产部署完成并冒烟通过 — 后端 rebuild+restart（127.0.0.1:3001 active）、生产 .env 补 RECALL_WINDOW_MINUTES=3；冒烟：/api/about/stats（site_days=64/approved_count=103）、/api/news（空列表分页正常）、/api/notifications/unread-count（401 鉴权正常）、/api/photos/search 回归正常；提交 f9b91a2 已推送 | backend/.env、tlrphotos-backend.service、dist（index-B0BbVGk_.js） |
 | 2026-10-17 19:10 | [release] 版本号升级至 V4.0.0-beta — V4 全模块迭代提交推送（通知召回/处罚申诉/论坛治理/新闻区/关于我们，详见提交 f9b91a2 说明） | 全项目（后端 23 套件 400 用例、前端 oxlint 0 错误） |

@@ -98,7 +98,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     M3 -[hidden]right- M4
   }
 
-  package "用户端路由（13 组 · 66 endpoints）" #ffffff {
+  package "用户端路由（13 组 · 66 endpoints）" as RU #ffffff {
     rectangle "/api/auth (15)\nPOST email/code/send（60s+5/h+20 IP/h 限速）\nPOST register · login · login/verify · email/bind\nPOST logout · refresh · me/avatar\nGET me · me/photos · users/:id\nGET users/:id/photos · users/:id/stats\nPUT me · me/password" as R1 #dae8fc
     rectangle "/api/photos (13)\nGET / · search（注册号/keyword/is_hot）\nGET tags（with_counts 聚合）· :id\nGET image/*（水印代理下载）\nPOST :id/like · :id/view · :id/appeal\nPOST upload/presigned · upload/complete · upload\nDELETE :id/like · :id（三重确认级联删）" as R2 #dae8fc
     rectangle "/api/comments (7)  V3.0.0\nGET / · archives/:rootId/url · :rootId/replies\nPOST / · :id/like\nDELETE :id · :id/like" as R3 #e1d5e7
@@ -126,7 +126,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     R1 -[hidden]down- R7
   }
 
-  package "管理端路由（4 组挂载 + server 内联 · 47 endpoints）" #ffffff {
+  package "管理端路由（4 组挂载 + server 内联 · 47 endpoints）" as RA #ffffff {
     rectangle "/api/admin (33)\nPOST login（adminLoginLimiter）· GET me\nPOST me/password · GET zones\nusers×13：POST · GET · GET list · GET/PUT/DELETE :id\nPUT toggle · POST ban/unban · PUT permissions\nPUT email · POST penalty · GET penalties\nphotos×8：GET pending · stats · :id\nPUT approve · reject · recall（3分钟两级）\nPUT hot · assign\nGET my-audits · appeals · logs · stats\nPUT appeals/:id/decide · GET dashboard/health\nPOST verification/verify · GET verification/status" as RA1 #dae8fc
     rectangle "/api/admin/comments (2)\nDELETE :id（人机门）\nPUT :rootId/pin" as RA2 #dae8fc
     rectangle "/api/admin/news (4)  V4.0.0\nPOST / · PUT :id\nGET / · DELETE :id\n（news_editor 编辑账号）" as RA3 #e1d5e7
@@ -138,7 +138,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     RA4 -[hidden]right- RA5
   }
 
-  package "中间件 & 鉴权（src/middleware · 6 文件）" #ffffff {
+  package "中间件 & 鉴权（src/middleware · 6 文件）" as MWA #ffffff {
     rectangle "requireAuth / loadAuthUser\nJWT 解析 + banned_at 检查\n（401 USER_BANNED 即时下线）" as MW1 #dae8fc
     rectangle "adminAuth\nadminAuthMiddleware + requireRole\n角色白名单 · canManageZone 分区隔离" as MW2 #dae8fc
     rectangle "requireVerifiedEmail\n邮箱已验证确权门\n（V2.0.0 挂接上传/点赞/评论/发帖）" as MW3 #e1d5e7
@@ -148,7 +148,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     MW3 -[hidden]right- MW4
   }
 
-  package "服务层（17 个服务）" #ffffff {
+  package "服务层（17 个服务）" as SRV #ffffff {
     rectangle "authService\nJWT 签发/校验（iss+aud）· bcrypt\n会话管理 · 改密全端失效" as S1 #dae8fc
     rectangle "adminService\n管理员 CRUD · initSuperAdmin\nverifyAdminToken · 审计日志" as S2 #dae8fc
     rectangle "adminLoginGuard\nADMIN_SMS_REQUIRED 紧急开关\n（V1.13.1 默认 on 两阶段）" as S3 #dae8fc
@@ -180,7 +180,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     S6 -[hidden]down- S12
   }
 
-  package "工具层" #ffffff {
+  package "工具层" as UTIL #ffffff {
     rectangle "crypto.ts\nAES-256-GCM 加解密\n（session_token / ip）" as U1 #dae8fc
     rectangle "url.ts\nURL 构建与路径处理" as U2 #dae8fc
     rectangle "db/tagsDb.ts\n标签分类库（独立 SQLite）" as U3 #dae8fc
@@ -188,7 +188,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
     U2 -[hidden]right- U3
   }
 
-  package "定时任务" #ffffff {
+  package "定时任务" as TIMERS #ffffff {
     rectangle "午夜清理（24h 周期）\n过期会话 + 人机验证记录\n+ OTP 验证码 + 已读通知(90天)" as T1 #dae8fc
     rectangle "评论归档作业（V3.0.0）\n启动 30s 后一次 + 24h 周期\n进程内作业锁防重入" as T2 #dae8fc
     rectangle "photo_views 每小时清理\n7 天前浏览去重记录" as T3 #dae8fc
@@ -198,7 +198,7 @@ package "应用层 — tlrphotos-backend.service\nNode.js 20 + Express 4 + TypeS
 }
 
 ' ==================== 数据层 ====================
-package "数据层（ECS 本地 · WAL 模式 · 外键约束）" #f2f9f0 {
+package "数据层（ECS 本地 · WAL 模式 · 外键约束）" as DATA #f2f9f0 {
   package "SQLite 主库（better-sqlite3 · 24 张业务表）" #ffffff {
     rectangle "users\nemail · password_hash · email_verified\nlast_email_verified_at（周期验码锚点）\nbanned_at · can_upload/view/download/like" as D1 #d5e8d4
     rectangle "photos\nregistration_number（2-20位·索引）\nis_hot 意愿 · watermark_config · status\nEXIF: camera · vehicle · location..." as D2 #d5e8d4
@@ -233,7 +233,7 @@ package "数据层（ECS 本地 · WAL 模式 · 外键约束）" #f2f9f0 {
 }
 
 ' ==================== 外部服务 ====================
-package "外部服务" #fafafa {
+package "外部服务" as EXT #fafafa {
   rectangle "阿里云 OSS（oss-cn-hongkong）\n• 原图：浏览器预签名直传\n• 缩略图/预览/水印 webp：imageService 上传\n• 评论归档 JSON：上传 + 签名直读\n• 删除：级联清理全部衍生对象" as E1 #f5f5f5
   rectangle "阿里云 DirectMail\nsmtpdm.aliyun.com:465 SSL\n发件 main@mail.tlrphotos.com\nSPF · MX · DKIM 已验证" as E2 #f5f5f5
   rectangle "Cloudflare Turnstile API\nchallenges.cloudflare.com/turnstile/v0/siteverify\nsuccess · action · hostname 白名单\nfail-closed（网络异常拒绝）" as E3 #e1d5e7
@@ -243,62 +243,30 @@ package "外部服务" #fafafa {
   E1 -[hidden]down- E3
 }
 
-' ==================== 连线：用户层 → Cloudflare → Nginx ====================
+' ==================== 连线（仅保留层间骨干 · 按流向配色 · 避免中部交叉） ====================
 FE --> CF1 : HTTPS（静态资源 + API）
 AD --> CF1 : HTTPS
-P15 ..> CF3 : Turnstile 挑战（widget 内嵌）
+P15 ..> CF3 : Turnstile 挑战
 CF1 --> N1 : 回源 · 用户站
 CF1 --> N2 : 回源 · 管理站
-
-' ==================== 连线：Nginx → 应用层 ====================
 N1 --> M1 : /api · /uploads · /articles 反代
 N2 --> M1 : /api 反代
 M1 --> M2
 M2 --> M3
-M3 --> R1
-M3 --> RA1
+M3 --> RU : 请求分发（13 组）
+M3 --> RA : 请求分发（4 组 + 内联）
 
-' ==================== 连线：路由 → 中间件/服务（骨干） ====================
-R1 --> S1 : JWT/会话
-R1 --> S9 : 验证码校验
-R1 --> S10 : 发送验码邮件
-R1 --> U1 : AES 加密
-R2 --> S4 : OSS 预签名/直传
-R2 --> S5 : 缩略图/水印
-R3 --> S11 : 三级评论
-R3 --> S12 : 热度
-R6 --> S14 : 通知
-R9 --> S7 : 验证状态
-R10 --> S15 : AI 记忆
-RA1 --> MW2 : adminAuth + requireRole
-RA1 --> S2 : 管理员操作/审计
-RA1 --> S14 : 审核/处罚通知
+RU -[#1a66c2,thickness=4]-> SRV : 用户端业务调用\n（认证 · OSS · 评论 · 通知 · 记忆）
+RA -[#b45309,thickness=4]-> SRV : 管理端调用\n（审计 · 通知 · 评论治理）
+RU ..> MWA : requireAuth / 邮箱门 / 限速
+RA ..> MWA : adminAuth / 角色门
+SRV -[#2e7d32,thickness=4]-> DATA : SQLite 读写\n（主库 24 表 + 标签库 3 表）
+SRV ..> UTIL : crypto / url / tagsDb
+TIMERS -[#0f766e,thickness=2,dashed]-> SRV : 定时清理 · 归档
+SRV -[#c2410c,thickness=3]-> EXT : OSS · DirectMail · Turnstile · EverOS
 
-' ==================== 连线：服务 → 数据 ====================
-S1 --> D1 : users 读写
-S1 --> D12 : cookie 会话
-S9 --> D10 : verification_codes
-S7 --> D11 : user_verifications
-S2 --> D13 : admin_users · admin_logs
-S11 --> D3 : comments 组
-S14 --> D7 : notifications
-U3 --> D14 : 标签库
-
-' ==================== 连线：服务 → 外部 ====================
-S4 --> E1 : OSS 操作
-S5 --> E1 : webp 衍生图上传
-S13 --> E1 : 归档 JSON 上传/签名直读
-S10 ..> E2 : SMTP 发信
-S15 ..> E4 : 记忆读写
-CF3 ..> S7 : canonical siteverify
-S7 ..> E3 : POST siteverify API
-
-' ==================== 连线：定时任务 ====================
-T1 --> S8 : cleanupExpired
-T1 --> S7 : cleanupExpiredVerifications
-T1 --> S9 : cleanupExpiredCodes
-T1 --> S14 : cleanupOldNotifications
-T2 --> S13 : runArchiveJob
-T3 --> D4 : photo_views 清理
+legend bottom
+<color:#1a66c2><b>━━━</b></color> 用户端业务调用　　<color:#b45309><b>━━━</b></color> 管理端调用　　<color:#2e7d32><b>━━━</b></color> 数据读写　　<color:#c2410c><b>━━━</b></color> 外部服务　　<color:#7048e8><b>╌╌╌</b></color> 工具支撑　　<color:#0f766e><b>╌╌╌</b></color> 定时任务　　<color:#555555><b>───</b></color> 请求主链路
+endlegend
 
 @enduml
