@@ -11,7 +11,7 @@ skinparam RectangleBackgroundColor #dae8fc
 skinparam PackageBorderColor #999999
 skinparam PackageBackgroundColor #f8f9fa
 
-title TLRphotos 系统架构图（详细版）· V4.0.0-beta · 2026-10-18\n单台 ECS + 阿里云 OSS + Cloudflare 边缘｜114 个 API（17 组挂载）· 27 张表（主库 24 + 标签库 3）· 17 个服务 · 用户前台 18 页 · 管理后台 12 页\n阅读方式：每一纵列 = 一个业务域 —— 列内自上而下即「请求入口(蓝) → 服务处理(紫) → 数据落库(绿)」调用链；列间只保留跨域依赖（橙=管理端调用 · 红=进程外调用）
+title TLRphotos 系统架构图（详细版）· V4.0.0-beta · 2026-10-18\n单台 ECS + 阿里云 OSS + Cloudflare 边缘｜114 个 API（17 组挂载）· 27 张表（主库 24 + 标签库 3）· 17 个服务 · 用户前台 18 页 · 管理后台 12 页\n阅读方式：每一纵列 = 一个业务域（全部域包同属 tlrphotos-backend.service 单进程 · 127.0.0.1:3001）—— 列内自上而下即「请求入口(蓝) → 服务处理(紫) → 数据落库(绿)」调用链；红短线=进程外调用，指向列底灰底【外部】框（OSS 复用关系见 ossService 框内消费方标注）
 
 ' ==================== 用户层 ====================
 package "用户层" #ffffff {
@@ -86,13 +86,12 @@ package "接入层 — Nginx（TLS 终止 · 反向代理）\n监听 80→443 �
 }
 
 ' ==================== 应用层：单进程 · 业务域纵列 ====================
-' 布局注记：smetana 将同级包声明序镜像渲染（先声明者居右），
-' 故此处按「定时→管理→AI→验证→通知→内容→论坛→评论→照片→认证」倒序声明，渲染后认证域居左。
-package "应用层 — tlrphotos-backend.service（单进程）\nNode.js 20 + Express 4 + TypeScript · 仅监听 127.0.0.1:3001 · systemd（--expose-gc）托管\n启动流程：initDb → initTagsDb → initSuperAdmin → checkAdminJwtConfig → scheduleCleanup → scheduleArchiveJob → memoryManager.start → listen" as APP #f5f8ff {
+' 布局注记：应用层各域包为顶层声明（不再嵌套应用层大框），渲染顺序与声明顺序基本一致；
+' 外部服务灰底框直接声明在其唯一调用者所在域包的列底，红线即列内短竖线（smetana 无法把包外节点钉到列下，实测两种隐藏边钉法均失效）。
 
   package "定时任务（进程内）" as DOM_TIMER #ffffff {
     rectangle "午夜清理（24h）\n过期会话 · 人机验证记录\nOTP 验证码 · 已读通知(90天)\nphoto_views 每小时清 7 天前" as T1 #dae8fc
-    rectangle "评论归档作业（V3.0.0）\n启动 30s 后一次 + 24h 周期\n进程内作业锁防重入" as T2 #dae8fc
+    rectangle "评论归档作业（V3.0.0）\n启动 30s 后一次 + 24h 周期\n调 commentArchiveService.runArchiveJob\n进程内作业锁防重入" as T2 #dae8fc
     T1 -[hidden]right- T2
   }
 
@@ -106,12 +105,14 @@ package "应用层 — tlrphotos-backend.service（单进程）\nNode.js 20 + Ex
   package "AI 记忆域" as DOM_AI #ffffff {
     rectangle "/api/everos (2)\nPOST memory · search\n（AI 记忆持久化）" as R10 #dae8fc
     rectangle "everosService\nEverOS AI 记忆\naddTurn · searchMemory\n15s AbortController 超时" as S15 #e1d5e7
+    rectangle "【外部】EverOS AI Agent API\n持久化记忆层 · sender_id 用户隔离\nEVEROS_PROJECT_ID=tlrphotos" as E4 #f5f5f5
   }
 
   package "验证域（横切安全）" as DOM_VERIFY #ffffff {
     rectangle "/api/verification (2)\nPOST verify · GET status" as R9 #dae8fc
     rectangle "verificationService\nTurnstile siteverify 校验\n12 高危端点验证门 · 168h TTL\nfail-closed · 测试绕过" as S7 #e1d5e7
     rectangle "user_verifications\nsubject+action 唯一 · 168h TTL" as D11 #d5e8d4
+    rectangle "【外部】Cloudflare Turnstile API\nsiteverify · success/action/hostname 白名单\nfail-closed（网络异常拒绝）" as E3 #f5f5f5
   }
 
   package "通知·申诉域" as DOM_NOTIF #ffffff {
@@ -149,11 +150,12 @@ package "应用层 — tlrphotos-backend.service（单进程）\nNode.js 20 + Ex
   package "照片·标签域" as DOM_PHOTO #ffffff {
     rectangle "/api/photos (13)\nGET / · search（注册号/keyword/is_hot）\nGET tags（with_counts 聚合）· :id\nGET image/*（水印代理下载）\nPOST :id/like · :id/view · :id/appeal\nPOST upload/presigned · upload/complete · upload\nDELETE :id/like · :id（三重确认级联删）" as R2 #dae8fc
     rectangle "/api/tags (4)\nGET / · :categoryId\n· :categoryId/objects\n· :categoryId/objects/:objectId/attributes" as R7 #dae8fc
-    rectangle "ossService\n预签名 PUT · uploadBufferToOSS\ndeleteFromOSS · 动态生成 URL" as S4 #e1d5e7
+    rectangle "ossService\n预签名 PUT · uploadBufferToOSS\ndeleteFromOSS · 动态生成 URL\n全站唯一 OSS 出口\n消费方：imageService · commentArchive" as S4 #e1d5e7
     rectangle "imageService\nsharp 缩略图/预览/水印 webp\nEXIF 旋转 · 显式 dispose" as S5 #e1d5e7
     rectangle "photos\nregistration_number（2-20位·索引）\nis_hot 意愿 · watermark_config · status\nEXIF: camera · vehicle · location..." as D2 #d5e8d4
     rectangle "photo_likes · photo_views\n点赞 · 浏览 24h 窗口去重" as D4 #d5e8d4
     rectangle "tag_categories · tag_objects\ntag_attributes（独立标签库·经 tagsDb.ts）" as D14 #d5e8d4
+    rectangle "【外部】阿里云 OSS（oss-cn-hongkong）\n原图预签名直传 · webp 衍生图 · 归档 JSON\n全站唯一出口 ossService · 级联清理衍生对象" as E1 #f5f5f5
   }
 
   package "认证域" as DOM_AUTH #ffffff {
@@ -165,9 +167,10 @@ package "应用层 — tlrphotos-backend.service（单进程）\nNode.js 20 + Ex
     rectangle "users\nemail · password_hash · email_verified\nlast_email_verified_at（周期验码锚点）\nbanned_at · can_upload/view/download/like" as D1 #d5e8d4
     rectangle "verification_codes\nHMAC 哈希 · 尝试计数 · 过期时间" as D10 #d5e8d4
     rectangle "cookie\nsession_token · encrypted_ip（AES-GCM）" as D12 #d5e8d4
+    rectangle "【外部】阿里云 DirectMail\nsmtpdm.aliyun.com:465 SSL · main@mail.tlrphotos.com\nSPF · MX · DKIM 已验证" as E2 #f5f5f5
   }
 
-  package "入口中间件链\n（请求按路径前缀分发至上方各域列首蓝框）" #ffffff {
+  package "入口中间件链\n（请求按路径前缀分发至上方各域列首蓝框）\n运行时：Node.js 20 + Express 4 · 仅监听 127.0.0.1:3001 · systemd --expose-gc\n启动流程：initDb → initTagsDb → initSuperAdmin → checkAdminJwtConfig → scheduleCleanup → scheduleArchiveJob → memoryManager.start → listen" #ffffff {
     rectangle "corsWhitelist\n域名白名单（V1.10.1 收紧）" as M1 #dae8fc
     rectangle "express.json / urlencoded\nlimit 50MB 兼容大图" as M2 #dae8fc
     rectangle "请求超时 120s → 504\ntrust proxy · 隐藏 X-Powered-By" as M3 #dae8fc
@@ -176,17 +179,7 @@ package "应用层 — tlrphotos-backend.service（单进程）\nNode.js 20 + Ex
     M2 --> M3
     M3 -[hidden]right- M4
   }
-}
 
-' ==================== 外部服务与本地磁盘 ====================
-package "外部服务" as EXT #fafafa {
-  rectangle "阿里云 DirectMail\nsmtpdm.aliyun.com:465 SSL\n发件 main@mail.tlrphotos.com\nSPF · MX · DKIM 已验证" as E2 #f5f5f5
-  rectangle "阿里云 OSS（oss-cn-hongkong）\n• 原图：浏览器预签名直传\n• 缩略图/预览/水印 webp：imageService 上传\n• 评论归档 JSON：上传 + 签名直读\n• 删除：级联清理全部衍生对象" as E1 #f5f5f5
-  rectangle "Cloudflare Turnstile API\nchallenges.cloudflare.com/turnstile/v0/siteverify\nsuccess · action · hostname 白名单\nfail-closed（网络异常拒绝）" as E3 #e1d5e7
-  rectangle "EverOS AI Agent API\n持久化记忆层\nEVEROS_PROJECT_ID=tlrphotos\nsender_id 用户隔离" as E4 #f5f5f5
-  E2 -[hidden]right- E3
-  E3 -[hidden]right- E4
-}
 rectangle "服务器本地磁盘\n/uploads 头像 · /articles Markdown\n（SQLite 主库+标签库 27 表亦在此 · WAL · 外键约束）" as D15 #d5e8d4
 
 ' ==================== 请求主链路（灰色） ====================
@@ -236,24 +229,26 @@ R5 -[#2e7d32,dashed]-> D5 : 文章读写
 R11 -[#2e7d32,dashed]-> D9 : 新闻读取
 R8 -[#2e7d32,dashed]-> D8 : 申诉记录
 
-' ==================== 进程外调用（红色） ====================
+' ==================== 进程外调用（红色 · 仅 4 个直接持有外部连接的服务） ====================
 S10 -[#c2410c]-> E2 : SMTP 发信
-S4 -[#c2410c]-> E1 : OSS 操作
-S5 -[#c2410c]-> E1 : webp 衍生图上传
-S13 -[#c2410c]-> E1 : 归档 JSON
+S4 -[#c2410c]-> E1 : OSS SDK 读写
 S7 -[#c2410c]-> E3 : siteverify 校验
 S15 -[#c2410c]-> E4 : 记忆读写
-T2 -[#c2410c]-> E1 : 定时归档上传
 
 ' ==================== 域内布局微调（隐藏） ====================
 S4 -[hidden]right- S5
 S4 -[hidden]down- D2
 S4 -[hidden]down- D4
 S9 -[hidden]right- S10
+' 外部服务钉位：各自钉在其调用者所在域列正下方，红线保持短竖线
+D12 -[hidden]down- E2
+D4 -[hidden]down- E1
+D11 -[hidden]down- E3
+S15 -[hidden]down- E4
 
 legend bottom
-<color:#555555><b>───</b></color> 请求主链路　　<color:#1a66c2><b>───</b></color> 用户端路由→服务　　<color:#2e7d32><b>───</b></color> 数据读写（虚线=路由直落表）　　<color:#b45309><b>───</b></color> 管理端调用（虚线=直落表）　　<color:#c2410c><b>───</b></color> 进程外调用
-框色：<color:#6c8ebf><b>■</b></color> 蓝框=API 路由　<color:#9673a6><b>■</b></color> 紫框=服务　<color:#82b366><b>■</b></color> 绿框=SQLite 表（主库 24 + 标签库 3 · WAL · 外键约束）　<color:#d79b00><b>■</b></color> 橙框=Nginx　<color:#e1d5e7><b>■</b></color> 浅紫=V3/V4 新增模块
+<color:#555555><b>───</b></color> 请求主链路　　<color:#1a66c2><b>───</b></color> 用户端路由→服务　　<color:#2e7d32><b>───</b></color> 数据读写（虚线=路由直落表）　　<color:#b45309><b>───</b></color> 管理端调用（虚线=直落表）　　<color:#c2410c><b>───</b></color> 进程外调用（→ 列底灰底【外部】框）
+框色：<color:#6c8ebf><b>■</b></color> 蓝框=API 路由　<color:#9673a6><b>■</b></color> 紫框=服务　<color:#82b366><b>■</b></color> 绿框=SQLite 表（主库 24 + 标签库 3 · WAL · 外键约束）　<color:#d79b00><b>■</b></color> 橙框=Nginx　<color:#999999><b>■</b></color> 灰底【外部】=进程外服务　<color:#e1d5e7><b>■</b></color> 浅紫=V3/V4 新增模块
 endlegend
 
 @enduml
