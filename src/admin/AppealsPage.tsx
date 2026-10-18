@@ -7,7 +7,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Gavel } from 'lucide-react';
 import { getAppeals, decideAppeal } from './api';
 import type { Appeal, AppealStatus } from './types';
 
@@ -179,25 +179,38 @@ export function AppealsPage() {
                   </div>
                 )}
 
-                {/* 仅待处理申诉可裁决 */}
-                {appeal.status === 'pending' && (
-                  <div className="mt-4 flex gap-3 justify-end">
+                {/* 行操作区：V4.1.0 每行提供「处罚该用户」跳转；待处理申诉追加裁决按钮 */}
+                <div className="mt-4 flex gap-3 justify-end">
+                  {appeal.user_id && (
                     <button
-                      onClick={() => openDecide(appeal, 'reject')}
-                      disabled={decideLoading}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                      onClick={() => navigate(`/admin/bans?userId=${encodeURIComponent(appeal.user_id)}`)}
+                      title="前往用户封禁管理预选该申诉人"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
                     >
-                      驳回
+                      <Gavel className="w-4 h-4" />
+                      处罚该用户
                     </button>
-                    <button
-                      onClick={() => openDecide(appeal, 'approve')}
-                      disabled={decideLoading}
-                      className="px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
-                    >
-                      通过
-                    </button>
-                  </div>
-                )}
+                  )}
+                  {/* 仅待处理申诉可裁决 */}
+                  {appeal.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => openDecide(appeal, 'reject')}
+                        disabled={decideLoading}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        驳回
+                      </button>
+                      <button
+                        onClick={() => openDecide(appeal, 'approve')}
+                        disabled={decideLoading}
+                        className="px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        通过
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}

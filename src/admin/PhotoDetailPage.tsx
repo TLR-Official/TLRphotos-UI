@@ -22,6 +22,7 @@ import {
   Eye,
   ThumbsUp,
   ShieldAlert,
+  Gavel,
 } from 'lucide-react';
 import {
   getPhotoDetail,
@@ -361,6 +362,16 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
                 </p>
               </div>
             </div>
+            {/* V4.1.0：跳转用户封禁管理页预选该上传者 */}
+            {photo.user_id && (
+              <button
+                onClick={() => navigate(`/admin/bans?userId=${encodeURIComponent(photo.user_id!)}`)}
+                className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium transition-colors"
+              >
+                <Gavel className="w-4 h-4" />
+                处罚该用户
+              </button>
+            )}
           </InfoCard>
 
           {/* 用户填写信息 */}

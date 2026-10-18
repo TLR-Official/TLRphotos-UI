@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import type express from 'express';
 import { db } from '../db';
 import { createSession } from './cookieService';
+import { clearExpiredBan } from './penaltyService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
@@ -35,14 +36,18 @@ export interface User {
   email_verified: number;
   // V3.2.0 邮件验证周期化：最近一次邮箱验证成功时间（NULL=从未验证）
   last_email_verified_at?: string | null;
+  // V4.1.0 处罚分级与归属地：L3 限时封禁解禁时间 / 登录采集的归属省份 / 封禁管理授权
+  banned_until?: string | null;
+  region?: string | null;
+  can_ban_manage?: number;
   created_at: string;
   updated_at: string;
 }
 
 /** 用户查询统一列集（含密码哈希，调用方不得外泄） */
 const USER_COLUMNS = `id, email, password_hash, username, avatar_url, bio, website, location,
-  custom_fields, is_active, banned_at, can_upload, can_view, can_download, can_like,
-  email_verified, last_email_verified_at, created_at, updated_at`;
+  custom_fields, is_active, banned_at, banned_until, can_upload, can_view, can_download, can_like,
+  region, can_ban_manage, email_verified, last_email_verified_at, created_at, updated_at`;
 
 /**
  * 校验邮箱格式：含 @ 且域名含点，不允许空白。
@@ -139,9 +144,23 @@ export async function verifyPasswordOnly(email: string, password: string): Promi
   }
 
   // V1.7.0：先判封禁再判禁用，给出明确区分提示
+  // V4.1.0：L3 限时封禁（banned_until 非空）已到期则自愈清除并放行，永久封禁维持拒绝
   if (user.banned_at) {
+    if (await clearExpiredBan(user.id)) {
+      const healed = await findUserByEmail(email);
+      if (healed) {
+        return checkPasswordAndReturn(healed, password);
+      }
+    }
     throw new Error('该账号已被封禁');
   }
+  return checkPasswordAndReturn(user, password);
+}
+
+/**
+ * 禁用检查 + 密码比对（verifyPasswordOnly 的公共尾部，供自愈后复用）。
+ */
+async function checkPasswordAndReturn(user: User, password: string): Promise<User> {
   if (!user.is_active) {
     throw new Error('用户已被禁用');
   }
@@ -260,7 +279,17 @@ export async function loadAuthUser(req: express.Request): Promise<{ user: User |
   if (!user) {
     return { user: null, error: null };
   }
+  // V4.1.0：L3 限时封禁（banned_until 非空）已到期则自愈清除并放行，永久封禁维持 401
   if (user.banned_at) {
+    if (await clearExpiredBan(user.id)) {
+      const healed = await getUserById(userId);
+      if (healed) {
+        if (!healed.is_active) {
+          return { user: null, error: { code: 'USER_DISABLED', message: '用户已被禁用', status: 401 } };
+        }
+        return { user: healed, error: null };
+      }
+    }
     return { user: null, error: { code: 'USER_BANNED', message: '该账号已被封禁', status: 401 } };
   }
   if (!user.is_active) {

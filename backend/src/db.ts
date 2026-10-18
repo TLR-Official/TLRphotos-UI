@@ -387,8 +387,10 @@ const initSchema = async () => {
     -- (user_id, is_read) 复合索引：未读角标计数与"我的通知"列表高频查询
     CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
 
-    -- 处罚记录表（V4.0.0）：两级处罚留痕
-    -- level 1=限制上传（days 天后解禁，expires_at 非空）；level 2=封禁账号（expires_at 为空）
+    -- 处罚记录表（V4.0.0 两级留痕；V4.1.0 升级三级语义）：
+    -- level 1=警告（不限能力，主页公开展示，可撤销仅超管）；
+    -- level 2=功能封禁（capabilities 能力快照 + expires_at 期限，30~360 天，可解除）；
+    -- level 3=账号封禁（banned_at/banned_until 落 users 表，永久或限时）
     -- user_id 指向 users 表；对管理员（zone_auditor）的处罚同样落本表留痕，但不落 users 表效果
     CREATE TABLE IF NOT EXISTS penalties (
       id TEXT PRIMARY KEY,
@@ -430,6 +432,18 @@ const initSchema = async () => {
     );
     -- (article_id, sort_order)：详情按图序读取、列表取封面首图
     CREATE INDEX IF NOT EXISTS idx_news_images_article ON news_images(article_id, sort_order);
+
+    -- 公告横幅表（V4.1.0）：is_active=1 的公告按 created_at 倒序作为全站 Top Banner 展示
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      cover_url TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
 
   `);
 
@@ -532,6 +546,51 @@ const initSchema = async () => {
     await db.run('ALTER TABLE users ADD COLUMN upload_banned_until TEXT');
   } catch {}
 
+  // ==========================================================================
+  // V4.1.0 迭代：处罚分级与公告横幅
+  // penalties 加三级语义列（capabilities 能力快照 / revoked_at / revoked_by 撤销留痕）；
+  // users 加 L3 限时封禁解禁时间（banned_until）、归属省份（region，登录采集）、
+  // 封禁管理授权（can_ban_manage）；公告表 announcements 在基线 DDL 中创建
+  // ==========================================================================
+  try {
+    await db.run('ALTER TABLE penalties ADD COLUMN capabilities TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE penalties ADD COLUMN revoked_at TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE penalties ADD COLUMN revoked_by TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN banned_until TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN region TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_ban_manage INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  // V4.1.0 Wave 3A：权限项扩展至七项 — 评论与论坛发帖权限（1=允许，0=禁止）
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_comment INTEGER DEFAULT 1');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN can_forum_post INTEGER DEFAULT 1');
+  } catch {}
+
+  // 存量处罚语义一次性迁移（V4.0.0 两级 → V4.1.0 三级）：
+  // 旧 L1（限制上传）→ 现 L2 功能封禁（capabilities 快照 ["upload"]，期限沿用原 expires_at）；
+  // 旧 L2（封禁账号）→ 现 L3 账号封禁（capabilities ["all"]，users 表 banned_at 效果不变）。
+  // 幂等条件 = capabilities IS NULL（迁移后不再命中），新代码创建记录必写 capabilities
+  try {
+    await db.run(
+      `UPDATE penalties SET level = 2, capabilities = '["upload"]' WHERE level = 1 AND capabilities IS NULL`
+    );
+    await db.run(
+      `UPDATE penalties SET level = 3, capabilities = '["all"]' WHERE level = 2 AND capabilities IS NULL`
+    );
+  } catch {}
+
   // V1.13.0 管理员安全：强制改密标记 + JWT 版本号（改密即作废旧 JWT）
   try {
     await db.run('ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
@@ -622,22 +681,27 @@ const initSchema = async () => {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             banned_at TEXT,
+            banned_until TEXT,
             can_upload INTEGER DEFAULT 1,
             can_view INTEGER DEFAULT 1,
             can_download INTEGER DEFAULT 1,
             can_like INTEGER DEFAULT 1,
+            can_comment INTEGER DEFAULT 1,
+            can_forum_post INTEGER DEFAULT 1,
+            region TEXT,
+            can_ban_manage INTEGER NOT NULL DEFAULT 0,
             email_verified INTEGER NOT NULL DEFAULT 0
           );
         `);
         await db.exec(`
           INSERT INTO users_new
             (id, email, password_hash, username, avatar_url, bio, website, location, custom_fields,
-             wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at,
-             can_upload, can_view, can_download, can_like, email_verified)
+             wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, banned_until,
+             can_upload, can_view, can_download, can_like, can_comment, can_forum_post, region, can_ban_manage, email_verified)
           SELECT
             id, email, password_hash, username, avatar_url, bio, website, location, custom_fields,
-            wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at,
-            can_upload, can_view, can_download, can_like, email_verified
+            wechat_openid, qq_openid, is_active, created_at, updated_at, banned_at, banned_until,
+            can_upload, can_view, can_download, can_like, can_comment, can_forum_post, region, can_ban_manage, email_verified
           FROM users
         `);
         await db.exec('DROP TABLE users');

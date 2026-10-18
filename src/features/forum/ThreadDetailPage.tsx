@@ -64,7 +64,16 @@ export function ThreadDetailPage() {
       <article className="bg-white rounded-lg border border-gray-200 p-6">
         <h1 className="text-2xl font-bold text-black mb-3">{thread.title}</h1>
         <div className="flex items-center justify-between text-sm text-gray-500 mb-6">
-          <span>{thread.author_name} · {new Date(thread.created_at).toLocaleDateString('zh-CN')}</span>
+          <span>
+            {/* V4.1.0：作者名可点击跳转公开主页 */}
+            <Link
+              to={`/users/${thread.author_id}`}
+              className="transition-colors hover:text-blue-700 hover:underline"
+            >
+              {thread.author_name}
+            </Link>
+            {' '}· {new Date(thread.created_at).toLocaleDateString('zh-CN')}
+          </span>
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-500">{thread.reply_count} 回复 · {likeCount} 点赞 · {thread.view_count} 浏览</span>
             <button

@@ -39,6 +39,8 @@ import type { OtpScene } from '../services/otpService';
 import { sendMailCode } from '../services/aliMailService';
 import type { OtpServiceError } from '../services/aliMailService';
 import { db } from '../db';
+import { resolveRegion } from '../services/regionService';
+import { clearExpiredBan } from '../services/penaltyService';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -85,6 +87,26 @@ function getClientIp(req: express.Request): string {
              req.socket.remoteAddress ||
              'unknown';
   return Array.isArray(ip) ? ip[0] : ip;
+}
+
+/**
+ * 登录/注册成功后采集用户归属省份（V4.1.0）。
+ * 取 X-Forwarded-For 首段 → 离线 IP 库解析省份（无外部网络请求，失败存「未知」）→
+ * 写 users.region（只存省份、不落明文 IP）。任何异常吞掉，不影响登录主流程。
+ */
+async function recordUserRegion(userId: string, req: express.Request): Promise<void> {
+  try {
+    const xff = req.headers['x-forwarded-for'];
+    const firstSegment = (Array.isArray(xff) ? xff[0] : xff || '').split(',')[0].trim();
+    const region = resolveRegion(firstSegment);
+    await db.run('UPDATE users SET region = ?, updated_at = ? WHERE id = ?', [
+      region,
+      new Date().toISOString(),
+      userId,
+    ]);
+  } catch {
+    // 归属地采集失败不阻塞登录
+  }
 }
 
 // 头像上传 multer 配置：磁盘存储 + 5MB 限制 + 仅允许 JPG/PNG/WebP
@@ -363,6 +385,8 @@ router.post('/register', authLimiter, async (req, res) => {
     // 注册成功即完成登录验证：直接签发 JWT + 创建长期会话（remember 默认 true）
     const ipAddress = getClientIp(req);
     const result = await issueLoginResult(user, true, ipAddress);
+    // V4.1.0：注册成功采集归属省份（失败不影响注册）
+    await recordUserRegion(user.id, req);
 
     // 建立 168h 人机验证状态（与登录路径一致，注册后高危操作免重复验证）
     await saveVerification('user', user.id, getVerificationIp(req), 'register');
@@ -445,6 +469,7 @@ router.post('/login', authLimiter, async (req, res) => {
     // 测试兼容路径直接完成签发（不走验证码第二步）
     if (testBypass) {
       const result = await issueLoginResult(user, true, ipAddress);
+      await recordUserRegion(user.id, req);
       await saveVerification('user', user.id, vIp, 'login');
       return res.json({
         success: true,
@@ -475,6 +500,8 @@ router.post('/login', authLimiter, async (req, res) => {
       const lastVerifiedMs = Date.parse(user.last_email_verified_at);
       if (Number.isFinite(lastVerifiedMs) && Date.now() - lastVerifiedMs < intervalDays * 24 * 60 * 60 * 1000) {
         const result = await issueLoginResult(user, true, ipAddress);
+        // V4.1.0：邮箱码直签发路径同样采集归属省份
+        await recordUserRegion(user.id, req);
         await saveVerification('user', user.id, vIp, 'login');
         return res.json({
           success: true,
@@ -536,13 +563,22 @@ router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于
       return sendError(res, 401, 'INVALID_TICKET', '登录票据已失效，请重新登录');
     }
 
-    const user = await getUserById(payload.userId);
+    // V4.1.0：L3 限时封禁自愈可能重取用户行，声明为 let
+    let user = await getUserById(payload.userId);
     if (!user) {
       return sendError(res, 404, 'USER_NOT_FOUND', '用户不存在');
     }
-    // 封禁 / 禁用在出票后可能已发生，签发前必须复核
     if (user.banned_at) {
-      return sendError(res, 401, 'USER_BANNED', '该账号已被封禁');
+      if (await clearExpiredBan(user.id)) {
+        const healed = await getUserById(user.id);
+        if (healed) {
+          user = healed;
+        } else {
+          return sendError(res, 404, 'USER_NOT_FOUND', '用户不存在');
+        }
+      } else {
+        return sendError(res, 401, 'USER_BANNED', '该账号已被封禁');
+      }
     }
     if (!user.is_active) {
       return sendError(res, 401, 'USER_DISABLED', '用户已被禁用');
@@ -561,6 +597,8 @@ router.post('/login/verify', createRateLimiter({ max: 10, message: '尝试过于
 
     // 签发 JWT + 创建长期会话（remember 默认 true），建立 168h 人机验证状态
     const result = await issueLoginResult(user, true, getClientIp(req));
+    // V4.1.0：验证码登录成功采集归属省份
+    await recordUserRegion(user.id, req);
     await saveVerification('user', user.id, vIp, 'login');
 
     return res.json({
@@ -651,6 +689,8 @@ router.post('/email/bind', authLimiter, async (req, res) => {
         return sendError(res, 404, 'USER_NOT_FOUND', '用户不存在');
       }
       const result = await issueLoginResult(boundUser, true, getClientIp(req));
+      // V4.1.0：绑定邮箱完成登录路径同样采集归属省份
+      await recordUserRegion(boundUser.id, req);
       await saveVerification('user', boundUser.id, vIp, 'login');
       return res.json({
         success: true,

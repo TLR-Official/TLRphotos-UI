@@ -8,7 +8,7 @@
  *   - forum_moderator：仅论坛治理（V4 本轮占位页）；
  *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 
@@ -34,9 +34,11 @@ const menuItems = [
   { id: 'my-audits', label: '我的已处理', icon: ClipboardList },
   { id: 'admins', label: '管理员管理', icon: Users },
   { id: 'users', label: '用户管理', icon: FileText },
+  { id: 'bans', label: '用户封禁管理', icon: Gavel },
   { id: 'logs', label: '操作日志', icon: Settings },
   { id: 'forum', label: '论坛治理', icon: MessageSquare },
   { id: 'news', label: '新闻管理', icon: Newspaper },
+  { id: 'announcements', label: '公告管理', icon: Megaphone },
 ];
 
 /**
@@ -57,16 +59,16 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
 
   /**
    * 判断当前管理员是否可访问指定页面（V4.0.0 角色门）
-   * super 全部可见；zone_master 增加申诉裁决与我的已处理；
+   * super 全部可见；zone_master 增加申诉裁决、我的已处理与用户封禁管理（V4.1.0）；
    * zone_auditor 维持现状并扩展个人「我的已处理」；
-   * forum_moderator 仅论坛治理；news_editor 仅新闻管理（本轮占位）。
+   * forum_moderator 仅论坛治理；news_editor 仅新闻管理与公告管理（V4.1.0）。
    * @param page 页面标识
    * @returns 是否可访问
    */
   const canAccess = (page: string) => {
     if (admin.role === 'super') return true;
     if (admin.role === 'zone_master') {
-      return ['dashboard', 'photos', 'appeals', 'my-audits', 'admins', 'logs'].includes(page);
+      return ['dashboard', 'photos', 'appeals', 'my-audits', 'admins', 'logs', 'bans'].includes(page);
     }
     if (admin.role === 'zone_auditor') {
       return ['dashboard', 'photos', 'my-audits'].includes(page);
@@ -75,7 +77,7 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
       return ['forum'].includes(page);
     }
     if (admin.role === 'news_editor') {
-      return ['news'].includes(page);
+      return ['news', 'announcements'].includes(page);
     }
     return ['dashboard', 'photos'].includes(page);
   };

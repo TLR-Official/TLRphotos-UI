@@ -21,6 +21,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { createNotification } from '../services/notificationService';
+import { checkPenaltyCap } from '../services/penaltyService';
 
 const router = express.Router();
 
@@ -74,22 +75,19 @@ function normalizeIsHot(input: unknown): number {
 }
 
 /**
- * 上传禁令校验（V4.0.0 一级处罚）：检查 users.upload_banned_until 是否晚于当前时间。
- * 命中禁令返回 403 响应负载（code=UPLOAD_BANNED，message 含解禁时间 YYYY-MM-DD HH:mm）；
- * 未命中或未处罚返回 null。四条上传路径（direct /upload、/upload/presigned、
- * /upload/complete）在认证后统一调用本 helper，每请求仅查一次 users 表。
+ * 上传禁令校验（V4.1.0 处罚分级）：检查用户活跃 L2 处罚的 capabilities 快照是否封禁 upload 能力
+ * （expires_at 过期或已撤销的记录自动失效）。命中禁令返回 403 响应负载
+ * （code=UPLOAD_BANNED，message 含解禁时间 YYYY-MM-DD HH:mm，取自 penalty.expires_at）；
+ * 未命中或未处罚返回 null。三条上传路径（direct /upload、/upload/presigned、
+ * /upload/complete）在认证后统一调用本 helper。
  */
 async function checkUploadBan(
   userId: string
 ): Promise<{ status: number; payload: Record<string, unknown> } | null> {
-  const row = await db.get<{ upload_banned_until: string | null }>(
-    'SELECT upload_banned_until FROM users WHERE id = ?',
-    userId
-  );
-  const until = row?.upload_banned_until;
-  if (!until) return null;
+  const { banned, penalty } = await checkPenaltyCap(userId, 'upload');
+  if (!banned || !penalty?.expires_at) return null;
 
-  const untilMs = new Date(until).getTime();
+  const untilMs = Date.parse(penalty.expires_at);
   if (!Number.isFinite(untilMs) || untilMs <= Date.now()) return null;
 
   // 解禁时间格式化为本地时区 YYYY-MM-DD HH:mm
@@ -694,6 +692,17 @@ router.get('/image/*', async (req: any, res) => {
       }
       if (!isDownload && !authUser.can_view) {
         return res.status(403).json({ success: false, message: '您已被禁止查看图片', code: 'PERMISSION_DENIED' });
+      }
+      // V4.1.0：L2 处罚下载封禁执法点（匿名下载已在上方 401，此处仅登录用户下载时检查）
+      if (isDownload) {
+        const { banned } = await checkPenaltyCap(authUser.id, 'download');
+        if (banned) {
+          return res.status(403).json({
+            success: false,
+            code: 'DOWNLOAD_BANNED',
+            message: '您的账号下载功能已被限制，如有疑问请联系管理员',
+          });
+        }
       }
     }
 

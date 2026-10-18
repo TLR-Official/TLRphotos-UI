@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -319,24 +319,50 @@ export async function decideAppeal(id: string, decision: 'approve' | 'reject', r
 }
 
 /**
- * 对用户实施处罚（V4.0.0，高危操作需人机验证门）
- * 一级=限制上传 N 天（days 1-365），二级=永久封禁并强制下线；处罚自动推送通知。
+ * 对用户实施三级处罚（V4.1.0，高危操作需人机验证门）
+ * 一级=警告（仅留痕）；二级=功能封禁（capabilities 非空子集 + days 30~360）；
+ * 三级=账号封禁（days 可选，缺省永久）。处罚自动推送通知。
  * @param id 用户 id
- * @param level 处罚级别
- * @param reason 处罚原因（必填）
- * @param days 一级处罚的禁传天数（1-365）
+ * @param level 处罚级别 1|2|3
+ * @param reason 处罚原因（必填 ≤500 字）
+ * @param capabilities 二级必填：封禁能力数组（upload/comment/forum_post/download 子集）
+ * @param days 二级必填 30~360；三级可选（缺省永久）
  */
-export async function penalizeUser(id: string, level: 1 | 2, reason: string, days?: number): Promise<{ success: boolean; message?: string; data?: { penalty_id: string; level: number; expires_at?: string } }> {
+export async function penalizeUser(
+  id: string,
+  level: 1 | 2 | 3,
+  reason: string,
+  capabilities?: string[],
+  days?: number
+): Promise<{ success: boolean; message?: string; code?: string; data?: Penalty }> {
   const response = await fetch(`${API_BASE}/users/${id}/penalty`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ level, reason, ...(level === 1 ? { days } : {}) }),
+    body: JSON.stringify({
+      level,
+      reason,
+      ...(level === 2 ? { capabilities } : {}),
+      ...(level === 2 || (level === 3 && days !== undefined) ? { days } : {}),
+    }),
   });
   return response.json();
 }
 
 /**
- * 查询指定用户的处罚历史（V4.0.0）
+ * 撤销/解除处罚（V4.1.0）
+ * L1 撤销仅 super；L2/L3 解除需 super/zone_master（其余 403 BAN_MANAGE_DENIED）。
+ * @param id 处罚记录 id
+ */
+export async function revokePenalty(id: string): Promise<{ success: boolean; message?: string; code?: string; data?: { id: string; level: number; revoked_at: string } }> {
+  const response = await fetch(`${API_BASE}/penalties/${id}/revoke`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 查询指定用户的处罚历史（V4.0.0；V4.1.0 返回三级字段与撤销留痕）
  * @param id 用户 id
  */
 export async function getUserPenalties(id: string): Promise<{ success: boolean; data?: Penalty[]; message?: string }> {
@@ -374,40 +400,14 @@ export async function toggleUser(id: string): Promise<{ success: boolean; messag
 }
 
 /**
- * 封禁用户（V1.7.0）
- * 封禁后用户无法登录，现有会话立即失效（强制下线）。
- * @param id 用户 id
- */
-export async function banUser(id: string): Promise<{ success: boolean; message?: string }> {
-  const response = await fetch(`${API_BASE}/users/${id}/ban`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.json();
-}
-
-/**
- * 解封用户（V1.7.0）
- * 清除封禁标记，用户可重新登录。
- * @param id 用户 id
- */
-export async function unbanUser(id: string): Promise<{ success: boolean; message?: string }> {
-  const response = await fetch(`${API_BASE}/users/${id}/unban`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.json();
-}
-
-/**
- * 更新用户功能权限（V1.7.0）
+ * 更新用户功能权限（V1.7.0；V4.1.0 扩展至七项）
  * @param id 用户 id
  * @param perms 待变更的权限字段（仅传需变更项，0/1）
  */
 export async function updateUserPermissions(
   id: string,
-  perms: Partial<{ can_upload: number; can_view: number; can_download: number; can_like: number }>
-): Promise<{ success: boolean; message?: string; data?: { can_upload: number; can_view: number; can_download: number; can_like: number } }> {
+  perms: Partial<{ can_upload: number; can_view: number; can_download: number; can_like: number; can_comment: number; can_forum_post: number; can_ban_manage: number }>
+): Promise<{ success: boolean; message?: string; code?: string; data?: Pick<User, 'can_upload' | 'can_view' | 'can_download' | 'can_like' | 'can_comment' | 'can_forum_post' | 'can_ban_manage'> }> {
   const response = await fetch(`${API_BASE}/users/${id}/permissions`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -578,6 +578,75 @@ export async function updateNews(id: string, data: NewsSavePayload): Promise<{ s
  */
 export async function deleteNews(id: string): Promise<{ success: boolean; message?: string }> {
   const response = await fetch(`${API_BASE}/news/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 公告管理（V4.1.0）：仅 super / news_editor 角色可访问（后端专属门禁）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 公告管理列表（含已下线，按创建时间倒序）
+ * @param page 页码（默认 1）
+ * @param pageSize 每页数量（默认 20，上限 50）
+ */
+export async function getAnnouncements(page = 1, pageSize = 20): Promise<{ success: boolean; data?: { items: Announcement[]; total: number; page: number; page_size: number }; message?: string }> {
+  const response = await fetch(`${API_BASE}/announcements?page=${page}&page_size=${pageSize}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 创建公告（创建即上线，下线走 toggle）
+ * @param data 标题（≤100 字必填）/ 正文（≤5000 字必填）/ 封面 URL（可选 http(s) ≤500）
+ * @returns 失败携带 code（ANNOUNCEMENT_FIELDS_INVALID / ANNOUNCEMENT_DENIED）
+ */
+export async function createAnnouncement(data: AnnouncementPayload): Promise<{ success: boolean; data?: { id: string }; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/announcements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/**
+ * 编辑公告（同创建校验）
+ * @param id 公告 id
+ * @param data 同创建请求体
+ */
+export async function updateAnnouncement(id: string, data: AnnouncementPayload): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/announcements/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/**
+ * 公告上线/下线切换
+ * @param id 公告 id
+ * @returns data.is_active 为切换后的新状态
+ */
+export async function toggleAnnouncement(id: string): Promise<{ success: boolean; data?: { is_active: number }; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/announcements/${id}/toggle`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 删除公告（硬删，删除前页面侧须二次确认）
+ * @param id 公告 id
+ */
+export async function deleteAnnouncement(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/announcements/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

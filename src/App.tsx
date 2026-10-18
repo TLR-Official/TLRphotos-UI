@@ -18,7 +18,7 @@ import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { MyWorksPage } from './features/profile/MyWorksPage';
-import { UserProfilePage } from './features/profile/UserProfilePage';
+import { PublicProfilePage } from './features/user/PublicProfilePage';
 import { UploadPage } from './features/upload/UploadPage';
 import { AdminApp } from './admin/AdminApp';
 import { ForumHomePage } from './features/forum/ForumHomePage';
@@ -31,6 +31,7 @@ import { NewsDetailPage } from './features/news/NewsDetailPage';
 import { NotificationPage } from './features/notifications/NotificationPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
+import { TopBanner } from './shared/TopBanner';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider } from './shared/ThemeContext';
 import { CachedImage } from './components/CachedImage';
@@ -80,6 +81,8 @@ function AppRouterContent() {
 
   return (
     <div className="relative z-10 flex flex-col min-h-screen">
+      {/* 站点公告横幅：置于 Header 之上，管理后台不渲染（V4.1.0） */}
+      {!isAdminPage && <TopBanner />}
       {!isAdminPage && <Header />}
 
       <main className="flex-1">
@@ -90,7 +93,7 @@ function AppRouterContent() {
           <Route path="/auth" element={<div className="px-4 py-8"><AuthPage /></div>} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/my-works" element={<MyWorksPage />} />
-          <Route path="/users/:userId" element={<UserProfilePage />} />
+          <Route path="/users/:userId" element={<PublicProfilePage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
           <Route path="/forum" element={<ForumHomePage />} />

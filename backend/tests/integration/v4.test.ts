@@ -685,80 +685,72 @@ describe('申诉（V4.0.0）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 两级处罚与上传禁令（放最后，避免封禁影响其他套件）
+// 三级处罚与执法挂接（放最后，避免封禁影响其他套件）
 // ═══════════════════════════════════════════════════════════════════════════
-describe('两级处罚与上传禁令（V4.0.0）', () => {
-  it('参数校验：非法 level / 缺原因 / 非法 days 均应 400', async () => {
-    const base = { level: 1, reason: '测试', days: 7 };
-
+describe('三级处罚与执法挂接（V4.1.0）', () => {
+  it('参数校验：非法 level / 缺原因 / 超长原因均应 400', async () => {
     const badLevel = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ ...base, level: 3 });
+      .send({ level: 4, reason: '测试' });
     expect(badLevel.status).toBe(400);
 
     const noReason = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, days: 7 });
+      .send({ level: 1 });
     expect(noReason.status).toBe(400);
 
-    const noDays = await request(app)
+    const longReason = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, reason: '测试' });
-    expect(noDays.status).toBe(400);
-
-    const bigDays = await request(app)
-      .post(`/api/admin/users/${TEST_USER_C}/penalty`)
-      .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, reason: '测试', days: 366 });
-    expect(bigDays.status).toBe(400);
-
-    const zeroDays = await request(app)
-      .post(`/api/admin/users/${TEST_USER_C}/penalty`)
-      .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, reason: '测试', days: 0 });
-    expect(zeroDays.status).toBe(400);
+      .send({ level: 1, reason: '超'.repeat(501) });
+    expect(longReason.status).toBe(400);
   });
 
   it('zone_auditor 无处罚权限（403）', async () => {
     const res = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${zoneAuditorToken}`)
-      .send({ level: 1, reason: '越权测试', days: 7 });
+      .send({ level: 1, reason: '越权测试' });
     expect(res.status).toBe(403);
   });
 
-  it('一级处罚应写 upload_banned_until 并通知', async () => {
+  it('二级处罚（仅上传）应写 capabilities 快照且不改 users 表并通知', async () => {
     const before = Date.now();
     const res = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, reason: '频繁上传违规素材', days: 7 });
+      .send({ level: 2, reason: '频繁上传违规素材', capabilities: ['upload'], days: 60 });
     expect(res.status).toBe(200);
+    expect(res.body.data.capabilities).toEqual(['upload']);
 
-    const user = await db.get<any>('SELECT upload_banned_until FROM users WHERE id = ?', TEST_USER_C);
-    expect(user.upload_banned_until).toBeTruthy();
-    const untilMs = new Date(user.upload_banned_until).getTime();
-    expect(untilMs).toBeGreaterThan(before);
-    // 约 7 天（允许 1 分钟误差）
-    expect(untilMs - before).toBeGreaterThanOrEqual(7 * 86400000 - 60000);
-
-    // 处罚记录留痕
+    // 处罚记录留痕：能力快照 + 期限
     const penalty = await db.get<any>(
-      'SELECT level, days, expires_at FROM penalties WHERE user_id = ?',
+      'SELECT level, days, expires_at, capabilities FROM penalties WHERE user_id = ?',
       TEST_USER_C
     );
-    expect(penalty.level).toBe(1);
-    expect(penalty.days).toBe(7);
-    expect(penalty.expires_at).toBe(user.upload_banned_until);
+    expect(penalty.level).toBe(2);
+    expect(penalty.days).toBe(60);
+    expect(JSON.parse(penalty.capabilities)).toEqual(['upload']);
+    const untilMs = new Date(penalty.expires_at).getTime();
+    expect(untilMs).toBeGreaterThan(before);
+    // 约 60 天（允许 1 分钟误差）
+    expect(untilMs - before).toBeGreaterThanOrEqual(60 * 86400000 - 60000);
+
+    // 二级不写 users 表（执法动态判断）
+    const user = await db.get<any>(
+      'SELECT upload_banned_until, banned_at FROM users WHERE id = ?',
+      TEST_USER_C
+    );
+    expect(user.upload_banned_until).toBeNull();
+    expect(user.banned_at).toBeNull();
 
     // 处罚通知
     expect(await countNotifications(TEST_USER_C, 'penalty')).toBe(1);
   });
 
-  it('一级处罚后 /upload/complete 应返回 403 UPLOAD_BANNED', async () => {
+  it('二级封禁上传后 /upload/complete 应返回 403 UPLOAD_BANNED', async () => {
     const res = await request(app)
       .post('/api/photos/upload/complete')
       .set('Authorization', `Bearer ${tokenC}`)
@@ -768,7 +760,7 @@ describe('两级处罚与上传禁令（V4.0.0）', () => {
     expect(res.body.message).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/); // message 含解禁时间
   });
 
-  it('一级处罚后 direct /upload 应在文件解析前返回 403 UPLOAD_BANNED', async () => {
+  it('二级封禁上传后 direct /upload 应在文件解析前返回 403 UPLOAD_BANNED', async () => {
     const res = await request(app)
       .post('/api/photos/upload')
       .set('Authorization', `Bearer ${tokenC}`)
@@ -777,7 +769,7 @@ describe('两级处罚与上传禁令（V4.0.0）', () => {
     expect(res.body.code).toBe('UPLOAD_BANNED');
   });
 
-  it('一级处罚后 /upload/presigned 应返回 403 UPLOAD_BANNED', async () => {
+  it('二级封禁上传后 /upload/presigned 应返回 403 UPLOAD_BANNED', async () => {
     const res = await request(app)
       .post('/api/photos/upload/presigned')
       .set('Authorization', `Bearer ${tokenC}`)
@@ -796,13 +788,15 @@ describe('两级处罚与上传禁令（V4.0.0）', () => {
     expect(res.body.code).not.toBe('UPLOAD_BANNED');
   });
 
-  it('处罚历史列表应返回记录', async () => {
+  it('处罚历史列表应返回记录且 capabilities 解析为数组', async () => {
     const res = await request(app)
       .get(`/api/admin/users/${TEST_USER_C}/penalties`)
       .set('Authorization', `Bearer ${superAdminToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBe(1);
-    expect(res.body.data[0].level).toBe(1);
+    expect(res.body.data[0].level).toBe(2);
+    expect(res.body.data[0].capabilities).toEqual(['upload']);
+    expect(res.body.data[0].revoked_at).toBeNull();
     expect(res.body.data[0].created_by_name).toBe('v4superadmin');
   });
 
@@ -810,22 +804,35 @@ describe('两级处罚与上传禁令（V4.0.0）', () => {
     const res = await request(app)
       .post('/api/admin/users/nonexistent-user/penalty')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 1, reason: '测试', days: 7 });
+      .send({ level: 1, reason: '测试' });
     expect(res.status).toBe(404);
   });
 
-  it('二级处罚应写 banned_at、停用账号并强制下线', async () => {
+  it('三级处罚（永久）应写 banned_at、停用账号并强制下线', async () => {
     const res = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 2, reason: '多次违规累犯' });
+      .send({ level: 3, reason: '多次违规累犯' });
     expect(res.status).toBe(200);
 
-    const user = await db.get<any>('SELECT banned_at, is_active FROM users WHERE id = ?', TEST_USER_C);
+    const user = await db.get<any>(
+      'SELECT banned_at, banned_until, is_active FROM users WHERE id = ?',
+      TEST_USER_C
+    );
     expect(user.banned_at).toBeTruthy();
+    expect(user.banned_until).toBeNull(); // 永久封禁无解禁时间
     expect(user.is_active).toBe(0);
 
-    // 二级处罚通知
+    // 三级处罚记录：capabilities='["all"]'，无期限
+    const penalty = await db.get<any>(
+      'SELECT level, capabilities, expires_at FROM penalties WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+      TEST_USER_C
+    );
+    expect(penalty.level).toBe(3);
+    expect(JSON.parse(penalty.capabilities)).toEqual(['all']);
+    expect(penalty.expires_at).toBeNull();
+
+    // 三级处罚通知
     expect(await countNotifications(TEST_USER_C, 'penalty')).toBe(2);
 
     // 被封禁用户再访问需鉴权接口 → 401
@@ -833,13 +840,14 @@ describe('两级处罚与上传禁令（V4.0.0）', () => {
       .get('/api/notifications/unread-count')
       .set('Authorization', `Bearer ${tokenC}`);
     expect(bannedRes.status).toBe(401);
+    expect(bannedRes.body.code).toBe('USER_BANNED');
   });
 
-  it('对已封禁用户重复二级处罚应返回 400', async () => {
+  it('对已封禁用户重复三级处罚应返回 400', async () => {
     const res = await request(app)
       .post(`/api/admin/users/${TEST_USER_C}/penalty`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ level: 2, reason: '重复封禁' });
+      .send({ level: 3, reason: '重复封禁' });
     expect(res.status).toBe(400);
   });
 });

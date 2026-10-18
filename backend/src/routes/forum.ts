@@ -10,6 +10,7 @@ import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
 import { loadAuthUser } from '../services/authService';
 import { ensureHumanVerified } from '../services/verificationService';
 import { deleteFromOSS } from '../services/ossService';
+import { checkPenaltyCap } from '../services/penaltyService';
 
 const router = express.Router();
 const CLIENT_IP_HEADER = 'x-forwarded-for';
@@ -112,6 +113,23 @@ router.post('/threads', requireVerifiedEmail, async (req, res) => {
     if (!authUser) {
       return res.status(401).json({ success: false, message: '未登录' });
     }
+
+    // V4.1.0 Wave 3A：论坛发帖权限项检查（管理员可单独关闭用户发帖能力，V1.7.0 权限检查模式）
+    const postPerm = await db.get<{ can_forum_post: number }>('SELECT can_forum_post FROM users WHERE id = ?', [authUser.id]);
+    if (postPerm && !postPerm.can_forum_post) {
+      return res.status(403).json({ success: false, code: 'PERMISSION_DENIED', message: '您已被禁止在论坛发帖' });
+    }
+
+    // V4.1.0：L2 处罚论坛发帖封禁执法点（认证后、业务逻辑前拦截）
+    const { banned: postBanned } = await checkPenaltyCap(authUser.id, 'forum_post');
+    if (postBanned) {
+      return res.status(403).json({
+        success: false,
+        code: 'FORUM_POST_BANNED',
+        message: '您的账号发帖功能已被限制，如有疑问请联系管理员',
+      });
+    }
+
     const denied = await ensureHumanVerified('user', authUser.id, req);
     if (denied) {
       return res.status(denied.status).json(denied.payload);

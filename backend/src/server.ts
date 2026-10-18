@@ -27,6 +27,8 @@ import notificationsRouter from './routes/notifications';
 import myAppealsRouter from './routes/myAppeals';
 import aboutRouter from './routes/about';
 import newsRouter, { adminNewsRouter } from './routes/news';
+import usersRouter from './routes/users';
+import announcementsRouter, { adminAnnouncementsRouter } from './routes/announcements';
 import { commentArchiveService } from './services/commentArchiveService';
 import { initDb, db } from './db';
 import { initTagsDb } from './db/tagsDb';
@@ -76,6 +78,8 @@ app.use('/api/tags', tagsRouter);
 app.use('/api/admin/comments', adminCommentsRouter);
 // V4.0.0：新闻管理端须先于 /api/admin 挂载（更具体路径优先）
 app.use('/api/admin/news', adminNewsRouter);
+// V4.1.0：公告管理端须先于 /api/admin 挂载（更具体路径优先）
+app.use('/api/admin/announcements', adminAnnouncementsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/forum', forumRouter);
@@ -87,6 +91,9 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/my-appeals', myAppealsRouter);
 app.use('/api/about', aboutRouter);
 app.use('/api/news', newsRouter);
+// V4.1.0：公开用户主页 / 公告横幅
+app.use('/api/users', usersRouter);
+app.use('/api/announcements', announcementsRouter);
 
 // 静态资源：文章 Markdown 原文与上传文件目录
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));

@@ -5,7 +5,7 @@
 - **基础路径**: `/api`
 - **后端地址**: `http://localhost:3001`
 - **数据格式**: JSON
-- **文档版本**: V4.0.0-beta（2026-10-17，同步 V4 迭代：通知中心 / 审核召回与处罚 / 申诉双向回执 / 论坛治理 / 新闻区 / 关于我们）
+- **文档版本**: V4.1.0-beta（2026-10-18，同步 V4.1 迭代：处罚三级分级（警告/功能封禁/账号封禁）与撤销 / 功能权限扩至七项 / 公开用户主页三端点 / 公告横幅 / 评论·论坛·下载执法点 / region 省份采集）
 - **统一响应格式**:
   ```json
   {
@@ -275,6 +275,7 @@
 - 匿名访客普通访问放行；`download=1` 需登录，返回 `401 { code: "AUTH_REQUIRED" }`
 - 被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`
 - 登录用户 `can_view=0` 普通访问返回 `403`；`can_download=0` 且 `download=1` 返回 `403`
+- **V4.1.0 下载处罚封禁**：登录用户 `download=1` 时校验活跃二级处罚 capabilities 是否含 `download`，命中返回 `403 { code: "DOWNLOAD_BANNED", message: "您的账号下载功能已被限制，如有疑问请联系管理员" }`。下载禁令仅对登录用户生效（匿名下载本就 401 需登录，匿名访客无此处罚拦截点）
 
 **响应**: 二进制图片流（`Content-Type` 透传 OSS，如 `image/webp`/`image/jpeg`）。
 
@@ -283,7 +284,7 @@
 - 浏览器原生流式下载到磁盘，无需前端 fetch blob 全量加载到内存，速度最快
 - 未审核照片仅所有者（带 `Authorization` 头）可下载；已审核照片为公开资源，任何人可下载
 
-> **V4.0.0 一级处罚上传禁令**：三个上传端点（`/upload`、`/upload/presigned`、`/upload/complete`）在认证后统一校验 `users.upload_banned_until`，处罚未到期返回 `403 { success: false, code: "UPLOAD_BANNED", message: "您的账号已被限制上传至 YYYY-MM-DD HH:mm，在此期间无法上传新作品" }`（解禁时间为服务器本地时区；直传路径在文件解析前拦截，被处罚请求不进入 multer 缓冲）。处罚来源见 [处罚用户](#处罚用户一级--二级)。
+> **V4.1.0 处罚分级上传禁令**：三个上传端点（`/upload`、`/upload/presigned`、`/upload/complete`）在认证后统一校验活跃二级处罚（L2 功能封禁）的 capabilities 快照是否封禁 `upload` 能力（已撤销/已过期记录自动失效），命中返回 `403 { success: false, code: "UPLOAD_BANNED", message: "您的账号已被限制上传至 YYYY-MM-DD HH:mm，在此期间无法上传新作品" }`（解禁时间取自 `penalties.expires_at`，服务器本地时区；直传路径在文件解析前拦截，被处罚请求不进入 multer 缓冲）。处罚来源见 [三级处罚体系说明](#三级处罚体系说明v410)。
 
 ### 获取预签名上传地址
 
@@ -651,6 +652,8 @@ Content-Type: multipart/form-data
 
 **POST** `/api/comments`（须登录且邮箱已确权）
 
+> **V4.1.0 执法门**（认证后、业务逻辑前依次检查）：`can_comment=0` → `403 { code: "PERMISSION_DENIED", message: "您已被禁止发表评论" }`；活跃二级处罚 capabilities 含 `comment` → `403 { code: "COMMENT_BANNED", message: "您的账号评论功能已被限制，如有疑问请联系管理员" }`。照片评论与帖子回复共用本入口。
+
 **请求体**：
 ```json
 {
@@ -746,6 +749,8 @@ Content-Type: multipart/form-data
 | PARENT_SUBJECT_MISMATCH | 400 | 不能跨主题回复 |
 | AUTH_REQUIRED | 401 | 未登录 |
 | EMAIL_VERIFICATION_REQUIRED | 403 | 邮箱未确权 |
+| PERMISSION_DENIED | 403 | 管理员已关闭该用户评论能力（`can_comment=0`，V4.1.0） |
+| COMMENT_BANNED | 403 | 活跃二级处罚封禁评论能力（V4.1.0） |
 | HUMAN_VERIFICATION_REQUIRED | 403 | 删除缺少人机验证状态 |
 | COMMENT_DELETE_FORBIDDEN | 403 | 无权删除 |
 | SUBJECT_NOT_FOUND | 404 | 评论主题不存在 |
@@ -1240,6 +1245,102 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 
 ---
 
+## 公开用户主页 (Public Users, V4.1.0)
+
+公开用户主页三端点，挂载于 `/api/users`，均无强制鉴权（携带用户 JWT 时用于 `is_self` 判定，无效令牌按匿名处理），限速 **120 次/分/IP**（超限 429 `RATE_LIMITED`）。
+
+**隐私红线**：三端点响应绝不包含 email/IP/`banned_until`/`can_ban_manage` 等隐私或管理字段；`region` 仅存登录时离线解析的省份（不落明文 IP）；待审核/未通过作品不对他人公开（仅本人访问返回计数）。
+
+**错误**：目标用户不存在（或 id 为空）返回 `404 { success: false, code: "USER_NOT_FOUND", message: "用户不存在" }`。
+
+### 获取公开用户档案
+
+**GET** `/api/users/:id/profile`
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "user_1234567890123",
+    "username": "飞友甲",
+    "avatar_url": null,
+    "region": "广东",
+    "joined_days": 64,
+    "is_self": false,
+    "approved_count": 12,
+    "total_views": 3456,
+    "public_penalties": [
+      { "level": 2, "reason": "恶意刷评", "expires_at": "2026-11-17T08:00:00.000Z", "created_at": "2026-10-18T08:00:00.000Z" }
+    ]
+  }
+}
+```
+
+**字段说明**：
+- `region`：归属省份（登录/注册成功时经 ip2region 离线解析写入 `users.region`，只存省份、不存明文 IP；解析失败静默跳过不影响登录），无数据时兜底「未知」
+- `joined_days`：加入天数（注册至今取整，最小 0）
+- `public_penalties`：当前活跃处罚公开信息（已撤销/已过期自动过滤），仅映射 `level`/`reason`/`expires_at`/`created_at` 四字段，不含 capabilities 与撤销留痕等内部字段
+- `is_self`：请求 JWT 解析出的用户与目标一致时为 `true`；本人访问额外返回 `pending_count`/`rejected_count`（待审核/未通过作品计数，他人不可见）
+
+### 获取用户公开作品列表
+
+**GET** `/api/users/:id/photos?page=1&page_size=12&category=aviation`
+
+仅返回 `status=approved` 的作品；`page` 默认 1，`page_size` 默认 12、上限 50；`category` 可选分区筛选（aviation/railway/automobile，参数化精确匹配）。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "000001",
+        "title": "城市天际线",
+        "thumbnail_path": "/api/photos/image/photos%2Fthumbnails%2F000001_thumb.webp?photoId=000001",
+        "preview_url": "/api/photos/image/photos%2Fpreview%2F000001_preview.webp?photoId=000001",
+        "tags": ["城市", "航拍"],
+        "width": 1200,
+        "height": 800,
+        "category": "aviation",
+        "likes": 1256,
+        "views": 8932,
+        "created_at": "2024-05-15T18:30:00Z"
+      }
+    ],
+    "total": 12,
+    "page": 1,
+    "page_size": 12
+  }
+}
+```
+
+缩略图/预览图均转换为代理 URL（`preview_url` 缺失时为 `null`）；`tags` 解析为字符串数组。
+
+### 获取用户公开论坛发帖记录
+
+**GET** `/api/users/:id/threads?page=1&page_size=10`
+
+仅返回 `status=published` 的帖子；`page` 默认 1，`page_size` 默认 10、上限 50。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      { "id": "uuid", "title": "帖子标题", "board_id": "aviation", "reply_count": 3, "like_count": 5, "created_at": "2026-10-17T08:00:00.000Z" }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 10
+  }
+}
+```
+
+---
+
 ## 人机验证 (Human Verification, V1.8.0)
 
 基于 Cloudflare Turnstile 的人机认证机制，保护所有高危操作。
@@ -1272,6 +1373,8 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 | /api/admin/users/:id/unban | POST | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/permissions | PUT | admin_user_admin | 403 验证门 |
 | /api/admin/users/:id/email | PUT | admin_user_admin | 403 验证门（V2.0.0 新增） |
+| /api/admin/users/:id/penalty | POST | admin_user_admin | 403 验证门（V4.1.0 新增） |
+| /api/admin/penalties/:id/revoke | POST | admin_user_admin | 403 验证门（V4.1.0 新增） |
 
 ### 验证门拦截响应（403）
 
@@ -1539,6 +1642,8 @@ Authorization: Bearer <admin_token>
 }
 ```
 
+> **V4.1.0 新增列**：用户行现含 `banned_until`（L3 限时封禁解禁时间，永久封禁为 `null`）、`region`（归属省份，登录/注册时离线解析、仅存省份不存明文 IP）、`can_comment` / `can_forum_post` / `can_ban_manage`（权限项扩至七项的补充三项）。
+
 ### 切换用户启用/禁用
 
 **PUT** `/api/admin/users/:id/toggle`
@@ -1578,11 +1683,13 @@ Authorization: Bearer <admin_token>
 
 **审计日志**：`action=unban_user`。
 
-### 更新用户功能权限（V1.7.0 新增）
+### 更新用户功能权限（V1.7.0 新增 / V4.1.0 扩至七项）
 
 **PUT** `/api/admin/users/:id/permissions`
 
-**说明**：精细化权限控制 — 单独禁用/启用上传、查看、下载、点赞。仅传需变更的字段（0 或 1），未传字段不变。
+**鉴权**：`super` + 管理员人机验证门（`ensureHumanVerified`，168h 内同 IP 免重复挑战）。
+
+**说明**：精细化权限控制 — 单独禁用/启用上传、查看、下载、点赞、评论、论坛发帖与封禁管理授权。仅传需变更的字段（0 或 1），未传字段不变；与当前值相同的传入不产生变更记录。
 
 **请求体**（所有字段可选）:
 ```json
@@ -1590,7 +1697,10 @@ Authorization: Bearer <admin_token>
   "can_upload": 0,
   "can_view": 1,
   "can_download": 0,
-  "can_like": 1
+  "can_like": 1,
+  "can_comment": 1,
+  "can_forum_post": 0,
+  "can_ban_manage": 0
 }
 ```
 
@@ -1601,17 +1711,22 @@ Authorization: Bearer <admin_token>
 | can_view | 登录态无法查看图片详情/代理图（匿名仍可公开浏览已审核照片） | GET /:id, GET /image/* → 403 |
 | can_download | 无法下载图片（下载需登录） | GET /image/*?download=1 → 403 |
 | can_like | 无法点赞或取消点赞 | POST/DELETE /:id/like → 403 |
+| can_comment | 无法发表评论（V4.1.0 新增） | POST /api/comments → 403 `PERMISSION_DENIED` |
+| can_forum_post | 无法在论坛发帖（V4.1.0 新增） | POST /api/forum/threads → 403 `PERMISSION_DENIED` |
+| can_ban_manage | 封禁管理授权位（V4.1.0 新增）：仅存储与展示，暂无普通用户执法点 | — |
 
 **响应**:
 ```json
 {
   "success": true,
   "message": "权限已更新",
-  "data": { "can_upload": 0, "can_view": 1, "can_download": 0, "can_like": 1 }
+  "data": { "can_upload": 0, "can_view": 1, "can_download": 0, "can_like": 1, "can_comment": 1, "can_forum_post": 0, "can_ban_manage": 0 }
 }
 ```
 
-**审计日志**：`action=update_permissions`，`details` 含 `changes` 对象记录每项 `from→to`。
+无实际变更时返回 `message: "权限未变更"` 与当前七项值。目标用户不存在返回 404。
+
+**审计日志**：`action=update_permissions`，`details` 含 `changes` 对象记录每项 `from→to`（仅记录实际发生变更的字段）。
 
 ### 超管代改用户邮箱（V2.0.0 新增）
 
@@ -1753,7 +1868,7 @@ Authorization: Bearer <admin_token>
 | photo_liked | 作品收到新点赞（仅点赞状态 false→true 的新增点赞；取消点赞、自赞不通知） | photo |
 | photo_downloaded | 作品被他人下载（同一照片 + 下载人 24h 内仅通知一次） | photo |
 | photo_hot | 管理员确认作品为热门（重复确认幂等不重复通知） | photo |
-| penalty | 一级处罚（限制上传）/ 二级处罚（封禁），通知标题按级别区分 | penalty |
+| penalty | 三级处罚（警告/功能封禁/账号封禁，标题按级别区分）与处罚撤销回执（标题「处罚已撤销」）（V4.1.0 三级语义） | penalty |
 | appeal_approved | 申诉裁决通过，作品恢复「已通过」（回执含答复内容） | appeal |
 | appeal_rejected | 申诉裁决驳回，作品维持「未通过」（回执含答复内容） | appeal |
 | photo_recalled | 作品被召回重新审核（仅超窗召回通知，窗口内静默召回不通知） | photo |
@@ -1915,6 +2030,7 @@ Authorization: Bearer <admin_token>
 
 - `forum_moderator`（论坛管理员）与 `news_editor`（新闻编辑）为 V4.0.0 新增角色：前者**仅论坛治理**、后者**仅新闻区**，均无照片审核与用户处罚权限（照片审核角色白名单 `PHOTO_AUDIT_ROLES` 锁定为 super/zone_master/zone_auditor）。
 - 角色不符统一返回 `403 { success: false, message: "权限不足" }`。
+- **V4.1.0 处罚撤销权限与发起权限分离**：L1 警告仅 `super` 可撤销；L2/L3 由 `super`/`zone_master` 撤销（其他角色 `403 BAN_MANAGE_DENIED`），详见[撤销/解除处罚](#撤销解除处罚)。
 
 ### 审核通过 / 驳回（V4.0.0 补记 reviewed_by / reviewed_at）
 
@@ -2023,37 +2139,118 @@ Authorization: Bearer <admin_token>
 
 `data` 为照片全字段行（移除 `altitude`，缩略图地址已转换为代理 URL）。
 
-### 处罚用户（一级 / 二级）
+### 三级处罚体系说明（V4.1.0）
+
+处罚统一落 `penalties` 表留痕并通知被处罚者（通知 `type=penalty`），三级语义如下：
+
+| 级别 | 语义 | 时效 | 落效果方式 | 撤销规则（revoke 权限） | 公开范围 |
+|------|------|------|-----------|------------------------|----------|
+| L1 | 警告 | 无期限（`expires_at` 为空，永不过期） | 仅 penalties 留痕（`capabilities` 存 `[]`），不限制任何能力、不改 users 表 | 仅 `super` 可撤销 | 用户公开主页展示（level/reason/created_at） |
+| L2 | 功能封禁 | `days` 必填 30–360 整数，`expires_at = now + days`，到期自动失效 | capabilities 能力快照（`PENALTY_CAPS` 非空子集），各业务路由经 `checkPenaltyCap` 动态执法，**不写 users 表** | `super` / `zone_master` | 用户公开主页展示（含 expires_at） |
+| L3 | 账号封禁 | `days` 可选（缺省=永久；提供时须 30–360），限时封禁到期自愈 | 写 `users.banned_at` + `banned_until`（永久为 NULL）+ `is_active=0` + 强制下线全部会话；capabilities 快照固定存 `["all"]` | `super` / `zone_master` | 封禁状态与处罚信息经公开主页 `public_penalties` 间接可见 |
+
+**存量语义迁移**（V4.0.0 两级 → V4.1.0 三级，迁移幂等条件为 `capabilities IS NULL`）：旧一级（限制上传）记录改判为 **L2**（`capabilities='["upload"]'`，期限沿用原 `expires_at`）；旧二级（封禁账号）记录改判为 **L3**（`capabilities='["all"]'`，users 表封禁效果不变）。
+
+**能力白名单与执法点**（`PENALTY_CAPS = ['upload', 'comment', 'forum_post', 'download']`；`'all'` 仅为 L3 快照保留值，不可作为 L2 入参）：
+
+| 能力 | 执法点 | 命中响应 |
+|------|--------|----------|
+| upload | POST `/api/photos/upload`、`/upload/presigned`、`/upload/complete` | 403 `UPLOAD_BANNED`（message 含解禁时间 YYYY-MM-DD HH:mm） |
+| comment | POST `/api/comments`（照片/文章/帖子评论共用入口） | 403 `COMMENT_BANNED` |
+| forum_post | POST `/api/forum/threads` | 403 `FORUM_POST_BANNED` |
+| download | GET `/api/photos/image/*?download=1`（仅登录用户） | 403 `DOWNLOAD_BANNED`（匿名下载本就 401 需登录，无额外拦截点） |
+
+已撤销（`revoked_at` 非空）或已过期（`expires_at` ≤ 当前时间）的处罚自动失效，无需定时任务；L3 限时封禁到期由登录/鉴权路径（`authService`/`auth.ts`）调用 `clearExpiredBan` 自愈清除 `banned_at/banned_until`（永久封禁 `banned_until` 为空，不自愈）。
+
+### 处罚用户（三级）
 
 **POST** `/api/admin/users/:id/penalty`
 
 **鉴权**：`super` / `zone_master` + 管理员人机验证门（`ensureHumanVerified`，168h 内同 IP 免重复挑战，与封禁端点同口径）。
 
-**两级处罚**：
-- **level=1（一级，限制上传）**：`days` 必填（1–365 整数），写入 `users.upload_banned_until = now + days`；到期自动恢复，期间三个上传端点返回 403 `UPLOAD_BANNED`
-- **level=2（二级，永久封禁）**：与封禁端点同口径——写入 `banned_at`、`is_active=0`、强制下线（删除全部会话）；目标已封禁时返回 400「该用户已被封禁」
-
-**目标解析**：优先按站点用户解析；未命中时按管理员解析，但仅 `zone_auditor` 可被处罚（对 `super`/`zone_master` 处罚返回 403「不允许对超级管理员或分区总审核实施处罚」；`zone_master` 仅可处罚本分区的 `zone_auditor`，对管理员目标仅留痕不落 users 表效果）。处罚同时向被处罚者发送 `penalty` 通知（一级/二级标题不同）。
-
 **请求体**:
 ```json
-{ "level": 1, "reason": "处罚原因（必填）", "days": 7 }
+{ "level": 2, "reason": "处罚原因（必填，≤500 字）", "capabilities": ["upload", "comment"], "days": 30 }
 ```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| level | number | 是 | `1` 警告 / `2` 功能封禁 / `3` 账号封禁，其余值 400 |
+| reason | string | 是 | 处罚原因，trim 后必填且 ≤500 字 |
+| capabilities | string[] | 仅 L2 必填 | 能力数组，须为 `upload`/`comment`/`forum_post`/`download` 的非空子集，否则 400 `PENALTY_CAPS_INVALID`；L1 固定存 `[]`、L3 固定存 `["all"]` |
+| days | number | L2 必填；L3 可选 | 功能封禁天数 30–360 整数（L2 缺失/越界返回 400 `PENALTY_DAYS_INVALID`）；L3 缺省=永久封禁，提供时同样须为 30–360 |
+
+**分级效果**：
+- **L1 警告**：仅 penalties 留痕，无任何能力限制、不改 users 表；通知标题「处罚通知：警告」
+- **L2 功能封禁**：`expires_at = now + days`，期间勾选能力被执法点拦截；不写 users 表；通知正文列明被封禁能力与自动恢复时间
+- **L3 账号封禁**：写 `users.banned_at/banned_until/is_active=0` 并强制下线（删除全部会话）；目标已封禁返回 400「该用户已被封禁」；限时封禁到期自愈解封；通知标题「处罚通知：账号封禁」
+
+**目标解析**：优先按站点用户解析；未命中时按管理员解析，但仅 `zone_auditor` 可被处罚（对 `super`/`zone_master` 处罚返回 403「不允许对超级管理员或分区总审核实施处罚」；`zone_master` 仅可处罚本分区的 `zone_auditor`，对管理员目标仅留痕不落 users 表效果）。
 
 **响应**:
 ```json
-{ "success": true, "message": "已限制上传", "data": { "penalty_id": "0d1b2a3c-...", "level": 1, "expires_at": "2026-10-24T08:00:00.000Z" } }
+{
+  "success": true,
+  "message": "已实施功能封禁",
+  "data": {
+    "id": "0d1b2a3c-...",
+    "user_id": "user_1234567890123",
+    "level": 2,
+    "reason": "恶意刷评",
+    "days": 30,
+    "expires_at": "2026-11-17T08:00:00.000Z",
+    "capabilities": ["upload", "comment"],
+    "created_by": "admin-uuid",
+    "created_at": "2026-10-18T08:00:00.000Z",
+    "revoked_at": null,
+    "revoked_by": null
+  }
+}
 ```
 
-二级处罚响应不含 `expires_at`，`message` 为「已封禁账号」。
+`message` 按 level 为「已发出警告」/「已实施功能封禁」/「已封禁账号」；L1 时 `days`/`expires_at` 为 `null`、`capabilities` 为 `[]`。
 
-**错误**：400 处罚级别必须为 1 或 2 / 请填写处罚原因 / 一级处罚需提供 1-365 的禁传天数 / 该用户已被封禁；403 不允许对超级管理员或分区总审核实施处罚 / 分区总审核仅可处罚本分区的分区审核账户；404 用户不存在。
+**错误**：400 处罚级别必须为 1、2 或 3 / 请填写处罚原因 / 处罚原因不可超过 500 字 / `PENALTY_CAPS_INVALID`（能力项非法或为空）/ `PENALTY_DAYS_INVALID`（天数越界或缺失）/ 该用户已被封禁（L3 目标）；403 不允许对超级管理员或分区总审核实施处罚 / 分区总审核仅可处罚本分区的分区审核账户；404 用户不存在。
 
-### 查询处罚历史
+**审计日志**：`action=penalty_user`，`details` 含 `level`/`reason`/（L2 附 `capabilities`）/（L2、L3 附 `days` 与 `expires_at`）/`target_type`（user/admin）。
+
+### 撤销/解除处罚
+
+**POST** `/api/admin/penalties/:id/revoke`
+
+**鉴权**：管理员 JWT + 管理员人机验证门（与处罚端点同口径）。撤销权限按处罚等级判定（与处罚发起权限相互独立）：
+
+| 处罚级别 | 可撤销角色 |
+|----------|-----------|
+| L1 警告 | 仅 `super` |
+| L2 功能封禁 / L3 账号封禁 | `super` / `zone_master` |
+| 其他角色（zone_auditor / forum_moderator / news_editor） | 一律 403 `BAN_MANAGE_DENIED`「无权撤销该处罚」 |
+
+**效果**：写 `revoked_at` + `revoked_by` 撤销留痕；**L3 解除**时若该记录是当前生效封禁来源（`users.banned_at` 非空且无其他活跃 L3 记录），同步清除 `banned_at/banned_until` 并恢复 `is_active=1`（与三级处罚落效果对称）；L2 无 users 表效果无需清理。撤销后向被处罚用户发送 `penalty` 通知（标题「处罚已撤销」）。
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "处罚已撤销",
+  "data": { "id": "0d1b2a3c-...", "user_id": "user_1234567890123", "level": 2, "revoked_at": "2026-10-18T09:00:00.000Z", "revoked_by": "admin-uuid" }
+}
+```
+
+**错误码**:
+| HTTP | code | 触发条件 |
+|------|------|----------|
+| 400 | PENALTY_ALREADY_REVOKED | 该处罚已撤销 |
+| 403 | BAN_MANAGE_DENIED | 当前角色无权撤销该级别处罚 |
+| 404 | — | 处罚记录不存在 |
+
+**审计日志**：`action=revoke_penalty`，`target_type=penalty`。
+
+### 查询处罚历史（V4.1.0 扩展）
 
 **GET** `/api/admin/users/:id/penalties`
 
-**鉴权**：管理员 JWT。返回指定用户的处罚记录（联 `created_by_name` 操作人用户名），按时间倒序。
+**鉴权**：管理员 JWT。返回指定用户的处罚记录（联 `created_by_name` 操作人用户名），按时间倒序；`capabilities` 快照解析为 JSON 数组返回（存储为字符串，解析失败归一化为 `[]`）；V4.1.0 新增返回 `capabilities` / `revoked_at` / `revoked_by` 三字段。目标用户不存在返回 404。
 
 **响应**:
 ```json
@@ -2063,12 +2260,15 @@ Authorization: Bearer <admin_token>
     {
       "id": "0d1b2a3c-...",
       "user_id": "user_1234567890123",
-      "level": 1,
-      "reason": "违规上传",
-      "days": 7,
-      "expires_at": "2026-10-24T08:00:00.000Z",
+      "level": 2,
+      "reason": "恶意刷评",
+      "days": 30,
+      "expires_at": "2026-11-17T08:00:00.000Z",
+      "capabilities": ["upload", "comment"],
       "created_by": "admin-uuid",
-      "created_at": "2026-10-17T08:00:00.000Z",
+      "created_at": "2026-10-18T08:00:00.000Z",
+      "revoked_at": null,
+      "revoked_by": null,
       "created_by_name": "admin"
     }
   ]
@@ -2285,6 +2485,65 @@ Authorization: Bearer <admin_token>
 - 正文经 `content_path` 调 `GET /api/articles/:id/content` 获取
 
 **错误**：404 新闻不存在。
+
+---
+
+## 公告横幅 (Announcements, V4.1.0)
+
+站点 Top Banner 公告：`is_active=1` 的公告按创建时间倒序作为全站横幅展示。数据落 `announcements` 表（`id`/`title`/`content`/`cover_url`/`is_active`/`created_by`/`created_at`/`updated_at`）。
+
+### 公开公告列表
+
+**GET** `/api/announcements`
+
+公开无鉴权，限速 **120 次/分/IP**。仅返回 `is_active=1` 的公告，按 `created_at` 倒序；**不含 `created_by`**（内部管理员 ID 不对外暴露）。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "title": "站点公告标题",
+      "content": "公告正文",
+      "cover_url": "https://tlrphotos.com/cover.png",
+      "created_at": "2026-10-18T08:00:00.000Z",
+      "updated_at": "2026-10-18T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+`cover_url` 可为 `null`（无封面公告，前端仅展示文字横幅）。
+
+### 公告管理（管理端）
+
+均需管理员 JWT；权限门禁为 **`super` / `news_editor`** 专属（独立于通用 requireRole，返回专属错误码），其他管理角色一律 `403 { code: "ANNOUNCEMENT_DENIED", message: "无公告管理权限" }`。操作写入审计日志（`create_announcement` / `update_announcement` / `publish_announcement` / `unpublish_announcement` / `delete_announcement`）。
+
+| 方法与路径 | 说明 |
+|------------|------|
+| `GET /api/admin/announcements?page=1&page_size=20` | 公告管理列表（含已下线公告，含 `is_active`/`created_by`）；`page` 默认 1，`page_size` 默认 20、上限 50 |
+| `POST /api/admin/announcements` | 创建公告，创建即上线（`is_active=1`），201 返回 `data: { "id": "uuid" }` |
+| `PUT /api/admin/announcements/:id` | 编辑公告（同创建校验），刷新 `updated_at` |
+| `PUT /api/admin/announcements/:id/toggle` | 上线/下线翻转（`is_active` 1↔0），返回 `data: { "is_active": 0 或 1 }` |
+| `DELETE /api/admin/announcements/:id` | 删除公告（硬删） |
+
+**字段校验规则**（POST/PUT 同构，违反返回 `400 { code: "ANNOUNCEMENT_FIELDS_INVALID", message: "公告字段校验失败：…" }`）：
+- `title` 必填、≤100 字
+- `content` 必填、≤5000 字
+- `cover_url` 可选：非空时 ≤500 字且须以 `http://` 或 `https://` 开头，空/未传归一化为 `null`
+
+**请求体**（POST/PUT 同构）:
+```json
+{
+  "title": "公告标题（必填，≤100 字）",
+  "content": "公告正文（必填，≤5000 字）",
+  "cover_url": "https://tlrphotos.com/cover.png（可选）"
+}
+```
+
+**错误**：404 `ANNOUNCEMENT_NOT_FOUND`（PUT / toggle / DELETE 目标公告不存在）。
 
 ---
 

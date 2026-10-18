@@ -29,6 +29,7 @@ import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
 import { deleteUserSessions } from '../services/cookieService';
 import { createNotification } from '../services/notificationService';
+import { PENALTY_CAPS } from '../services/penaltyService';
 import {
   verifyTurnstileToken,
   saveVerification,
@@ -1182,9 +1183,11 @@ router.post('/users/:id/unban', adminAuthMiddleware, requireRole(['super']), asy
 /**
  * 更新站点用户功能权限（仅 super 可访问）。
  * V1.7.0：精细化权限控制 — 单独禁用上传/查看/下载/点赞。
+ * V4.1.0 Wave 3A：权限项扩展至七项 — 新增 can_comment（评论）与 can_forum_post（论坛发帖）；
+ * can_ban_manage 为封禁管理权限项（仅存储与展示，无普通用户执法点）。
  * 仅传需变更的字段；先取当前值计算变更项，UPDATE 仅变更字段，并记录每项 from→to 审计日志。
  * @param id 用户 ID
- * @body can_upload / can_view / can_download / can_like（0/1，可选）
+ * @body can_upload / can_view / can_download / can_like / can_comment / can_forum_post / can_ban_manage（0/1，可选）
  */
 router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
   if (!req.admin) {
@@ -1197,8 +1200,8 @@ router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super'])
     return res.status(denied.status).json(denied.payload);
   }
 
-  const user = await db.get<{ id: string; username: string | null; can_upload: number; can_view: number; can_download: number; can_like: number }>(
-    'SELECT id, username, can_upload, can_view, can_download, can_like FROM users WHERE id = ?',
+  const user = await db.get<{ id: string; username: string | null; can_upload: number; can_view: number; can_download: number; can_like: number; can_comment: number; can_forum_post: number; can_ban_manage: number }>(
+    'SELECT id, username, can_upload, can_view, can_download, can_like, can_comment, can_forum_post, can_ban_manage FROM users WHERE id = ?',
     [req.params.id]
   );
   if (!user) {
@@ -1206,7 +1209,7 @@ router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super'])
   }
 
   // 收集变更项：仅接受 0/1 整数，记录 from→to
-  const fields = ['can_upload', 'can_view', 'can_download', 'can_like'] as const;
+  const fields = ['can_upload', 'can_view', 'can_download', 'can_like', 'can_comment', 'can_forum_post', 'can_ban_manage'] as const;
   const changes: Record<string, { from: number; to: number }> = {};
   const updates: string[] = [];
   const params: (string | number)[] = [];
@@ -1227,7 +1230,10 @@ router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super'])
     return res.json({
       success: true,
       message: '权限未变更',
-      data: { can_upload: user.can_upload, can_view: user.can_view, can_download: user.can_download, can_like: user.can_like },
+      data: {
+        can_upload: user.can_upload, can_view: user.can_view, can_download: user.can_download, can_like: user.can_like,
+        can_comment: user.can_comment, can_forum_post: user.can_forum_post, can_ban_manage: user.can_ban_manage,
+      },
     });
   }
 
@@ -1238,8 +1244,8 @@ router.put('/users/:id/permissions', adminAuthMiddleware, requireRole(['super'])
 
   await logAdminAction(req.admin, 'update_permissions', 'user', req.params.id, { username: user.username, changes }, req.ip);
 
-  const updated = await db.get<{ can_upload: number; can_view: number; can_download: number; can_like: number }>(
-    'SELECT can_upload, can_view, can_download, can_like FROM users WHERE id = ?',
+  const updated = await db.get<{ can_upload: number; can_view: number; can_download: number; can_like: number; can_comment: number; can_forum_post: number; can_ban_manage: number }>(
+    'SELECT can_upload, can_view, can_download, can_like, can_comment, can_forum_post, can_ban_manage FROM users WHERE id = ?',
     [req.params.id]
   );
 
@@ -1316,18 +1322,22 @@ router.put('/users/:id/email', adminAuthMiddleware, requireRole(['super']), asyn
 });
 
 /**
- * 对站点用户实施两级处罚（V4.0.0，仅 super/zone_master 可访问）。
- * - 一级（level=1）：限制上传 days 天（1-365），写 users.upload_banned_until，到期自动恢复；
- * - 二级（level=2）：封禁账号（banned_at + is_active=0）并强制下线所有会话。
- * 处罚留痕 penalties 表并通知被处罚用户（type=penalty）。
+ * 对站点用户实施三级处罚（V4.1.0，仅 super/zone_master 可访问）。
+ * - 一级（level=1）：警告 — 仅 penalties 留痕（capabilities='[]'），不限制任何能力、不改 users 表；
+ * - 二级（level=2）：功能封禁 — capabilities 必填（PENALTY_CAPS 非空子集），days 必填 30~360，
+ *   expires_at = now + days；执法由各业务路由经 checkPenaltyCap 动态判断，不写 users 表；
+ * - 三级（level=3）：账号封禁 — 写 users.banned_at + banned_until（days 缺省=永久），
+ *   停用账号并强制下线所有会话（沿用原二级处罚口径）。
+ * 三级均写 penalties（L3 capabilities='["all"]'）并通知被处罚用户（type=penalty）。
  * 权限口径：super 可罚任何站点用户；zone_master 可罚站点用户，
  * 对管理员目标（zone_auditor）仅限本区且仅留痕不落效果；
  * role 为 super/zone_master 的管理员不可被处罚。
  * 高危操作：挂管理员人机验证门（与封禁端点同口径）。
  * @param id 被处罚者 ID（站点用户或 zone_auditor 管理员）
- * @body level 1 | 2
- * @body reason 处罚原因（必填）
- * @body days 禁传天数（仅 level=1 必填，1-365）
+ * @body level 1 | 2 | 3
+ * @body reason 处罚原因（必填，≤500 字）
+ * @body capabilities 二级必填：能力数组（upload/comment/forum_post/download 的非空子集）
+ * @body days 二级必填 30~360；三级可选（缺省永久，提供时 30~360）
  */
 router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (req, res) => {
   if (!req.admin) {
@@ -1340,21 +1350,50 @@ router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zo
     return res.status(denied.status).json(denied.payload);
   }
 
-  const { level, reason, days } = req.body;
+  const { level, reason, days, capabilities } = req.body;
 
-  // 参数校验：level 仅 1/2，reason 必填，days 仅一级且 1-365
-  if (level !== 1 && level !== 2) {
-    return res.status(400).json({ success: false, message: '处罚级别必须为 1 或 2' });
+  // 公共校验：level 仅 1/2/3，reason 必填且 ≤500 字
+  if (level !== 1 && level !== 2 && level !== 3) {
+    return res.status(400).json({ success: false, message: '处罚级别必须为 1、2 或 3' });
   }
   if (!reason || typeof reason !== 'string' || !reason.trim()) {
     return res.status(400).json({ success: false, message: '请填写处罚原因' });
   }
-  let daysNum = 0;
-  if (level === 1) {
-    daysNum = Number(days);
-    if (!Number.isInteger(daysNum) || daysNum < 1 || daysNum > 365) {
-      return res.status(400).json({ success: false, message: '一级处罚需提供 1-365 的禁传天数' });
+  if (reason.trim().length > 500) {
+    return res.status(400).json({ success: false, message: '处罚原因不可超过 500 字' });
+  }
+
+  // 二级校验：capabilities 必须为 PENALTY_CAPS 非空子集（快照存储，'all' 仅为 L3 保留值）
+  let capsJson = '[]';
+  if (level === 2) {
+    const caps = Array.isArray(capabilities) ? (capabilities as unknown[]) : null;
+    if (!caps || caps.length === 0 || !caps.every((c) => typeof c === 'string' && (PENALTY_CAPS as readonly string[]).includes(c))) {
+      return res.status(400).json({
+        success: false,
+        code: 'PENALTY_CAPS_INVALID',
+        message: '功能封禁能力项必须为 上传/评论/论坛发帖/下载 的非空子集',
+      });
     }
+    capsJson = JSON.stringify(caps);
+  }
+
+  // 期限校验与到期时间计算：二级必填 30~360；三级可选（缺省永久）
+  const now = new Date();
+  const nowIso = now.toISOString();
+  let daysNum: number | null = null;
+  let expiresAt: string | null = null;
+  if (level === 2) {
+    daysNum = Number(days);
+    if (!Number.isInteger(daysNum) || daysNum < 30 || daysNum > 360) {
+      return res.status(400).json({ success: false, code: 'PENALTY_DAYS_INVALID', message: '功能封禁天数需为 30-360 的整数' });
+    }
+    expiresAt = new Date(now.getTime() + daysNum * 86400000).toISOString();
+  } else if (level === 3 && days !== undefined && days !== null && days !== '') {
+    daysNum = Number(days);
+    if (!Number.isInteger(daysNum) || daysNum < 30 || daysNum > 360) {
+      return res.status(400).json({ success: false, code: 'PENALTY_DAYS_INVALID', message: '账号封禁天数需为 30-360 的整数（缺省为永久）' });
+    }
+    expiresAt = new Date(now.getTime() + daysNum * 86400000).toISOString();
   }
 
   // 目标解析：优先站点用户，其次管理员（仅 zone_auditor 可被处罚）
@@ -1394,61 +1433,67 @@ router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zo
     }
   }
 
-  const now = new Date();
-  const nowIso = now.toISOString();
-  let expiresAt: string | null = null;
-  let penaltyId = '';
-
-  if (targetUser) {
-    if (level === 2) {
-      if (targetUser.banned_at) {
-        return res.status(400).json({ success: false, message: '该用户已被封禁' });
-      }
-      // 二级处罚：封禁 + 强制下线（与 ban 端点同口径）
-      await db.run('UPDATE users SET banned_at = ?, is_active = 0, updated_at = ? WHERE id = ?', [
-        nowIso,
-        nowIso,
-        targetUser.id,
-      ]);
-      await deleteUserSessions(targetUser.id);
-    } else {
-      // 一级处罚：限制上传至 now + days 天
-      expiresAt = new Date(now.getTime() + daysNum * 86400000).toISOString();
-      await db.run('UPDATE users SET upload_banned_until = ?, updated_at = ? WHERE id = ?', [
-        expiresAt,
-        nowIso,
-        targetUser.id,
-      ]);
+  // 落效果：仅三级写 users 表（banned_at/banned_until/is_active + 强制下线）；
+  // 一级/二级不改 users 任何字段（二级执法由各业务路由动态判断）；管理员目标仅留痕
+  if (targetUser && level === 3) {
+    if (targetUser.banned_at) {
+      return res.status(400).json({ success: false, message: '该用户已被封禁' });
     }
+    await db.run(
+      'UPDATE users SET banned_at = ?, banned_until = ?, is_active = 0, updated_at = ? WHERE id = ?',
+      [nowIso, expiresAt, nowIso, targetUser.id]
+    );
+    await deleteUserSessions(targetUser.id);
   }
-  // 管理员目标（zone_auditor）：仅留痕，不落 users 表效果
 
-  // 写处罚记录
-  penaltyId = crypto.randomUUID();
+  // 写处罚记录（三级均必写 capabilities 快照：L1='[]'，L2=勾选快照，L3='["all"]'）
+  const penaltyId = crypto.randomUUID();
+  const finalCaps = level === 3 ? '["all"]' : capsJson;
   await db.run(
-    'INSERT INTO penalties (id, user_id, level, reason, days, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO penalties (id, user_id, level, reason, days, expires_at, capabilities, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       penaltyId,
       req.params.id,
       level,
       reason.trim(),
-      level === 1 ? daysNum : null,
+      daysNum,
       expiresAt,
+      finalCaps,
       req.admin.id,
       nowIso,
     ]
   );
 
-  // 通知被处罚者（标题按一级/二级处罚区分）
-  const penaltyTitle = level === 1 ? '一级处罚：上传功能已被限制' : '二级处罚：账号已被封禁';
-  const penaltyContent =
-    level === 1
-      ? `因「${reason.trim()}」，您的账号上传功能被限制 ${daysNum} 天，将于 ${new Date(expiresAt!).toLocaleString('zh-CN', { hour12: false })} 自动恢复。`
-      : `因「${reason.trim()}」，您的账号已被封禁。如有异议请联系管理员。`;
+  // 通知被处罚者（标题/正文含等级名、原因与期限）
+  const levelName = level === 1 ? '警告' : level === 2 ? '功能封禁' : '账号封禁';
+  const CAP_LABELS: Record<string, string> = {
+    upload: '上传',
+    comment: '评论',
+    forum_post: '论坛发帖',
+    download: '下载',
+  };
+  const formatDateTime = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  let penaltyContent: string;
+  if (level === 1) {
+    penaltyContent = `因「${reason.trim()}」，您收到一次警告。请遵守社区规范，如有异议请联系管理员。`;
+  } else if (level === 2) {
+    const capsLabel = (JSON.parse(finalCaps) as string[])
+      .map((c) => CAP_LABELS[c] ?? c)
+      .join('、');
+    penaltyContent = `因「${reason.trim()}」，您的${capsLabel}功能被封禁 ${daysNum} 天，将于 ${formatDateTime(expiresAt!)} 自动恢复。`;
+  } else {
+    penaltyContent = expiresAt
+      ? `因「${reason.trim()}」，您的账号被封禁 ${daysNum} 天，将于 ${formatDateTime(expiresAt)} 自动解封。`
+      : `因「${reason.trim()}」，您的账号已被永久封禁。如有异议请联系管理员。`;
+  }
   await createNotification({
     user_id: req.params.id,
     type: 'penalty',
-    title: penaltyTitle,
+    title: `处罚通知：${levelName}`,
     content: penaltyContent,
     related_type: 'penalty',
     related_id: penaltyId,
@@ -1457,24 +1502,131 @@ router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zo
   await logAdminAction(req.admin, 'penalty_user', 'user', req.params.id, {
     level,
     reason: reason.trim(),
-    ...(level === 1 ? { days: daysNum, expires_at: expiresAt } : {}),
+    ...(level === 2 ? { capabilities } : {}),
+    ...(level !== 1 ? { days: daysNum, expires_at: expiresAt } : {}),
     target_type: targetUser ? 'user' : 'admin',
   }, req.ip);
 
   res.json({
     success: true,
-    message: level === 1 ? '已限制上传' : '已封禁账号',
+    message: level === 1 ? '已发出警告' : level === 2 ? '已实施功能封禁' : '已封禁账号',
     data: {
-      penalty_id: penaltyId,
+      id: penaltyId,
+      user_id: req.params.id,
       level,
-      ...(level === 1 ? { expires_at: expiresAt } : {}),
+      reason: reason.trim(),
+      days: daysNum,
+      expires_at: expiresAt,
+      capabilities: JSON.parse(finalCaps),
+      created_by: req.admin.id,
+      created_at: nowIso,
+      revoked_at: null,
+      revoked_by: null,
     },
   });
 });
 
 /**
- * 查询指定用户的处罚历史（V4.0.0）。
+ * 撤销/解除处罚（V4.1.0）。
+ * 权限按处罚等级判定：L1 撤销仅 super；L2/L3 解除需 super/zone_master；其他角色一律 403 BAN_MANAGE_DENIED。
+ * 已撤销 400 PENALTY_ALREADY_REVOKED；记录不存在 404。
+ * L3 解除时若为当前生效封禁来源（users.banned_at 非空且无其他活跃 L3 记录），
+ * 清 banned_at/banned_until 并恢复 is_active（与三级处罚落效果对称）；二级无 users 表效果无需清理。
+ * 高危操作：挂管理员人机验证门（与处罚端点同口径）。
+ * @param id 处罚记录 ID
+ */
+router.post('/penalties/:id/revoke', adminAuthMiddleware, async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // 高危操作：管理员人机验证门（照抄 ban 端点挂法）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
+  const penalty = await db.get<{
+    id: string;
+    user_id: string;
+    level: number;
+    reason: string;
+    revoked_at: string | null;
+  }>('SELECT id, user_id, level, reason, revoked_at FROM penalties WHERE id = ?', [req.params.id]);
+  if (!penalty) {
+    return res.status(404).json({ success: false, message: '处罚记录不存在' });
+  }
+  if (penalty.revoked_at) {
+    return res.status(400).json({ success: false, code: 'PENALTY_ALREADY_REVOKED', message: '该处罚已撤销' });
+  }
+
+  // 权限按等级判定：L1 仅 super；L2/L3 super/zone_master；其他角色 403
+  const role = req.admin.role;
+  const allowed = penalty.level === 1 ? role === 'super' : role === 'super' || role === 'zone_master';
+  if (!allowed) {
+    return res.status(403).json({ success: false, code: 'BAN_MANAGE_DENIED', message: '无权撤销该处罚' });
+  }
+
+  const nowIso = new Date().toISOString();
+  await db.run('UPDATE penalties SET revoked_at = ?, revoked_by = ? WHERE id = ?', [
+    nowIso,
+    req.admin.id,
+    penalty.id,
+  ]);
+
+  // 三级解除：若该记录是当前生效封禁来源（banned_at 非空且无其他活跃 L3），清封禁标记并恢复启用
+  if (penalty.level === 3) {
+    const user = await db.get<{ banned_at: string | null }>(
+      'SELECT banned_at FROM users WHERE id = ?',
+      [penalty.user_id]
+    );
+    if (user?.banned_at) {
+      const otherActiveL3 = await db.get<{ id: string }>(
+        'SELECT id FROM penalties WHERE user_id = ? AND id != ? AND level = 3 AND revoked_at IS NULL LIMIT 1',
+        [penalty.user_id, penalty.id]
+      );
+      if (!otherActiveL3) {
+        await db.run(
+          'UPDATE users SET banned_at = NULL, banned_until = NULL, is_active = 1, updated_at = ? WHERE id = ?',
+          [nowIso, penalty.user_id]
+        );
+      }
+    }
+  }
+
+  // 通知被处罚用户（管理员目标的留痕记录同样通知，无 FK 依赖）
+  await createNotification({
+    user_id: penalty.user_id,
+    type: 'penalty',
+    title: '处罚已撤销',
+    content: `您收到的处罚（原因：${penalty.reason}）已被管理员撤销，相关限制已解除。`,
+    related_type: 'penalty',
+    related_id: penalty.id,
+  });
+
+  await logAdminAction(req.admin, 'revoke_penalty', 'penalty', penalty.id, {
+    level: penalty.level,
+    reason: penalty.reason,
+    user_id: penalty.user_id,
+  }, req.ip);
+
+  res.json({
+    success: true,
+    message: '处罚已撤销',
+    data: {
+      id: penalty.id,
+      user_id: penalty.user_id,
+      level: penalty.level,
+      revoked_at: nowIso,
+      revoked_by: req.admin.id,
+    },
+  });
+});
+
+/**
+ * 查询指定用户的处罚历史（V4.0.0；V4.1.0 扩展三级字段）。
  * 联创建者管理员用户名，按时间倒序，供管理后台用户详情页展示。
+ * capabilities 快照解析为 JSON 数组返回（存储为字符串）；撤销留痕 revoked_at/revoked_by 一并返回。
  * @param id 用户 ID
  */
 router.get('/users/:id/penalties', adminAuthMiddleware, async (req, res) => {
@@ -1496,7 +1648,17 @@ router.get('/users/:id/penalties', adminAuthMiddleware, async (req, res) => {
     req.params.id
   );
 
-  res.json({ success: true, data: penalties });
+  const data = (penalties ?? []).map((p: any) => {
+    let caps: unknown = null;
+    try {
+      caps = p.capabilities ? JSON.parse(p.capabilities) : null;
+    } catch {
+      caps = null;
+    }
+    return { ...p, capabilities: Array.isArray(caps) ? caps : [] };
+  });
+
+  res.json({ success: true, data });
 });
 
 /**

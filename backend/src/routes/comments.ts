@@ -37,6 +37,7 @@ import { createNotification } from '../services/notificationService';
 import { deleteFromOSS } from '../services/ossService';
 import { archiveKeyOf } from '../services/commentArchiveStore';
 import { ossCommentArchiveStore } from '../services/ossCommentArchiveStore';
+import { checkPenaltyCap } from '../services/penaltyService';
 
 const router = express.Router();
 
@@ -238,6 +239,22 @@ router.post('/', requireVerifiedEmail, async (req, res, next) => {
     const { user } = await loadAuthUser(req);
     if (!user) {
       return res.status(401).json({ success: false, code: 'AUTH_REQUIRED', message: '请先登录' });
+    }
+
+    // V4.1.0 Wave 3A：评论权限项检查（管理员可单独关闭用户评论能力，V1.7.0 权限检查模式）
+    const commentPerm = await db.get<{ can_comment: number }>('SELECT can_comment FROM users WHERE id = ?', [user.id]);
+    if (commentPerm && !commentPerm.can_comment) {
+      return res.status(403).json({ success: false, code: 'PERMISSION_DENIED', message: '您已被禁止发表评论' });
+    }
+
+    // V4.1.0：L2 处罚评论封禁执法点（认证后、业务逻辑前拦截；照片评论与帖子回复共用本入口）
+    const { banned: commentBanned } = await checkPenaltyCap(user.id, 'comment');
+    if (commentBanned) {
+      return res.status(403).json({
+        success: false,
+        code: 'COMMENT_BANNED',
+        message: '您的账号评论功能已被限制，如有疑问请联系管理员',
+      });
     }
 
     const created = await createComment(

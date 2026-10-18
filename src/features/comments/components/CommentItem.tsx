@@ -4,6 +4,7 @@
  *              点赞按钮、回复按钮、删除按钮。
  *              纯受控：所有操作经回调上抛，是否可删由父层计算，任意主题可复用。
  */
+import { Link } from 'react-router-dom';
 import type { CommentDTO } from '../../../api/comments';
 import { formatRelativeDate } from '../../../shared/utils';
 import { Heart, Reply, Trash2 } from 'lucide-react';
@@ -47,9 +48,19 @@ export function CommentItem({
     <div className="min-w-0">
       <div className="flex items-center gap-2">
         <Avatar author={comment.author} />
-        <span className="truncate text-sm font-medium text-gray-900">
-          {comment.author}
-        </span>
+        {/* V4.1.0：作者名可点击跳转公开主页（历史迁移评论 user_id 为空时保持纯文本） */}
+        {comment.user_id ? (
+          <Link
+            to={`/users/${comment.user_id}`}
+            className="truncate text-sm font-medium text-gray-900 transition-colors hover:text-blue-700 hover:underline"
+          >
+            {comment.author}
+          </Link>
+        ) : (
+          <span className="truncate text-sm font-medium text-gray-900">
+            {comment.author}
+          </span>
+        )}
         <span className="flex-shrink-0 text-xs text-gray-400">
           {formatRelativeDate(comment.created_at)}
         </span>

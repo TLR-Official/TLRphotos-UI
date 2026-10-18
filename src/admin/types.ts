@@ -130,19 +130,48 @@ export interface Appeal {
   appellant_name?: string | null;
 }
 
-/** V4.0.0：处罚记录（管理端 GET /users/:id/penalties） */
+/** V4.0.0：处罚记录（V4.1.0 扩展三级语义：1=警告 / 2=功能封禁 / 3=账号封禁） */
 export interface Penalty {
   id: string;
   user_id: string;
-  /** 处罚级别：1=限制上传 N 天，2=永久封禁 */
-  level: 1 | 2;
+  /** 处罚级别：1=警告，2=功能封禁（capabilities 快照），3=账号封禁 */
+  level: 1 | 2 | 3;
   reason: string;
   days: number | null;
   expires_at: string | null;
+  /** V4.1.0：L2 能力快照（upload/comment/forum_post 子集；L3 为 ["all"]，L1 为 []） */
+  capabilities: string[];
+  /** V4.1.0：撤销留痕（未撤销为 null） */
+  revoked_at: string | null;
+  revoked_by: string | null;
   created_by: string;
   created_at: string;
   /** 联表字段：处罚操作人用户名 */
   created_by_name?: string | null;
+  /** 联表字段：撤销操作人用户名 */
+  revoked_by_name?: string | null;
+}
+
+/** V4.1.0：站点公告条目（管理端 GET /announcements 全量含已下线） */
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  /** 封面图 URL（未设置为 null） */
+  cover_url: string | null;
+  /** 1=上线中，0=已下线 */
+  is_active: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** V4.1.0：公告创建/编辑请求体 */
+export interface AnnouncementPayload {
+  title: string;
+  content: string;
+  /** 可选：http(s) 链接 ≤500 字符 */
+  cover_url?: string;
 }
 
 /** 照片审核统计 */
@@ -199,9 +228,17 @@ export interface User {
   created_at: string;
   /** V1.7.0：封禁时间戳，非空表示已封禁 */
   banned_at?: string | null;
-  /** V1.7.0：四项功能权限（1=允许，0=禁止） */
+  /** V4.1.0：L3 限时封禁解禁时间（永久封禁为 null） */
+  banned_until?: string | null;
+  /** V4.1.0：归属省份（登录采集，未采集为 null） */
+  region?: string | null;
+  /** V4.1.0：七项功能权限（1=允许，0=禁止） */
   can_upload?: number;
   can_view?: number;
   can_download?: number;
   can_like?: number;
+  can_comment?: number;
+  can_forum_post?: number;
+  /** 封禁管理权限项（仅存储与展示，无普通用户执法点） */
+  can_ban_manage?: number;
 }

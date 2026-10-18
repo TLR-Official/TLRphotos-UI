@@ -5,6 +5,7 @@
  * 支持 /admin/photos/:id 路由进入照片审核详情页。
  * V4.0.0：新增 /admin/appeals（申诉裁决）、/admin/my-audits（我的已处理）、
  * /admin/forum（论坛治理占位页）与 /admin/news（新闻管理：列表 / 新建 / 编辑）。
+ * V4.1.0：新增 /admin/bans（用户封禁管理）与 /admin/announcements（公告管理）。
  */
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -21,6 +22,8 @@ import { MyAuditsPage } from './MyAuditsPage';
 import { AppealsPage } from './AppealsPage';
 import { NewsPage } from './NewsPage';
 import { NewsEditorPage } from './NewsEditorPage';
+import { BansPage } from './BansPage';
+import { AnnouncementsPage } from './AnnouncementsPage';
 import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
 import type { AdminUser } from './types';
 
@@ -60,6 +63,8 @@ function getPageIdFromPath(pathname: string): string {
   if (pathname.startsWith('/admin/my-audits')) return 'my-audits';
   if (pathname.startsWith('/admin/forum')) return 'forum';
   if (pathname.startsWith('/admin/news')) return 'news';
+  if (pathname.startsWith('/admin/bans')) return 'bans';
+  if (pathname.startsWith('/admin/announcements')) return 'announcements';
   if (pathname.startsWith('/admin/dashboard')) return 'dashboard';
   return 'dashboard';
 }
@@ -186,6 +191,12 @@ export function AdminApp() {
       case 'news':
         navigate('/admin/news');
         break;
+      case 'bans':
+        navigate('/admin/bans');
+        break;
+      case 'announcements':
+        navigate('/admin/announcements');
+        break;
       default:
         navigate('/admin/dashboard');
     }
@@ -222,6 +233,10 @@ export function AdminApp() {
         return <PlaceholderPage title="论坛治理" description="论坛板块治理与帖子管理功能将在下轮迭代实现。" />;
       case 'news':
         return <NewsPage />;
+      case 'bans':
+        return <BansPage currentAdmin={admin} />;
+      case 'announcements':
+        return <AnnouncementsPage currentAdmin={admin} />;
       default:
         return <DashboardPage />;
     }
