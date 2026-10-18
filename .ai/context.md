@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-10-18 10:43 | [docs] 版本号升级至 V4.0.0-beta.4 — 架构图重构为业务域纵列布局：每一纵列=一个业务域（认证/照片·标签/评论/论坛/内容/通知·申诉/验证/AI/管理端/定时任务），列内「路由→服务→数据表」强逻辑纵向调用链；管理端审核路由下沉业务域列（橙色标识），跨列连线收敛为 1 条橙线；46 条边按流向配色（灰主链/蓝/绿/橙/红）与图例一致；SVG 坐标量化验证域内对齐 ≤387px；smetana 渲染 PNG（8560×1689）+ 新增 SVG 矢量版 | docs/architecture-detailed.puml、docs/architecture-detailed.png、docs/architecture-detailed.svg（新增）、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-18 10:23 | [docs] 新增警告及处罚系统优化PRD：三级处罚分级/封禁界面/主页改善/公告横幅 (V4.0.0-beta.3) | docs/prd-v4-penalty-notification.md、package.json、.trae/rules/版本管理规则.md |
 | 2026-10-18 10:05 | [docs] 版本号升级至 V4.0.0-beta.2 — 架构图连线可读性重构：30+ 条细粒度交叉线收敛为 9 条按流向配色的包级粗箭头（蓝=用户端调用/橙=管理端/绿=数据读写/红=外部服务/青虚线=定时任务/紫虚线=工具），新增底部颜色图例，smetana 重渲染 PNG（6255×2148） | docs/architecture-detailed.puml、docs/architecture-detailed.png、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-17 22:25 | [docs] 版本号升级至 V4.0.0-beta.1 — 重绘 PlantUML 详细版架构图至 V4 架构：17 组路由挂载/114 端点（用户端 66+管理端 47+health）、17 服务、主库 24 表+标签库 3 表、用户新增论坛/新闻/通知/申诉/关于我们模块与管理端 12 页面，smetana 引擎网格布局渲染 PNG（7496×2256） | docs/architecture-detailed.puml、docs/architecture-detailed.png、package.json、package-lock.json、.trae/rules/版本管理规则.md |
