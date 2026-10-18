@@ -42,9 +42,9 @@
 - [x] Task 7: 集成测试与全量验证
   - [x] 7.1 新增后端集成测试：三级处罚创建校验（L2 capabilities 白名单/days 边界 29|30|360|361、L3 days 可选）、L2 四项执法各自 403 与过期放行、L3 限时到期自愈登录、revoke 权限矩阵（L1 非 super 403）、撤销后执法失效、公开主页端点越权（非 approved 不可见/无明文 IP）、公告 CRUD 权限与上下线、region 解析 mock（成功/失败「未知」）
   - [x] 7.2 存量套件适配（penalties level 语义变更影响 admin/photos/v4 套件断言）；后端全套件通过 + tsc --noEmit；前端 oxlint 0 错误 + vite build 通过
-- [ ] Task 8: 版本发布与部署
-  - [ ] 8.1 版本 V4.1.0-beta 三处同步（package.json/package-lock、context.md Changelog、版本管理规则.md）+ [release] 提交推送
-  - [ ] 8.2 生产部署：backend rebuild + systemctl restart；冒烟（GET /api/announcements、/api/users/:id/profile、处罚三级创建→执法→撤销链路、登录自愈）；部署记录提交推送
+- [x] Task 8: 版本发布与部署
+  - [x] 8.1 版本 V4.1.0-beta 三处同步（package.json/package-lock、context.md Changelog、版本管理规则.md）+ [release] 提交推送
+  - [x] 8.2 生产部署：backend rebuild + systemctl restart；冒烟（GET /api/announcements、/api/users/:id/profile、处罚三级创建→执法→撤销链路、登录自愈）；部署记录提交推送
 
 # Task Dependencies
 - Task 2 depends on Task 1（迁移与服务基座）
