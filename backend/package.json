@@ -43,5 +43,10 @@
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.0",
     "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "better-sqlite3@12.11.1": true,
+    "sqlite3@5.1.7": true
   }
 }
