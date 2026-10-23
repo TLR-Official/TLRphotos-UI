@@ -342,7 +342,8 @@
 ```
 
 > **V3.2.0 新增字段**：
-> - `registration_number`（string，**必填**）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验，缺失或非法返回 `400 { code: "REGISTRATION_REQUIRED" }`，校验先于 OSS 完成调用。
+> - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。
+>   **V4.1.2-beta.2 起分区条件必填**：仅当 `category = "aviation"` 时必填，缺失或非法返回 `400 { code: "REGISTRATION_REQUIRED" }`（校验先于 OSS 完成调用）；其他分区为选填，空值或非法格式均不阻断，落库为 `null`。未传 `category`（旧客户端）按非航空分区处理。
 > - `is_hot`（number/boolean/string，可选）：上传者「愿意推荐为热门图片」意愿标记，接受 `true`/`"true"`/`"1"`/`1`，其余视为未勾选（0）。仅作审核参考，不公开展示。
 
 **响应**:
@@ -374,8 +375,8 @@ Content-Type: multipart/form-data
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | image | file | 是 | 图片文件（JPG/PNG/WebP/HEIC，最大50MB） |
-| category | string | 是 | 照片分区，未提供时返回 400 `请选择照片分区` |
-| registration_number | string | 是 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）；服务端 trim + 转大写校验，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }` |
+| category | string | 是 | 照片分区（aviation/railway/automobile），未提供时返回 400 `请选择照片分区` |
+| registration_number | string | 条件必填 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）。**V4.1.2-beta.2 起仅 `category=aviation` 时必填**，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }`；其他分区选填，空值或非法格式不阻断，落库为 `null` |
 | is_hot | string | 否 | 「愿意推荐为热门图片」意愿标记（V3.2.0）：`true`/`1` 视为勾选，其余为未勾选（0）；仅作审核参考，不公开展示 |
 | title | string | 否 | 照片标题，默认"未命名照片" |
 | tags | string/array | 否 | 标签，支持数组或中英文逗号分隔字符串 |

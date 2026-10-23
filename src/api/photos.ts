@@ -46,7 +46,7 @@ export interface PhotoUploadMeta {
   watermarkY?: number;       // 水印 Y 坐标
   watermarkOpacity?: number; // 水印透明度
   watermarkSize?: number;    // 水印字号
-  registration_number?: string; // 飞机注册号（必填，2-20 位字母/数字/连字符，后端统一存大写）
+  registration_number?: string; // 飞机注册号（仅 aviation 分区必填，2-20 位字母/数字/连字符，后端统一存大写）
   is_hot?: number;           // 热门意愿：1=愿意推荐为热门，0=否
 }
 

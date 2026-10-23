@@ -940,15 +940,17 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       return res.status(denied.status).json(denied.payload);
     }
 
-    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot } = req.body;
+    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot, category } = req.body;
 
     if (!key) {
       return res.status(400).json({ success: false, message: '文件Key不能为空' });
     }
 
-    // V3.2.0：飞机注册号必填（归一化大写落库），供全局检索与审核校验
+    // V4.1.2-beta.2：飞机注册号仅「航空」分区必填；其他分区选填（合法则归一化落库，空或非法置空）。
+    // 未传 category（旧客户端）时按非航空处理，避免与前端分区分级校验规则不一致。
+    const isAviationCategory = String(category ?? '').trim().toLowerCase() === 'aviation';
     const normalizedRegistration = normalizeRegistrationNumber(registration_number);
-    if (!normalizedRegistration) {
+    if (isAviationCategory && !normalizedRegistration) {
       return res.status(400).json({
         success: false,
         code: 'REGISTRATION_REQUIRED',
@@ -1165,9 +1167,10 @@ router.post(
       return res.status(400).json({ success: false, message: '请选择照片分区' });
     }
 
-    // V3.2.0：飞机注册号必填（归一化大写落库），供全局检索与审核校验
+    // V4.1.2-beta.2：飞机注册号仅「航空」分区必填；其他分区选填（合法则归一化落库，空或非法置空）
+    const isAviationCategory = String(category).trim().toLowerCase() === 'aviation';
     const normalizedRegistration = normalizeRegistrationNumber(registration_number);
-    if (!normalizedRegistration) {
+    if (isAviationCategory && !normalizedRegistration) {
       return res.status(400).json({
         success: false,
         code: 'REGISTRATION_REQUIRED',

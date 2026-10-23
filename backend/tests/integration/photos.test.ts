@@ -194,24 +194,36 @@ describe('V3.2.0 注册号与热门标记', () => {
     await db.run(insert, PLAIN_PHOTO_ID, '存量无注册号机', null, 0, '["hottagx"]', now);
   });
 
-  it('upload/complete 缺注册号返回 400 REGISTRATION_REQUIRED（先于 OSS 调用）', async () => {
+  it('航空分区 upload/complete 缺注册号返回 400 REGISTRATION_REQUIRED（先于 OSS 调用）', async () => {
     const res = await request(app)
       .post('/api/photos/upload/complete')
       .set('Authorization', `Bearer ${tokenA}`)
-      .send({ key: 'photos/test/x.webp', title: '缺注册号' });
+      .send({ key: 'photos/test/x.webp', title: '缺注册号', category: 'aviation' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('REGISTRATION_REQUIRED');
   });
 
-  it('upload/complete 注册号格式非法返回 400 REGISTRATION_REQUIRED', async () => {
+  it('航空分区 upload/complete 注册号格式非法返回 400 REGISTRATION_REQUIRED', async () => {
     const res = await request(app)
       .post('/api/photos/upload/complete')
       .set('Authorization', `Bearer ${tokenA}`)
-      .send({ key: 'photos/test/x.webp', title: '非法注册号', registration_number: '!!' });
+      .send({ key: 'photos/test/x.webp', title: '非法注册号', category: 'aviation', registration_number: '!!' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('REGISTRATION_REQUIRED');
+  });
+
+  it('非航空分区 upload/complete 缺少注册号不得返回 REGISTRATION_REQUIRED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/test/x.webp', title: '铁路无注册号', category: 'railway' });
+
+    // 测试环境未配置 OSS_BUCKET，后续 completeUpload 会 500；
+    // 断言仅覆盖校验层：非航空分区不得因注册号缺失被 400 拦截
+    expect(res.status).not.toBe(400);
+    expect(res.body.code).not.toBe('REGISTRATION_REQUIRED');
   });
 
   it('搜索 registration 参数大小写不敏感命中', async () => {

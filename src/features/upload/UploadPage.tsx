@@ -62,7 +62,7 @@ export function UploadPage() {
   const [exif, setExif] = useState<ExifData>({});
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [safetyAgreement, setSafetyAgreement] = useState(false);
-  // 飞机注册号（必填，输入时自动转大写）与热门意愿（可选，默认不勾选）
+  // 飞机注册号（仅航空分区必填，输入时自动转大写）与热门意愿（可选，默认不勾选）
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [isHot, setIsHot] = useState(false);
 
@@ -243,11 +243,15 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 飞机注册号校验：2-20 位字母/数字/连字符（首位不允许连字符），与后端规则一致
+  // 飞机注册号校验：2-20 位字母/数字/连字符（首位不允许连字符），与后端规则一致。
+  // 业务规则：仅「航空」分区必填，铁路/汽车分区为选填，不得阻断表单提交。
+  const isRegistrationRequired = category === 'aviation';
   const trimmedRegistration = registrationNumber.trim();
-  const isRegistrationValid = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(trimmedRegistration);
+  const isRegistrationFormatValid = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(trimmedRegistration);
+  // 航空分区须填写且格式合法；其他分区留空即通过，非法输入不阻断提交（后端会置空不落库）
+  const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
 
-  // 提交前置条件：标题非空、注册号合法、已选分类、已勾选安全声明
+  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、已勾选安全声明
   const canSubmit = title.trim() && isRegistrationValid && category && safetyAgreement;
 
   /** 水印拖动开始：阻止默认行为并进入拖动状态 */
@@ -291,8 +295,8 @@ export function UploadPage() {
    */
   const handleSubmit = async () => {
     if (!file || !canSubmit) return;
-    // 防御性校验：注册号不合法时阻止提交并提示（按钮禁用时不会走到这里）
-    if (!isRegistrationValid) {
+    // 防御性校验：航空分区注册号不合法时阻止提交并提示（按钮禁用时不会走到这里）
+    if (isRegistrationRequired && !isRegistrationFormatValid) {
       setError('请填写有效的飞机注册号（2-20 位字母/数字/连字符）');
       return;
     }
@@ -477,18 +481,29 @@ export function UploadPage() {
               </div>
 
               <div>
-                <label className={labelCls}>飞机注册号 <span className="text-red-500">*</span></label>
+                <label className={labelCls}>
+                  飞机注册号{' '}
+                  {isRegistrationRequired ? (
+                    <span className="text-red-500">*</span>
+                  ) : (
+                    <span className="text-xs font-normal text-gray-400">（选填，仅航空分区必填）</span>
+                  )}
+                </label>
                 <input
                   type="text"
                   value={registrationNumber}
                   onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
                   disabled={step === 'uploading'}
-                  placeholder="如 B-1234"
+                  placeholder={isRegistrationRequired ? '如 B-1234' : '选填，如 B-1234'}
                   maxLength={20}
                   className={inputCls}
                 />
-                {registrationNumber.trim() && !isRegistrationValid && (
-                  <p className="mt-1 text-xs text-red-500">请填写有效的飞机注册号（2-20 位字母/数字/连字符）</p>
+                {trimmedRegistration && !isRegistrationFormatValid && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {isRegistrationRequired
+                      ? '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'
+                      : '注册号格式不正确（2-20 位字母/数字/连字符），该信息将不会保存'}
+                  </p>
                 )}
               </div>
 
@@ -667,7 +682,7 @@ export function UploadPage() {
               {!canSubmit && step === 'fill' && (
                 <p className="text-xs text-center text-gray-400">
                   {!title.trim() && '请填写标题'}
-                  {title.trim() && !isRegistrationValid && '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'}
+                  {title.trim() && isRegistrationRequired && !isRegistrationFormatValid && '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'}
                   {title.trim() && isRegistrationValid && !category && '请选择分类'}
                   {title.trim() && isRegistrationValid && category && !safetyAgreement && '请勾选安全声明'}
                 </p>
