@@ -443,6 +443,18 @@ export function PhotoDetailPage() {
               <div className="rounded-xl shadow-lg p-6 bg-white">
                 <h2 className="text-lg font-semibold mb-3 text-gray-900">审核申诉</h2>
 
+                {/* 驳回理由与审核员编号（V4.1.2-beta.3：便于用户核对并作为申诉举证依据） */}
+                <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2">
+                  <p className="text-sm text-red-700">
+                    <span className="text-red-500">驳回理由：</span>
+                    {photo.rejection_reason || '未填写驳回理由'}
+                  </p>
+                  <p className="text-xs text-red-500 mt-1">
+                    审核员：{photo.reviewer?.name || '未知'}
+                    {photo.reviewer?.reviewed_at && ` · ${formatDate(photo.reviewer.reviewed_at)}`}
+                  </p>
+                </div>
+
                 {appealNotice && (
                   <p className="mb-3 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                     {appealNotice}

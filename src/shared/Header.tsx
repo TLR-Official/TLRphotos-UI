@@ -100,6 +100,15 @@ export function Header() {
           <button
             onClick={(e) => {
               e.stopPropagation();
+              navigate('/recommend');
+            }}
+            className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            热门推荐
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
               navigate('/forum');
             }}
             className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"

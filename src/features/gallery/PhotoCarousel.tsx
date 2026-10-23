@@ -1,12 +1,13 @@
 /**
  * 照片轮播图组件
- * 从全局 PhotosContext 取前 5 张照片作为首页轮播图，支持自动播放、左右切换、指示点跳转，
- * 点击单张幻灯片跳转至对应照片详情页。
+ * 优先展示管理端已确认的热门作品（GET /photos/hot，按综合热度排序），无热门时回退到最新照片；
+ * 支持自动播放、左右切换、指示点跳转，点击单张幻灯片跳转至对应照片详情页。
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
 import { usePhotos } from '../../shared/PhotosContext';
+import { getHotPhotos } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
 import { CachedImage } from '../../components/CachedImage';
 
@@ -38,7 +39,7 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
         />
         <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
           <h2 className="text-2xl font-bold text-white mb-2 drop-shadow-lg" style={{ color: 'white' }}>{photo.title}</h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {photo.tags.map((tag) => (
               <span
                 key={tag}
@@ -48,6 +49,9 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
                 {tag}
               </span>
             ))}
+            <span className="text-xs text-white/70 ml-1">
+              {photo.views ?? 0} 浏览 · {photo.likes ?? 0} 点赞
+            </span>
           </div>
         </div>
       </div>
@@ -62,15 +66,29 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
 export function PhotoCarousel() {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { photos, isLoading } = usePhotos();
+  const { photos, isLoading: isFallbackLoading } = usePhotos();
+  // 已确认热门照片：优先作为轮播内容；接口不可用或无热门时回退到最新照片
+  const [hotPhotos, setHotPhotos] = useState<PhotoListItem[]>([]);
+  const [isHotLoading, setIsHotLoading] = useState(true);
   // currentIndex：当前激活的幻灯片索引
   const [currentIndex, setCurrentIndex] = useState(0);
   // isAutoPlaying：是否处于自动播放状态，用户手动操作后暂停
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
   const isDark = theme === 'dark';
-  // 仅取前 5 张作为轮播图
-  const carouselPhotos = photos.slice(0, 5);
+  const isLoading = isHotLoading || (hotPhotos.length === 0 && isFallbackLoading);
+  // 优先展示管理端确认的热门作品（按综合热度排序），最多 6 张
+  const carouselPhotos = (hotPhotos.length > 0 ? hotPhotos : photos).slice(0, 6);
+
+  /** 拉取已确认热门照片，失败时静默回退到最新照片轮播 */
+  useEffect(() => {
+    getHotPhotos(6)
+      .then((res) => {
+        setHotPhotos(res.success && res.data ? res.data : []);
+      })
+      .catch(() => setHotPhotos([]))
+      .finally(() => setIsHotLoading(false));
+  }, []);
 
   // 照片数量减少时（如刷新数据）钳制当前索引到有效范围
   useEffect(() => {

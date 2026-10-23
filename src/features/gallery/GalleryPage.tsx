@@ -1,20 +1,24 @@
 /**
  * 画廊列表页
- * 顶部渲染分区标签页导航（航空/铁路/汽车），左侧侧边栏提供关键词搜索 + 标签选择器，
- * 右侧为照片瀑布流网格与排序栏。点击单张照片跳转至详情页。
+ * 顶部渲染分区标签页导航（航空/铁路/汽车），下方为三层标签逐层下钻区（分区 → 标签对象 → 细分属性），
+ * 左侧侧边栏提供关键词搜索与当前筛选摘要，右侧为照片瀑布流网格与排序栏。点击单张照片跳转至详情页。
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPhotos, searchPhotos, getTagsWithCounts } from '../../api/photos';
-import { getTagCategories } from '../../api/tags';
-import type { TagCategory } from '../../api/tags';
-import { TagSelector } from '../../components/TagSelector';
-import type { SelectedTag } from '../../components/TagSelector';
+import { searchPhotos, getTagsWithCounts } from '../../api/photos';
+import { getTagCategories, getCategoryTags } from '../../api/tags';
+import type { TagCategory, TagObject } from '../../api/tags';
 import type { PhotoListItem } from './types';
 import { CachedImage } from '../../components/CachedImage';
 
 /** 排序字段：上传时间 / 点赞数 / 浏览量 */
 type SortOption = 'created_at' | 'likes' | 'views';
+
+/** 第三层细分标签选择（属性键 + 选项值） */
+interface AttrFilter {
+  key: string;
+  value: string;
+}
 
 /** 搜索图标 */
 const SearchIcon = ({ className }: { className: string }) => (
@@ -63,7 +67,10 @@ export function GalleryPage() {
   const [photos, setPhotos] = useState<PhotoListItem[]>([]);
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([]);
+  // 第二层标签对象（如「飞行器」）与第三层细分标签（属性键值），逐层下钻浏览
+  const [tagObjects, setTagObjects] = useState<TagObject[]>([]);
+  const [selectedObject, setSelectedObject] = useState<TagObject | null>(null);
+  const [selectedAttr, setSelectedAttr] = useState<AttrFilter | null>(null);
   const [keyword, setKeyword] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -82,6 +89,19 @@ export function GalleryPage() {
     });
   }, []);
 
+  /** 分区切换时重置下钻层级，并拉取该分区下的第二层标签对象 */
+  useEffect(() => {
+    setSelectedObject(null);
+    setSelectedAttr(null);
+    if (!selectedCategory) {
+      setTagObjects([]);
+      return;
+    }
+    getCategoryTags(selectedCategory).then((res) => {
+      setTagObjects(res.success && res.data ? res.data.objects : []);
+    });
+  }, [selectedCategory]);
+
   /** 拉取热门标签列表（按数量降序），取前 12 个 */
   useEffect(() => {
     getTagsWithCounts().then((res) => {
@@ -93,31 +113,23 @@ export function GalleryPage() {
 
   /**
    * 拉取照片列表
-   * 当存在分区/搜索/标签/排序条件时调用搜索接口，否则调用默认列表接口。
+   * 统一走搜索接口：分区 / 第二层标签 / 第三层属性 / 关键词 / 排序条件均作为查询参数，
+   * 未选择任何下钻层级时即为分区全量浏览。
    */
   const fetchPhotos = async () => {
     setIsLoading(true);
     try {
-      // 已选标签的 objectName 列表，用逗号拼接传给 search 接口的 tag 参数
-      const tagNames = selectedTags.map((t) => t.objectName).join(',');
-      const hasAdvancedConditions =
-        keyword || tagNames || hotTag || sortBy !== 'created_at' || sortOrder !== 'desc';
-      let response;
-      if (hasAdvancedConditions) {
-        // 将 TagSelector 的 tag 与热门标签 chip 合并（去重）
-        const combinedTags = [
-          ...new Set([...selectedTags.map((t) => t.objectName), ...(hotTag ? [hotTag] : [])]),
-        ].join(',');
-        response = await searchPhotos({
-          keyword,
-          tag: combinedTags || undefined,
-          category: selectedCategory || undefined,
-          sortBy,
-          sortOrder,
-        });
-      } else {
-        response = await getPhotos(selectedCategory || undefined);
-      }
+      // 第二层标签对象名与热门标签 chip 合并（去重）后逗号拼接，后端按 AND 匹配
+      const tagNames = [...new Set([selectedObject?.name, hotTag].filter(Boolean) as string[])].join(',');
+      const response = await searchPhotos({
+        keyword,
+        tag: tagNames || undefined,
+        tag_key: selectedAttr?.key,
+        tag_value: selectedAttr?.value,
+        category: selectedCategory || undefined,
+        sortBy,
+        sortOrder,
+      });
       if (response.success && response.data) {
         setPhotos(response.data);
       } else {
@@ -138,7 +150,7 @@ export function GalleryPage() {
     }, 300);
     return () => clearTimeout(debounce);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, selectedTags, sortBy, sortOrder, selectedCategory, hotTag]);
+  }, [keyword, selectedObject, selectedAttr, sortBy, sortOrder, selectedCategory, hotTag]);
 
   /**
    * 切换排序字段或方向
@@ -174,10 +186,7 @@ export function GalleryPage() {
               {categories.map((cat) => (
                 <button
                   key={cat.id}
-                  onClick={() => {
-                    setSelectedCategory(cat.id);
-                    setSelectedTags([]);
-                  }}
+                  onClick={() => setSelectedCategory(cat.id)}
                   className={`px-6 py-3 font-medium transition-all border-b-2 ${
                     selectedCategory === cat.id
                       ? 'border-blue-700 text-blue-800'
@@ -189,6 +198,118 @@ export function GalleryPage() {
                 </button>
               ))}
             </div>
+
+            {/* 三层标签逐层下钻：面包屑 + 第二层对象 chips + 第三层细分标签 chips */}
+            {selectedCategory && (
+              <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                {/* 面包屑：每一层均可点击返回，清除更深层的筛选 */}
+                <div className="flex flex-wrap items-center gap-1 text-sm">
+                  <button
+                    onClick={() => {
+                      setSelectedObject(null);
+                      setSelectedAttr(null);
+                    }}
+                    className={`px-1 rounded transition-colors ${
+                      selectedObject
+                        ? 'text-blue-700 hover:underline'
+                        : 'text-gray-800 font-medium'
+                    }`}
+                  >
+                    {categories.find((c) => c.id === selectedCategory)?.name || '全部分区'}
+                  </button>
+                  {selectedObject && (
+                    <>
+                      <span className="text-gray-400">›</span>
+                      <button
+                        onClick={() => setSelectedAttr(null)}
+                        className={`px-1 rounded transition-colors ${
+                          selectedAttr ? 'text-blue-700 hover:underline' : 'text-gray-800 font-medium'
+                        }`}
+                      >
+                        {selectedObject.name}
+                      </button>
+                    </>
+                  )}
+                  {selectedAttr && (
+                    <>
+                      <span className="text-gray-400">›</span>
+                      <span className="px-1 text-gray-800 font-medium">{selectedAttr.value}</span>
+                    </>
+                  )}
+                  {(selectedObject || selectedAttr || hotTag) && (
+                    <button
+                      onClick={() => {
+                        setSelectedObject(null);
+                        setSelectedAttr(null);
+                        setHotTag(null);
+                      }}
+                      className="ml-2 text-xs text-gray-500 hover:text-blue-700"
+                    >
+                      清除筛选
+                    </button>
+                  )}
+                </div>
+
+                {/* 第二层：点击标签对象即筛选该对象下已审核照片 */}
+                {tagObjects.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
+                    <span className="text-sm text-gray-500">标签:</span>
+                    {tagObjects.map((obj) => {
+                      const selected = selectedObject?.id === obj.id;
+                      return (
+                        <button
+                          key={obj.id}
+                          onClick={() => {
+                            setSelectedObject(selected ? null : obj);
+                            setSelectedAttr(null);
+                          }}
+                          className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                            selected
+                              ? 'bg-blue-700 border-blue-700 text-white'
+                              : 'border-blue-200 bg-white text-blue-800 hover:bg-blue-50'
+                          }`}
+                        >
+                          {obj.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 第三层：已选对象的可选项属性（如 机型类型：宽体机/窄体机），点击直接筛选 */}
+                {selectedObject &&
+                  selectedObject.attributes
+                    .filter((attr) => attr.type === 'select' && attr.options.length > 0)
+                    .map((attr) => (
+                      <div key={attr.id} className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">{attr.label || attr.key}:</span>
+                        {attr.options.map((option) => {
+                          const selected =
+                            selectedAttr?.key === attr.key && selectedAttr?.value === option;
+                          return (
+                            <button
+                              key={option}
+                              onClick={() =>
+                                setSelectedAttr(selected ? null : { key: attr.key, value: option })
+                              }
+                              className={`px-2.5 py-0.5 text-xs rounded-full border transition-colors ${
+                                selected
+                                  ? 'bg-blue-700 border-blue-700 text-white'
+                                  : 'border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-800'
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+
+                <p className="mt-3 text-xs text-gray-400">
+                  点击标签逐层下钻，查询该层已审核图片；点击面包屑可返回上一层。
+                </p>
+              </div>
+            )}
 
             {/* 热门标签 chips 行：点击切换 tag 筛选，为空时整行隐藏 */}
             {hotTags.length > 0 && (
@@ -214,7 +335,7 @@ export function GalleryPage() {
             )}
 
             <div className="flex gap-6">
-              {/* 左侧侧边栏：搜索框 + 标签选择器 */}
+              {/* 左侧侧边栏：关键词搜索 + 当前筛选摘要 */}
               <div className="w-72 flex-shrink-0">
                 <div className="relative mb-4">
                   <SearchIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
@@ -226,16 +347,20 @@ export function GalleryPage() {
                     className="w-full rounded-lg border border-gray-300 bg-white text-gray-800 placeholder-gray-400 py-2.5 pl-10 pr-3 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
                   />
                 </div>
-                {selectedCategory && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-2 px-1">标签筛选</h3>
-                    <TagSelector
-                      categoryId={selectedCategory}
-                      selectedTags={selectedTags}
-                      onTagsChange={setSelectedTags}
-                    />
-                  </div>
-                )}
+                <div className="rounded-lg border border-gray-200 px-3 py-3 text-sm text-gray-600">
+                  <h3 className="font-medium text-gray-700 mb-2">当前筛选</h3>
+                  <p className="text-xs leading-6">
+                    分区：{categories.find((c) => c.id === selectedCategory)?.name || '-'}
+                    <br />
+                    标签：{selectedObject?.name || '未选择（点击上方标签下钻）'}
+                    {selectedAttr && (
+                      <>
+                        <br />
+                        细分：{selectedAttr.key} · {selectedAttr.value}
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
 
               {/* 右侧：排序栏 + 照片网格 */}
@@ -243,9 +368,9 @@ export function GalleryPage() {
                 <div className="flex items-center justify-between mb-6 text-gray-700">
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-medium">共 {photos.length} 张照片</span>
-                    {selectedTags.length > 0 && (
+                    {selectedObject && (
                       <span className="px-2 py-0.5 text-sm rounded-full bg-blue-50 text-blue-800">
-                        {selectedTags.length} 个标签
+                        {selectedObject.name}
                       </span>
                     )}
                   </div>

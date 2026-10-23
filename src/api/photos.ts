@@ -19,7 +19,9 @@ import type { PhotoListItem, PhotoDetail } from '../features/gallery/types';
 /** 搜索参数 */
 export interface SearchParams {
   keyword?: string;                                  // 关键词
-  tag?: string;                                       // 标签
+  tag?: string;                                       // 标签（支持逗号分隔多标签，AND 关系）
+  tag_key?: string;                                   // 第三层细分标签属性键（需与 tag_value 同时提供）
+  tag_value?: string;                                 // 第三层细分标签属性值
   category?: string;                                  // 分区 ID（aviation/railway/automobile）
   sortBy?: 'created_at' | 'likes' | 'views' | 'title'; // 排序字段
   sortOrder?: 'asc' | 'desc';                         // 排序方向
@@ -77,6 +79,15 @@ export async function getPhotos(category?: string): Promise<ApiResponse<PhotoLis
 }
 
 /**
+ * 获取热门推荐照片（管理端已确认热门，按综合热度降序）
+ * @param limit - 返回数量，默认 12
+ * @returns ApiResponse<PhotoListItem[]>
+ */
+export async function getHotPhotos(limit = 12): Promise<ApiResponse<PhotoListItem[]>> {
+  return request<PhotoListItem[]>(`/photos/hot?limit=${limit}`);
+}
+
+/**
  * 搜索照片
  * @param params - 搜索与排序参数
  * @returns ApiResponse<PhotoListItem[]>
@@ -86,6 +97,8 @@ export async function searchPhotos(params: SearchParams): Promise<ApiResponse<Ph
   const query = new URLSearchParams();
   if (params.keyword) query.set('keyword', params.keyword);
   if (params.tag) query.set('tag', params.tag);
+  if (params.tag_key) query.set('tag_key', params.tag_key);
+  if (params.tag_value) query.set('tag_value', params.tag_value);
   if (params.category) query.set('category', params.category);
   if (params.sortBy) query.set('sortBy', params.sortBy);
   if (params.sortOrder) query.set('sortOrder', params.sortOrder);

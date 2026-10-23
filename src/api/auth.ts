@@ -451,6 +451,8 @@ export interface MyPhoto {
   tags: string[];
   status: string;
   rejection_reason: string | null;
+  /** 原审核员用户名（V4.1.2-beta.3：仅未通过记录非空，用于展示审核员编号） */
+  reviewer_name?: string | null;
   created_at: string;
   description: string;
   width?: number;

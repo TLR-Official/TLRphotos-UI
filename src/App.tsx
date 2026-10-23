@@ -13,6 +13,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-route
 import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { GalleryPage } from './features/gallery/GalleryPage';
+import { RecommendPage } from './features/gallery/RecommendPage';
 import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
@@ -96,6 +97,7 @@ function AppRouterContent() {
           <Route path="/users/:userId" element={<PublicProfilePage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/recommend" element={<RecommendPage />} />
           <Route path="/forum" element={<ForumHomePage />} />
           <Route path="/forum/b/:boardId" element={<BoardPage />} />
           <Route path="/forum/t/:threadId" element={<ThreadDetailPage />} />

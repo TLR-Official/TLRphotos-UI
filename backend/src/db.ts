@@ -445,6 +445,20 @@ const initSchema = async () => {
       updated_at TEXT NOT NULL
     );
 
+    -- 审核员处分记录表（V4.1.2-beta.3）：高级申诉裁决判定审核员失误/违规时写入
+    -- severity: warning（失误/警告）| penalty（违规，建议升级处罚）
+    CREATE TABLE IF NOT EXISTS admin_warnings (
+      id TEXT PRIMARY KEY,
+      admin_id TEXT NOT NULL,
+      appeal_id TEXT,
+      photo_id TEXT,
+      severity TEXT NOT NULL DEFAULT 'warning',
+      reason TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_warnings_admin ON admin_warnings(admin_id, created_at);
+
   `);
 
   // 以下为字段增量迁移：使用 ALTER TABLE 添加后期新增字段，
@@ -515,6 +529,11 @@ const initSchema = async () => {
   try {
     await db.run('CREATE INDEX IF NOT EXISTS idx_photos_registration_number ON photos(registration_number)');
   } catch {}
+  // V4.1.2-beta.3：结构化标签列（三层标签属性键值扁平 JSON）纳入正式迁移，
+  // 历史环境为手工建列，缺失时会导致上传插入失败与第三层筛选不可用
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN structured_tags TEXT');
+  } catch {}
 
   // ==========================================================================
   // V4.0.0 迭代：通知与审核纠错系统
@@ -576,6 +595,14 @@ const initSchema = async () => {
   } catch {}
   try {
     await db.run('ALTER TABLE users ADD COLUMN can_forum_post INTEGER DEFAULT 1');
+  } catch {}
+
+  // V4.1.2-beta.3：申诉裁决增加审核员责任判定（none|mistake|violation）与责任审核员快照
+  try {
+    await db.run('ALTER TABLE appeals ADD COLUMN reviewer_fault TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE appeals ADD COLUMN reviewer_admin_id TEXT');
   } catch {}
 
   // 存量处罚语义一次性迁移（V4.0.0 两级 → V4.1.0 三级）：

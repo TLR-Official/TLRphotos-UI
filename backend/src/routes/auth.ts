@@ -1131,16 +1131,18 @@ router.get('/me/photos', async (req, res) => {
     const pageSize = parseInt(req.query.pageSize as string) || 20;
     const offset = (page - 1) * pageSize;
 
-    // 构建查询：可选状态过滤
-    let query = 'SELECT * FROM photos WHERE user_id = ?';
+    // 构建查询：可选状态过滤；联表带出审核员用户名（V4.1.2-beta.3：未通过记录需展示审核员编号）
+    let query =
+      'SELECT p.*, r.username AS reviewer_name FROM photos p ' +
+      'LEFT JOIN admin_users r ON p.reviewed_by = r.id WHERE p.user_id = ?';
     const params: any[] = [decoded.userId];
 
     if (status && ['pending', 'approved', 'rejected'].includes(status as string)) {
-      query += ' AND status = ?';
+      query += ' AND p.status = ?';
       params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
 
     const photos = await db.all(query, params);
@@ -1167,6 +1169,10 @@ router.get('/me/photos', async (req, res) => {
             }
           }
           delete photo.altitude;
+          // 不暴露审核员内部 ID，仅回传用户名（仅未通过记录需要）
+          const reviewerName = photo.reviewer_name || null;
+          delete photo.reviewer_name;
+          delete photo.reviewed_by;
           return {
             ...photo,
             thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
@@ -1175,6 +1181,7 @@ router.get('/me/photos', async (req, res) => {
             watermarked_url: photo.watermarked_url ? getProxyUrl(photo.watermarked_url, photo.id) : '',
             tags,
             rejection_reason: photo.rejection_reason || null,
+            reviewer_name: photo.status === 'rejected' ? reviewerName : null,
           };
         }),
         total: total?.count || 0,

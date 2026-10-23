@@ -214,11 +214,48 @@ describe('V3.2.0 注册号与热门标记', () => {
     expect(res.body.code).toBe('REGISTRATION_REQUIRED');
   });
 
+  it('upload/complete 缺少第二层标签返回 400 TAG_OBJECT_REQUIRED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/test/x.webp', title: '无标签', category: 'railway' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('TAG_OBJECT_REQUIRED');
+  });
+
+  it('列表支持逗号分隔多标签（AND）与第三层属性筛选', async () => {
+    await db.run(
+      `INSERT INTO photos (id, title, thumbnail_path, original_url, tags, structured_tags, category, status, user_id, created_at)
+       VALUES ('tag-filter-wide', '宽体机', 't', 'o', '["飞行器","宽体机"]', '{"机型类型":"宽体机"}', 'aviation', 'approved', ?, '2026-01-01T00:00:00.000Z')`,
+      [TEST_USER_A]
+    );
+    await db.run(
+      `INSERT INTO photos (id, title, thumbnail_path, original_url, tags, structured_tags, category, status, user_id, created_at)
+       VALUES ('tag-filter-narrow', '窄体机', 't', 'o', '["飞行器","窄体机"]', '{"机型类型":"窄体机"}', 'aviation', 'approved', ?, '2026-01-02T00:00:00.000Z')`,
+      [TEST_USER_A]
+    );
+
+    // 多标签 AND：同时匹配两个标签
+    const multiTag = await request(app).get('/api/photos?tag=飞行器,宽体机');
+    expect(multiTag.status).toBe(200);
+    const multiTagIds = multiTag.body.data.map((p: any) => p.id);
+    expect(multiTagIds).toContain('tag-filter-wide');
+    expect(multiTagIds).not.toContain('tag-filter-narrow');
+
+    // 第三层属性筛选：仅返回 structured_tags 命中键值的照片
+    const attr = await request(app).get('/api/photos?tag_key=机型类型&tag_value=窄体机');
+    expect(attr.status).toBe(200);
+    const attrIds = attr.body.data.map((p: any) => p.id);
+    expect(attrIds).toContain('tag-filter-narrow');
+    expect(attrIds).not.toContain('tag-filter-wide');
+  });
+
   it('非航空分区 upload/complete 缺少注册号不得返回 REGISTRATION_REQUIRED', async () => {
     const res = await request(app)
       .post('/api/photos/upload/complete')
       .set('Authorization', `Bearer ${tokenA}`)
-      .send({ key: 'photos/test/x.webp', title: '铁路无注册号', category: 'railway' });
+      .send({ key: 'photos/test/x.webp', title: '铁路无注册号', category: 'railway', tags: ['轨道车辆'] });
 
     // 测试环境未配置 OSS_BUCKET，后续 completeUpload 会 500；
     // 断言仅覆盖校验层：非航空分区不得因注册号缺失被 400 拦截

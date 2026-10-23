@@ -245,11 +245,14 @@ export function MyWorksPage() {
                     {new Date(photo.created_at).toLocaleDateString('zh-CN')}
                   </p>
 
-                  {/* 驳回理由 */}
+                  {/* 驳回理由与审核员编号（V4.1.2-beta.3：便于追责与申诉举证） */}
                   {photo.status === 'rejected' && photo.rejection_reason && (
                     <div className="mt-2 p-2 rounded-lg bg-red-100 border border-red-200">
                       <p className="text-xs font-medium text-red-700 mb-0.5">驳回理由：</p>
                       <p className="text-xs text-red-600">{photo.rejection_reason}</p>
+                      {photo.reviewer_name && (
+                        <p className="text-xs text-red-500 mt-1">审核员：{photo.reviewer_name}</p>
+                      )}
                     </div>
                   )}
 

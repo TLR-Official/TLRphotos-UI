@@ -251,8 +251,8 @@ export function UploadPage() {
   // 航空分区须填写且格式合法；其他分区留空即通过，非法输入不阻断提交（后端会置空不落库）
   const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
 
-  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、已勾选安全声明
-  const canSubmit = title.trim() && isRegistrationValid && category && safetyAgreement;
+  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、至少一个第二层标签、已勾选安全声明
+  const canSubmit = title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement;
 
   /** 水印拖动开始：阻止默认行为并进入拖动状态 */
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -294,7 +294,13 @@ export function UploadPage() {
    * 成功后延迟跳转到新照片详情页，失败回退到填写步骤并显示错误。
    */
   const handleSubmit = async () => {
-    if (!file || !canSubmit) return;
+    if (!file) return;
+    // 防御性校验：第二层标签必填（至少选择一个标签对象）
+    if (selectedTags.length === 0) {
+      setError('请至少选择一个标签');
+      return;
+    }
+    if (!canSubmit) return;
     // 防御性校验：航空分区注册号不合法时阻止提交并提示（按钮禁用时不会走到这里）
     if (isRegistrationRequired && !isRegistrationFormatValid) {
       setError('请填写有效的飞机注册号（2-20 位字母/数字/连字符）');
@@ -514,7 +520,7 @@ export function UploadPage() {
 
               {category && (
                 <div>
-                  <label className={labelCls}>选择标签</label>
+                  <label className={labelCls}>选择标签 <span className="text-red-500">*</span></label>
                   <TagSelector
                     categoryId={category}
                     selectedTags={selectedTags}
@@ -684,7 +690,8 @@ export function UploadPage() {
                   {!title.trim() && '请填写标题'}
                   {title.trim() && isRegistrationRequired && !isRegistrationFormatValid && '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'}
                   {title.trim() && isRegistrationValid && !category && '请选择分类'}
-                  {title.trim() && isRegistrationValid && category && !safetyAgreement && '请勾选安全声明'}
+                  {title.trim() && isRegistrationValid && category && selectedTags.length === 0 && '请至少选择一个标签'}
+                  {title.trim() && isRegistrationValid && category && selectedTags.length > 0 && !safetyAgreement && '请勾选安全声明'}
                 </p>
               )}
             </div>

@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -173,11 +173,13 @@ export async function deleteAdmin(id: string): Promise<{ success: boolean; messa
 }
 
 /**
- * 分页拉取待审核照片
+ * 分页拉取待审核照片（V4.2.0：队列按上传时间正序）
+ * 响应附带 next_photo_id（当前分区队列队首照片 ID），前端据此标注「下一张」提示，
+ * 仅作软约束提示，不阻断审核员选择其他照片。
  * @param page 页码（默认 1）
  * @param pageSize 每页数量（默认 20）
  */
-export async function getPendingPhotos(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminPhoto[]; pagination?: { page: number; pageSize: number; total: number }; message?: string }> {
+export async function getPendingPhotos(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminPhoto[]; pagination?: { page: number; pageSize: number; total: number }; next_photo_id?: string | null; message?: string }> {
   const response = await fetch(`${API_BASE}/photos/pending?page=${page}&pageSize=${pageSize}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -304,18 +306,39 @@ export async function getAppeals(status?: AppealStatus, page = 1, pageSize = 20)
 }
 
 /**
- * 申诉裁决（V4.0.0）：approve 恢复照片为 approved，reject 维持 rejected；答复必填，双向回执通知。
+ * 申诉裁决（V4.0.0 / V4.1.2-beta.3）：approve 恢复照片为 approved，reject 维持 rejected；
+ * 答复必填，双向回执通知。reviewer_fault 判定原审核员有责时（mistake/violation），
+ * 后端强制按 approve 处理并写入处分记录（admin_warnings）。
  * @param id 申诉 id
  * @param decision 裁决结论
  * @param response 裁决答复（必填）
+ * @param reviewerFault 审核员责任判定：none（默认）/ mistake（审核失误）/ violation（审核违规）
  */
-export async function decideAppeal(id: string, decision: 'approve' | 'reject', response: string): Promise<{ success: boolean; message?: string; data?: { appeal_id: string; status: string } }> {
+export async function decideAppeal(
+  id: string,
+  decision: 'approve' | 'reject',
+  response: string,
+  reviewerFault: 'none' | 'mistake' | 'violation' = 'none'
+): Promise<{ success: boolean; message?: string; data?: { appeal_id: string; status: string; reviewer_fault?: string } }> {
   const res = await fetch(`${API_BASE}/appeals/${id}/decide`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision, response }),
+    body: JSON.stringify({ decision, response, reviewer_fault: reviewerFault }),
   });
   return res.json();
+}
+
+/**
+ * 审核员处分记录（V4.1.2-beta.3，仅 super）
+ * 由申诉裁决判定审核员有责时自动写入：severity=warning（审核失误）/ penalty（审核违规）。
+ * @param page 页码
+ * @param pageSize 每页数量
+ */
+export async function getAdminWarnings(page = 1, pageSize = 20): Promise<{ success: boolean; data?: AdminWarning[]; pagination?: { page: number; pageSize: number; total: number }; message?: string }> {
+  const response = await fetch(`${API_BASE}/warnings?page=${page}&pageSize=${pageSize}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
 }
 
 /**

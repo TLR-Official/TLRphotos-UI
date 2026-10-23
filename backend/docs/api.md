@@ -82,7 +82,9 @@
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | keyword | string | 关键词（匹配标题、描述、**飞机注册号（V3.2.0，归一化大写模糊匹配）**） |
-| tag | string | 标签筛选 |
+| tag | string | 标签筛选；**V4.1.2-beta.3 起支持逗号分隔多标签（AND 关系）**，如 `tag=飞行器,宽体机` 表示同时含两者 |
+| tag_key | string | 第三层细分标签属性键（V4.1.2-beta.3）：配合 `tag_value` 使用，匹配 `structured_tags` 中的属性键值对 |
+| tag_value | string | 第三层细分标签属性值（V4.1.2-beta.3）：与 `tag_key` 成对出现，缺一不生效 |
 | registration | string | 飞机注册号检索（V3.2.0）：大小写不敏感，按归一化大写值 LIKE 模糊匹配（如 `b-1234` 命中 `B-1234`） |
 | is_hot | string | 热门意愿过滤（V3.2.0）：传 `1`/`true` 时仅返回上传者勾选「愿意推荐为热门」的照片 |
 | sortBy | string | 排序字段（created_at/likes/views/title），默认created_at |
@@ -111,6 +113,7 @@
 ```
 
 > V3.2.0 起列表项新增 `registration_number`（飞机注册号，存量数据可能为 `null`）与 `is_hot`（0/1）字段。
+> V4.1.2-beta.3 起 `GET /api/photos` 与 `GET /api/photos/search` 共用标签筛选能力：`tag`（逗号分隔多标签 AND）、`tag_key` + `tag_value`（第三层属性）均生效。
 
 ### 获取所有标签
 
@@ -184,7 +187,40 @@
 
 **字段说明**:
 - `is_liked`: 当前登录用户是否已点赞；未登录或未点赞时返回 `false`，前端用于切换点赞按钮视觉状态
-- `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复访问只计 1 次）
+- `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复计数只计 1 次）
+- `reviewer`（V4.1.2-beta.3）：仅 `status=rejected` 时非空，形如 `{ "name": "审核员用户名", "reviewed_at": "2026-10-23T12:00:00Z" }`；不暴露管理员内部 ID
+
+### 获取已确认热门照片（V4.1.2-beta.3）
+
+**GET** `/api/photos/hot`
+
+公开接口，返回管理端已确认（`is_hot_confirmed=1`）且已通过的按综合热度排序照片，用于首页轮播与推荐页。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| limit | number | 返回数量，默认 12，上限 30 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "000001",
+      "title": "城市天际线",
+      "thumbnail_path": "/api/photos/image/000001/thumbnail",
+      "tags": ["飞行器", "宽体机"],
+      "views": 8932,
+      "likes": 1256,
+      "is_hot_confirmed": 1,
+      "created_at": "2024-05-15T18:30:00Z"
+    }
+  ]
+}
+```
+
+> 排序规则：`views + likes * 3` 降序；标签为解析后的 JSON 数组，图片地址为后端代理 URL。
 
 ### 点赞照片
 
@@ -345,6 +381,8 @@
 > - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。
 >   **V4.1.2-beta.2 起分区条件必填**：仅当 `category = "aviation"` 时必填，缺失或非法返回 `400 { code: "REGISTRATION_REQUIRED" }`（校验先于 OSS 完成调用）；其他分区为选填，空值或非法格式均不阻断，落库为 `null`。未传 `category`（旧客户端）按非航空分区处理。
 > - `is_hot`（number/boolean/string，可选）：上传者「愿意推荐为热门图片」意愿标记，接受 `true`/`"true"`/`"1"`/`1`，其余视为未勾选（0）。仅作审核参考，不公开展示。
+> - **V4.1.2-beta.3 起 `tags` 强制必填（至少一个第二层标签）**：缺失、空数组或解析后为空时返回 `400 { code: "TAG_OBJECT_REQUIRED", message: "请至少选择一个第二层标签" }`；`tags` 数组元素为第二层标签对象名，落库为 JSON 数组字符串。
+> - `structured_tags`（object，可选）：第三层细分标签属性键值扁平对象（如 `{ "机型类型": "宽体机" }`），用于属性维度筛选。
 
 **响应**:
 ```json
@@ -379,7 +417,8 @@ Content-Type: multipart/form-data
 | registration_number | string | 条件必填 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）。**V4.1.2-beta.2 起仅 `category=aviation` 时必填**，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }`；其他分区选填，空值或非法格式不阻断，落库为 `null` |
 | is_hot | string | 否 | 「愿意推荐为热门图片」意愿标记（V3.2.0）：`true`/`1` 视为勾选，其余为未勾选（0）；仅作审核参考，不公开展示 |
 | title | string | 否 | 照片标题，默认"未命名照片" |
-| tags | string/array | 否 | 标签，支持数组或中英文逗号分隔字符串 |
+| tags | string/array | 是 | 第二层标签对象名（V4.1.2-beta.3 起强制必填）：数组或中英文逗号分隔字符串，至少一个；为空返回 400 `{ code: "TAG_OBJECT_REQUIRED" }` |
+| structured_tags | string/object | 否 | 第三层细分标签属性键值扁平对象（V4.1.2-beta.3），如 `{"机型类型":"宽体机"}`，用于属性维度筛选 |
 | description | string | 否 | 照片描述 |
 | camera_model | string | 否 | 相机型号 |
 | vehicle | string | 否 | 拍摄设备 |
@@ -1232,6 +1271,20 @@ avatar: <file> (JPG/PNG/WebP, 最大5MB)
 }
 ```
 
+### 我的作品列表（含审核状态，V4.1.2-beta.3 增补）
+
+**GET** `/api/auth/me/photos?status=rejected&page=1&pageSize=20`
+
+**需登录**。返回当前用户的全部作品（含 pending/rejected），`rejection_reason` 为驳回理由；
+V4.1.2-beta.3 起联表返回 `reviewer_name`（原审核员用户名，仅 `status=rejected` 时非空），用于「我的作品」与详情页展示审核员编号，不暴露管理员内部 ID。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| status | string | 可选筛选：`pending` / `approved` / `rejected` |
+| page | number | 页码，默认 1 |
+| pageSize | number | 每页数量，默认 20 |
+
 ### 退出登录
 
 **POST** `/api/auth/logout`
@@ -2033,6 +2086,25 @@ Authorization: Bearer <admin_token>
 - 角色不符统一返回 `403 { success: false, message: "权限不足" }`。
 - **V4.1.0 处罚撤销权限与发起权限分离**：L1 警告仅 `super` 可撤销；L2/L3 由 `super`/`zone_master` 撤销（其他角色 `403 BAN_MANAGE_DENIED`），详见[撤销/解除处罚](#撤销解除处罚)。
 
+### 待审核队列（顺序审核软约束，V4.1.2-beta.3）
+
+**GET** `/api/admin/photos/pending?page=1&pageSize=20`
+
+**鉴权**：`PHOTO_AUDIT_ROLES`（super / zone_master / zone_auditor）；后两者仅返回本分区照片，跨区返回 403。
+
+- 排序：`created_at ASC`（上传时间正序，最早待审优先）
+- 响应新增 `next_photo_id`：当前分区队首待审照片 ID（无待审为 `null`），前端据此标注「下一张」**软约束提示**，不阻断审核员选择其他照片
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [ { "id": "000013", "title": "城市天际线", "created_at": "2026-10-20T08:00:00.000Z" } ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 12 },
+  "next_photo_id": "000013"
+}
+```
+
 ### 审核通过 / 驳回（V4.0.0 补记 reviewed_by / reviewed_at）
 
 **PUT** `/api/admin/photos/:id/approve`
@@ -2276,11 +2348,50 @@ Authorization: Bearer <admin_token>
 }
 ```
 
+### 审核员处分记录（V4.1.2-beta.3）
+
+**GET** `/api/admin/warnings?page=1&pageSize=20&admin_id=<可选>`
+
+**鉴权**：仅 `super`（其他角色 403「权限不足」）。返回由申诉裁决判定审核员有责时自动写入的处分记录，按时间倒序。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| admin_id | string | 可选，按被处分审核员过滤 |
+| page | number | 页码，默认 1 |
+| pageSize | number | 每页数量，默认 20 |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "a1b2c3d4-...",
+      "admin_id": "admin-uuid",
+      "appeal_id": "7c9e66e1-...",
+      "photo_id": "000013",
+      "severity": "mistake",
+      "reason": "申诉判定：审核失误",
+      "created_by": "super-admin-uuid",
+      "created_at": "2026-10-23T08:00:00.000Z",
+      "admin_name": "auditor01",
+      "created_by_name": "admin",
+      "photo_title": "城市天际线"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 1 }
+}
+```
+
+> `severity`：`warning`=审核失误（警告留痕）/ `penalty`=审核违规（待处罚）。表结构 `admin_warnings`，仅由申诉裁决 `reviewer_fault` 触发写入。
+
 ### 申诉列表（管理侧）
 
 **GET** `/api/admin/appeals?status=pending&page=1&pageSize=20`
 
 **鉴权**：管理员 JWT。联照片标题/状态与申诉人用户名；`pending` 优先置顶，其余按创建时间倒序。
+V4.1.2-beta.3 起联表返回原审核员：`original_reviewer_id`（照片 `reviewed_by`）与 `reviewer_name`（审核员用户名），以及裁决后的 `reviewer_fault` / `reviewer_admin_id`。
 
 **查询参数**:
 | 参数 | 类型 | 说明 |
@@ -2326,12 +2437,21 @@ Authorization: Bearer <admin_token>
 
 **请求体**:
 ```json
-{ "decision": "approve", "response": "裁决答复（必填，作为回执内容）" }
+{ "decision": "approve", "response": "裁决答复（必填，作为回执内容）", "reviewer_fault": "none" }
 ```
+
+**审核员责任判定（V4.1.2-beta.3）**:
+| reviewer_fault | 含义 | 效果 |
+|----------------|------|------|
+| `none`（默认） | 原审核无责 | 按 `decision` 执行 |
+| `mistake` | 审核失误 | 强制视为申诉成立（照片恢复 `approved`），写入 `admin_warnings`（severity=`warning`） |
+| `violation` | 审核违规 | 强制视为申诉成立（照片恢复 `approved`），写入 `admin_warnings`（severity=`penalty`） |
+
+> 处分记录仅写入原审核员（`photos.reviewed_by`）且排除裁决人本人；裁决结论与 `requested_decision`/`reviewer_fault` 一并写入审计日志。
 
 **响应**:
 ```json
-{ "success": true, "message": "申诉已通过，照片已恢复", "data": { "appeal_id": "7c9e66e1-...", "status": "approved" } }
+{ "success": true, "message": "申诉已通过，照片已恢复", "data": { "appeal_id": "7c9e66e1-...", "status": "approved", "reviewer_fault": "none" } }
 ```
 
 `reject` 时 `message` 为「申诉已驳回」、`data.status` 为 `"rejected"`。

@@ -582,16 +582,31 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   const params: (string | number)[] = [];
 
   // 分区审核员与分区总审核仅可见本分区照片
-  if (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') {
+  const isZoneScoped = req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master';
+  if (isZoneScoped) {
     query += ' AND p.category = ?';
     params.push(req.admin.zone);
   }
 
-  query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
+  // 顺序审核（软约束）：按上传时间正序排队，最早待审照片优先展示；
+  // 不阻断审核员选择其他照片，仅在响应中给出队首提示 next_photo_id
+  query += ' ORDER BY p.created_at ASC LIMIT ? OFFSET ?';
   params.push(pageSize, offset);
 
   const photos = await db.all(query, params);
-  const total = await db.get('SELECT COUNT(*) as count FROM photos WHERE status = "pending"');
+
+  // 总数按相同的分区条件统计，避免分区审核员看到全局待审总量
+  const countQuery =
+    'SELECT COUNT(*) as count FROM photos p WHERE p.status = "pending"' +
+    (isZoneScoped ? ' AND p.category = ?' : '');
+  const total = await db.get(countQuery, isZoneScoped ? [req.admin.zone] : []);
+
+  // 队列队首（本分区最早待审照片 ID），前端据此标注「下一张」
+  const queueHeadQuery =
+    'SELECT p.id FROM photos p WHERE p.status = "pending"' +
+    (isZoneScoped ? ' AND p.category = ?' : '') +
+    ' ORDER BY p.created_at ASC LIMIT 1';
+  const queueHead = await db.get(queueHeadQuery, isZoneScoped ? [req.admin.zone] : []);
 
   // 缩略图地址转换为代理 URL，附带 photoId 以支持代理路由快速鉴权；移除 altitude
   const mappedPhotos = photos.map((photo: any) => {
@@ -610,6 +625,8 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
       pageSize,
       total: total?.count || 0,
     },
+    // 顺序审核软约束：本分区最早待审照片（队首），前端标注「下一张」
+    next_photo_id: queueHead?.id || null,
   });
 });
 
@@ -1685,10 +1702,12 @@ router.get('/appeals', adminAuthMiddleware, async (req, res) => {
   }
 
   const appeals = await db.all(
-    `SELECT a.*, p.title AS photo_title, p.status AS photo_status, u.username AS appellant_name
+    `SELECT a.*, p.title AS photo_title, p.status AS photo_status, p.reviewed_by AS original_reviewer_id,
+            r.username AS reviewer_name, u.username AS appellant_name
      FROM appeals a
      LEFT JOIN photos p ON a.photo_id = p.id
      LEFT JOIN users u ON a.user_id = u.id
+     LEFT JOIN admin_users r ON p.reviewed_by = r.id
      ${where}
      ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
      LIMIT ? OFFSET ?`,
@@ -1725,7 +1744,7 @@ router.put('/appeals/:id/decide', adminAuthMiddleware, async (req, res) => {
     return res.status(401).json({ success: false, message: '未授权' });
   }
 
-  const { decision, response } = req.body;
+  const { decision, response, reviewer_fault } = req.body;
   if (decision !== 'approve' && decision !== 'reject') {
     return res.status(400).json({ success: false, message: '裁决结论必须为 approve 或 reject' });
   }
@@ -1733,6 +1752,11 @@ router.put('/appeals/:id/decide', adminAuthMiddleware, async (req, res) => {
     return res.status(400).json({ success: false, message: '请填写裁决答复' });
   }
   const trimmedResponse = response.trim();
+  // 审核员责任判定（V4.1.2-beta.3）：none=无责（默认）| mistake=审核失误 | violation=审核违规
+  const fault: 'none' | 'mistake' | 'violation' =
+    reviewer_fault === 'mistake' || reviewer_fault === 'violation' ? reviewer_fault : 'none';
+  // 判定审核员有责时，申诉视为成立：作品直接恢复为通过
+  const effectiveDecision: 'approve' | 'reject' = fault === 'none' ? decision : 'approve';
 
   const appeal = await db.get<any>('SELECT * FROM appeals WHERE id = ?', [req.params.id]);
   if (!appeal) {
@@ -1743,11 +1767,11 @@ router.put('/appeals/:id/decide', adminAuthMiddleware, async (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  const photo = await db.get<any>('SELECT id, title, status, user_id FROM photos WHERE id = ?', [
+  const photo = await db.get<any>('SELECT id, title, status, user_id, reviewed_by FROM photos WHERE id = ?', [
     appeal.photo_id,
   ]);
 
-  if (decision === 'approve') {
+  if (effectiveDecision === 'approve') {
     if (!photo) {
       return res.status(400).json({ success: false, message: '关联照片已不存在，无法恢复' });
     }
@@ -1781,21 +1805,96 @@ router.put('/appeals/:id/decide', adminAuthMiddleware, async (req, res) => {
     }
   }
 
+  // 判定审核员有责：写入处分记录（mistake=警告，violation=违规待处罚）
+  if (fault !== 'none' && photo?.reviewed_by && photo.reviewed_by !== req.admin.id) {
+    await db.run(
+      `INSERT INTO admin_warnings (id, admin_id, appeal_id, photo_id, severity, reason, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        photo.reviewed_by,
+        appeal.id,
+        appeal.photo_id,
+        fault === 'violation' ? 'penalty' : 'warning',
+        trimmedResponse,
+        req.admin.id,
+        nowIso,
+      ]
+    );
+  }
+
   await db.run(
-    "UPDATE appeals SET status = ?, response = ?, decided_by = ?, decided_at = ? WHERE id = ?",
-    [decision === 'approve' ? 'approved' : 'rejected', trimmedResponse, req.admin.id, nowIso, appeal.id]
+    'UPDATE appeals SET status = ?, response = ?, decided_by = ?, decided_at = ?, reviewer_fault = ?, reviewer_admin_id = ? WHERE id = ?',
+    [
+      effectiveDecision === 'approve' ? 'approved' : 'rejected',
+      trimmedResponse,
+      req.admin.id,
+      nowIso,
+      fault,
+      photo?.reviewed_by || null,
+      appeal.id,
+    ]
   );
 
   await logAdminAction(req.admin, 'decide_appeal', 'appeal', appeal.id, {
-    decision,
+    decision: effectiveDecision,
+    requested_decision: decision,
+    reviewer_fault: fault,
+    reviewed_by_admin: photo?.reviewed_by || null,
     photo_id: appeal.photo_id,
     response: trimmedResponse,
   });
 
   res.json({
     success: true,
-    message: decision === 'approve' ? '申诉已通过，照片已恢复' : '申诉已驳回',
-    data: { appeal_id: appeal.id, status: decision === 'approve' ? 'approved' : 'rejected' },
+    message: effectiveDecision === 'approve' ? '申诉已通过，照片已恢复' : '申诉已驳回',
+    data: {
+      appeal_id: appeal.id,
+      status: effectiveDecision === 'approve' ? 'approved' : 'rejected',
+      reviewer_fault: fault,
+    },
+  });
+});
+
+/**
+ * 审核员处分记录（V4.1.2-beta.3，管理侧）：super 查看由申诉裁决产生的审核员警告/违规记录。
+ * @query admin_id 可选，按审核员过滤
+ * @query page 页码
+ * @query pageSize 每页数量（默认 20）
+ */
+router.get('/warnings', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const pageSize = parseInt(req.query.pageSize as string) || 20;
+  const offset = (page - 1) * pageSize;
+  const adminId = req.query.admin_id as string | undefined;
+
+  const where = adminId ? 'WHERE w.admin_id = ?' : '';
+  const params: (string | number)[] = adminId ? [adminId] : [];
+
+  const warnings = await db.all(
+    `SELECT w.*, a.username AS admin_name, c.username AS created_by_name, p.title AS photo_title
+     FROM admin_warnings w
+     LEFT JOIN admin_users a ON w.admin_id = a.id
+     LEFT JOIN admin_users c ON w.created_by = c.id
+     LEFT JOIN photos p ON w.photo_id = p.id
+     ${where}
+     ORDER BY w.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [...params, pageSize, offset]
+  );
+  const total = await db.get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM admin_warnings w ${where}`,
+    params
+  );
+
+  res.json({
+    success: true,
+    data: warnings,
+    pagination: { page, pageSize, total: total?.c || 0 },
   });
 });
 

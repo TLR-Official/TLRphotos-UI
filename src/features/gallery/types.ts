@@ -15,6 +15,10 @@ export interface PhotoListItem {
   registration_number?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
+  /** 浏览量（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */
+  views?: number;
+  /** 点赞数（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */
+  likes?: number;
 }
 
 /** 上传者信息（嵌入在照片详情中，用于展示上传者头像与昵称） */
@@ -47,4 +51,8 @@ export interface PhotoDetail extends PhotoListItem {
   user_id?: string | null;
   /** 审核状态：approved / pending / rejected */
   status?: string;
+  /** 审核驳回理由（仅 rejected 状态非空） */
+  rejection_reason?: string | null;
+  /** 原审核员信息（V4.1.2-beta.3：仅 rejected 状态非空，用于展示审核员编号） */
+  reviewer?: { name: string; reviewed_at: string | null } | null;
 }

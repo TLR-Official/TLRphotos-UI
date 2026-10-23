@@ -128,6 +128,14 @@ export interface Appeal {
   photo_status?: string | null;
   /** 联表字段：申诉人用户名 */
   appellant_name?: string | null;
+  /** 联表字段：原审核员管理员 ID（照片 reviewed_by） */
+  original_reviewer_id?: string | null;
+  /** 联表字段：原审核员用户名 */
+  reviewer_name?: string | null;
+  /** 审核员责任判定（V4.1.2-beta.3）：none=无责 / mistake=审核失误 / violation=审核违规 */
+  reviewer_fault?: 'none' | 'mistake' | 'violation' | null;
+  /** 被判定有责的审核员管理员 ID */
+  reviewer_admin_id?: string | null;
 }
 
 /** V4.0.0：处罚记录（V4.1.0 扩展三级语义：1=警告 / 2=功能封禁 / 3=账号封禁） */
@@ -150,6 +158,26 @@ export interface Penalty {
   created_by_name?: string | null;
   /** 联表字段：撤销操作人用户名 */
   revoked_by_name?: string | null;
+}
+
+/** V4.1.2-beta.3：审核员处分记录（由申诉裁决判定有责时生成，仅 super 可查） */
+export interface AdminWarning {
+  id: string;
+  /** 被处分的审核员管理员 ID */
+  admin_id: string;
+  appeal_id: string | null;
+  photo_id: string | null;
+  /** warning=审核失误（警告留痕）/ penalty=审核违规（待处罚） */
+  severity: 'warning' | 'penalty';
+  reason: string;
+  created_by: string;
+  created_at: string;
+  /** 联表字段：被处分审核员用户名 */
+  admin_name?: string | null;
+  /** 联表字段：记录人用户名 */
+  created_by_name?: string | null;
+  /** 联表字段：关联照片标题 */
+  photo_title?: string | null;
 }
 
 /** V4.1.0：站点公告条目（管理端 GET /announcements 全量含已下线） */

@@ -1,18 +1,27 @@
 /**
- * 申诉裁决页（V4.0.0）
+ * 申诉裁决页（V4.0.0 / V4.1.2-beta.3）
  * 管理端申诉列表：状态筛选 tabs（pending 优先由后端排序）+ 每条「通过/驳回」操作。
  * 裁决答复 response 必填（后端对 approve/reject 均校验）：
  * 通过 → 照片恢复 approved 并推送通过回执；驳回 → 维持 rejected 并推送驳回回执。
+ * V4.1.2-beta.3：新增审核员责任判定 reviewer_fault（none/mistake/violation），
+ * 判定有责时后端强制视为申诉成立并写入处分记录（admin_warnings）。
  * 数据来源：GET /api/admin/appeals、PUT /api/admin/appeals/:id/decide。
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Gavel } from 'lucide-react';
-import { getAppeals, decideAppeal } from './api';
-import type { Appeal, AppealStatus } from './types';
+import { getAppeals, decideAppeal, getAdminWarnings } from './api';
+import type { Appeal, AppealStatus, AdminWarning } from './types';
 
 /** 每页数量 */
 const PAGE_SIZE = 20;
+
+/** 审核员责任判定选项（V4.1.2-beta.3） */
+const FAULT_OPTIONS: { key: 'none' | 'mistake' | 'violation'; label: string; hint: string }[] = [
+  { key: 'none', label: '原审核无责', hint: '按当前裁决结论执行' },
+  { key: 'mistake', label: '审核失误', hint: '申诉视为成立，记录警告处分' },
+  { key: 'violation', label: '审核违规', hint: '申诉视为成立，记录违规待处罚' },
+];
 
 /** 状态筛选 tabs 配置 */
 const STATUS_TABS: { key: string; label: string }[] = [
@@ -29,6 +38,12 @@ const STATUS_BADGE: Record<AppealStatus, { label: string; className: string }> =
   approved: { label: '已通过', className: 'bg-green-100 text-green-700 border-green-200' },
   rejected: { label: '已驳回', className: 'bg-red-100 text-red-700 border-red-200' },
   withdrawn: { label: '已撤回', className: 'bg-gray-100 text-gray-500 border-gray-200' },
+};
+
+/** 责任判定徽章样式映射（仅裁决后展示有责结论） */
+const FAULT_BADGE: Record<'mistake' | 'violation', { label: string; className: string }> = {
+  mistake: { label: '原审核失误', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  violation: { label: '原审核违规', className: 'bg-red-100 text-red-700 border-red-200' },
 };
 
 /**
@@ -59,12 +74,38 @@ export function AppealsPage() {
   // 裁决弹窗状态：目标申诉 + 结论；response 必填
   const [decideTarget, setDecideTarget] = useState<{ appeal: Appeal; decision: 'approve' | 'reject' } | null>(null);
   const [decideResponse, setDecideResponse] = useState('');
+  // 审核员责任判定：默认无责
+  const [decideFault, setDecideFault] = useState<'none' | 'mistake' | 'violation'>('none');
   const [decideLoading, setDecideLoading] = useState(false);
+
+  // 审核员处分记录（仅 super 可见）：非 super 请求返回 403，此处静默隐藏面板
+  const [warnings, setWarnings] = useState<AdminWarning[]>([]);
+  const [warningsTotal, setWarningsTotal] = useState(0);
+  const [showWarnings, setShowWarnings] = useState(false);
 
   // 状态或页码变化时重新拉取
   useEffect(() => {
     fetchAppeals();
   }, [status, page]);
+
+  /** 拉取审核员处分记录（仅 super 有权限，无权限时静默隐藏） */
+  const fetchWarnings = async () => {
+    const result = await getAdminWarnings(1, 10);
+    if (result.success && result.data) {
+      setWarnings(result.data);
+      setWarningsTotal(result.pagination?.total || 0);
+      setShowWarnings(result.data.length > 0);
+    } else {
+      setWarnings([]);
+      setWarningsTotal(0);
+      setShowWarnings(false);
+    }
+  };
+
+  // 挂载时拉取一次处分记录
+  useEffect(() => {
+    fetchWarnings();
+  }, []);
 
   /** 按当前筛选拉取申诉列表 */
   const fetchAppeals = async () => {
@@ -90,17 +131,21 @@ export function AppealsPage() {
   const openDecide = (appeal: Appeal, decision: 'approve' | 'reject') => {
     setDecideTarget({ appeal, decision });
     setDecideResponse('');
+    setDecideFault('none');
   };
 
   /** 提交裁决：调用成功后关闭弹窗并刷新列表 */
   const handleDecide = async () => {
     if (!decideTarget || !decideResponse.trim() || decideLoading) return;
     setDecideLoading(true);
-    const result = await decideAppeal(decideTarget.appeal.id, decideTarget.decision, decideResponse.trim());
+    const result = await decideAppeal(decideTarget.appeal.id, decideTarget.decision, decideResponse.trim(), decideFault);
     if (result.success) {
       setDecideTarget(null);
       setDecideResponse('');
+      setDecideFault('none');
       await fetchAppeals();
+      // 有责判定会写入处分记录，刷新面板
+      await fetchWarnings();
     } else {
       alert(result.message || '裁决失败');
     }
@@ -138,6 +183,45 @@ export function AppealsPage() {
         </div>
       )}
 
+      {/* 审核员处分记录（仅 super 可见，展示最近 10 条） */}
+      {showWarnings && (
+        <div className="mb-6 bg-white rounded-xl border border-amber-200 overflow-hidden">
+          <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+            <p className="text-sm font-medium text-amber-800">
+              审核员处分记录（共 {warningsTotal} 条，展示最近 {warnings.length} 条）
+            </p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {warnings.map((w) => (
+              <div key={w.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap text-sm">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                    w.severity === 'penalty'
+                      ? 'bg-red-100 text-red-700 border-red-200'
+                      : 'bg-amber-100 text-amber-700 border-amber-200'
+                  }`}
+                >
+                  {w.severity === 'penalty' ? '审核违规' : '审核失误'}
+                </span>
+                <span className="text-gray-800">{w.admin_name || '未知审核员'}</span>
+                {w.photo_title && (
+                  <button
+                    onClick={() => w.photo_id && navigate(`/admin/photos/${w.photo_id}`)}
+                    className="text-blue-700 hover:underline truncate max-w-[180px]"
+                  >
+                    {w.photo_title}
+                  </button>
+                )}
+                <span className="text-gray-500 truncate max-w-[320px]" title={w.reason}>{w.reason}</span>
+                <span className="ml-auto text-xs text-gray-400">
+                  记录人：{w.created_by_name || '未知'} · {formatTime(w.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-gray-800 text-center py-10">加载中...</div>
       ) : (
@@ -162,6 +246,16 @@ export function AppealsPage() {
                       {appeal.photo_title || appeal.photo_id}
                     </button>
                   </span>
+                  {/* 原审核员（申诉指向的审核结论责任人）与责任判定结果 */}
+                  <span className="text-sm text-gray-500">
+                    原审核员：
+                    <span className="text-gray-800">{appeal.reviewer_name || '未知'}</span>
+                  </span>
+                  {appeal.reviewer_fault && appeal.reviewer_fault !== 'none' && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${FAULT_BADGE[appeal.reviewer_fault].className}`}>
+                      {FAULT_BADGE[appeal.reviewer_fault].label}
+                    </span>
+                  )}
                   <span className="ml-auto text-xs text-gray-400">
                     {formatTime(appeal.created_at)}
                   </span>
@@ -261,10 +355,42 @@ export function AppealsPage() {
               {decideTarget.decision === 'approve' ? '通过申诉' : '驳回申诉'}
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              {decideTarget.decision === 'approve'
-                ? '通过后作品将恢复为「已通过」状态，并通知申诉人。'
-                : '驳回后作品维持「未通过」状态，并通知申诉人。'}
+              {decideFault !== 'none'
+                ? '已判定原审核员有责，申诉将视为成立：作品恢复为「已通过」状态并通知申诉人，同时记录审核员处分。'
+                : decideTarget.decision === 'approve'
+                  ? '通过后作品将恢复为「已通过」状态，并通知申诉人。'
+                  : '驳回后作品维持「未通过」状态，并通知申诉人。'}
             </p>
+            {/* 审核员责任判定：判定有责时后端强制按申诉成立处理并写入处分记录 */}
+            <div className="mb-4">
+              <p className="text-sm text-gray-700 mb-2">
+                审核员责任判定
+                {decideTarget.appeal.reviewer_name && (
+                  <span className="text-gray-500">（原审核员：{decideTarget.appeal.reviewer_name}）</span>
+                )}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {FAULT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setDecideFault(opt.key)}
+                    disabled={decideLoading}
+                    title={opt.hint}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                      decideFault === opt.key
+                        ? 'bg-blue-700 text-white border-blue-700'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {FAULT_OPTIONS.find((o) => o.key === decideFault)?.hint}
+              </p>
+            </div>
             <label className="block text-sm text-gray-700 mb-1">裁决答复（必填，将作为回执内容通知申诉人）</label>
             <textarea
               value={decideResponse}

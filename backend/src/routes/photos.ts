@@ -261,7 +261,7 @@ const handleUploadError = (err: any, req: express.Request, res: express.Response
  */
 router.get('/search', photoReadLimiter, async (req, res) => {
   try {
-    const { keyword, registration, tag, category, is_hot, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
+    const { keyword, registration, tag, tag_key, tag_value, category, is_hot, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
     let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, is_hot, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
@@ -288,10 +288,25 @@ router.get('/search', photoReadLimiter, async (req, res) => {
       conditions.push('is_hot = 1');
     }
 
-    // 标签匹配：tags 字段以 JSON 数组字符串存储，使用子串匹配
+    // 标签匹配：tags 字段以 JSON 数组字符串存储，支持逗号分隔多个标签（AND 关系）。
+    // 第二层标签浏览即通过该参数按标签对象名筛选。
     if (tag) {
-      conditions.push('tags LIKE ?');
-      params.push(`%"${tag}"%`);
+      const tagList = String(tag).split(',').map((t) => t.trim()).filter(Boolean);
+      for (const tagName of tagList) {
+        conditions.push('tags LIKE ?');
+        params.push(`%"${escapeLikePattern(tagName)}"%`);
+      }
+    }
+
+    // 第三层细分标签（属性键值）过滤：structured_tags 以扁平 JSON 对象存储，
+    // 采用 JSON 键值子串精确匹配（如 "机型类型":"宽体机"）
+    if (tag_key && tag_value) {
+      const attrKey = String(tag_key).trim();
+      const attrValue = String(tag_value).trim();
+      if (attrKey && attrValue) {
+        conditions.push('structured_tags LIKE ?');
+        params.push(`%"${escapeLikePattern(attrKey)}":"${escapeLikePattern(attrValue)}"%`);
+      }
     }
 
     // 分区过滤：转义后精确匹配 category 字段，支持画廊按分区浏览
@@ -387,12 +402,29 @@ router.get('/', photoReadLimiter, async (req, res) => {
     const offset = (page - 1) * limit;
 
     // 解析分区过滤参数：存在时使用参数化查询精确匹配，避免 SQL 注入
-    const { category } = req.query;
+    const { category, tag, tag_key, tag_value } = req.query;
     const params: any[] = [];
-    let baseQuery = 'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE status = "approved"';
+    let baseQuery = 'SELECT id, title, thumbnail_path, tags, structured_tags, width, height, created_at FROM photos WHERE status = "approved"';
     if (category) {
       baseQuery += ' AND category = ?';
       params.push(String(category));
+    }
+    // 第二层标签浏览：支持逗号分隔多标签（AND），按标签对象名精确匹配 JSON 数组元素
+    if (tag) {
+      const tagList = String(tag).split(',').map((t) => t.trim()).filter(Boolean);
+      for (const tagName of tagList) {
+        baseQuery += ' AND tags LIKE ?';
+        params.push(`%"${escapeLikePattern(tagName)}"%`);
+      }
+    }
+    // 第三层标签浏览：按属性键值匹配结构化标签 JSON
+    if (tag_key && tag_value) {
+      const attrKey = String(tag_key).trim();
+      const attrValue = String(tag_value).trim();
+      if (attrKey && attrValue) {
+        baseQuery += ' AND structured_tags LIKE ?';
+        params.push(`%"${escapeLikePattern(attrKey)}":"${escapeLikePattern(attrValue)}"%`);
+      }
     }
     baseQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
@@ -416,6 +448,43 @@ router.get('/', photoReadLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error fetching photos:', error);
     res.status(500).json({ success: false, message: '获取照片列表失败' });
+  }
+});
+
+/**
+ * 热门推荐列表（V4.1.2-beta.3）。
+ * 仅返回管理端已确认热门（is_hot_confirmed=1）且已通过的照片，
+ * 按「浏览量 + 点赞数×3」综合热度降序，供首页轮播与独立推荐页使用。
+ * @query limit 返回数量（默认 12，上限 30）
+ */
+router.get('/hot', photoReadLimiter, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 12, 1), 30);
+    const photos = await db.all(
+      `SELECT id, title, thumbnail_path, tags, structured_tags, width, height, created_at, views, likes
+       FROM photos
+       WHERE status = 'approved' AND is_hot_confirmed = 1
+       ORDER BY (views + likes * 3) DESC, created_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    const result = photos.map((photo: any) => {
+      let tags: string[] = [];
+      if (photo.tags) {
+        try {
+          tags = JSON.parse(photo.tags);
+        } catch {
+          tags = photo.tags.split(' ').filter(Boolean);
+        }
+      }
+      return { ...photo, tags, thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id) };
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error fetching hot photos:', error);
+    res.status(500).json({ success: false, message: '获取热门照片失败' });
   }
 });
 
@@ -484,6 +553,20 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
       id
     );
 
+    // 驳回作品的审核员信息（V4.1.2-beta.3）：仅对已驳回作品展示审核员编号与审核时间，
+    // 便于用户在申诉前核对；不暴露管理员内部 ID
+    let reviewer = null;
+    if (photo.status === 'rejected' && photo.reviewed_by) {
+      const reviewerRow = await db.get<{ id: string; username: string }>(
+        'SELECT id, username FROM admin_users WHERE id = ?',
+        photo.reviewed_by
+      );
+      if (reviewerRow) {
+        reviewer = { name: reviewerRow.username, reviewed_at: photo.reviewed_at || null };
+      }
+    }
+    delete photo.reviewed_by;
+
     delete photo.altitude;
     res.json({
       success: true,
@@ -503,6 +586,8 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
         uploader,
         // 审核驳回理由，仅在 rejected 状态下非空
         rejection_reason: photo.rejection_reason || null,
+        // 审核员编号与审核时间，仅 rejected 状态非空
+        reviewer,
       },
     });
   } catch (error) {
@@ -958,6 +1043,18 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       });
     }
 
+    // 第二层标签必填（V4.1.2-beta.3）：tags 须至少包含一个标签对象名，保证作品可被二层下钻检索
+    const parsedTagList = tags
+      ? (Array.isArray(tags) ? tags : String(tags).split(/[,，]/).map((t: string) => t.trim())).filter(Boolean)
+      : [];
+    if (parsedTagList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'TAG_OBJECT_REQUIRED',
+        message: '请至少选择一个第二层标签',
+      });
+    }
+
     // 确认 OSS 上传结果，返回原图与缩略图 URL
     const uploadResult = await completeUpload(key);
 
@@ -967,7 +1064,7 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       thumbnail_path: uploadResult.thumbnailUrl,
       original_url: uploadResult.url,
       user_id: userId, // V1.5.0：补 user_id 字段，防止落库为 NULL
-      tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t)) : '[]',
+      tags: JSON.stringify(parsedTagList),
       width: width || 0,
       height: height || 0,
       description: description || '',
@@ -1201,6 +1298,18 @@ router.post(
       return res.status(400).json({ success: false, message: '内容包含敏感词汇，无法上传' });
     }
 
+    // 第二层标签必填（V4.1.2-beta.3）：至少选择一个标签对象，保证作品可被二层下钻检索
+    const parsedTagList = tags
+      ? (Array.isArray(tags) ? tags : String(tags).split(/[,，]/).map((t: string) => t.trim())).filter(Boolean)
+      : [];
+    if (parsedTagList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'TAG_OBJECT_REQUIRED',
+        message: '请至少选择一个第二层标签',
+      });
+    }
+
     // 结构化标签 JSON：解析后逐字段过滤敏感值，解析失败兜底为空对象
     let validatedStructuredTags = '{}';
     if (structured_tags) {
@@ -1245,7 +1354,7 @@ router.post(
       watermark_config: watermarkConfig ? JSON.stringify(watermarkConfig) : '{}',
       user_id: userId || null,
       category: category || null,
-      tags: tags ? JSON.stringify(Array.isArray(tags) ? tags : tags.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t)) : '[]',
+      tags: JSON.stringify(parsedTagList),
       structured_tags: validatedStructuredTags,
       width: width || 0,
       height: height || 0,

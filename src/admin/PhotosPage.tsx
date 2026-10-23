@@ -1,6 +1,7 @@
 /**
  * 照片审核列表页
  * 分页展示待审核照片，点击卡片跳转到详情页进行审核操作。
+ * V4.2.0：审核队列按上传时间正序，队首照片标注「下一张」软约束提示（不阻断选择其他照片）。
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +21,8 @@ export function PhotosPage() {
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // 队列队首照片 ID（后端按上传时间正序取第一条），用于标注「下一张」
+  const [nextPhotoId, setNextPhotoId] = useState<string | null>(null);
   // 是否因分区权限被拒（zone_master / zone_auditor 访问非负责分区时为 true）
   const [forbidden, setForbidden] = useState(false);
   // 管理员 Token：用于加载需要鉴权的未审核照片缩略图
@@ -38,6 +41,7 @@ export function PhotosPage() {
     if (result.success && result.data) {
       setPhotos(result.data);
       setTotal(result.pagination?.total || 0);
+      setNextPhotoId(result.next_photo_id || null);
     } else if (!result.success && result.message && result.message.includes('分区')) {
       // 后端返回 403：当前管理员无权访问该分区
       setForbidden(true);
@@ -69,7 +73,7 @@ export function PhotosPage() {
     <div>
       <h2 className="text-2xl font-bold text-gray-800 mb-2">照片审核</h2>
       <p className="text-sm text-gray-500 mb-6">
-        共 {total} 张待审核照片，点击卡片进入详情页查看大图和完整信息后进行审核
+        共 {total} 张待审核照片，按上传时间正序排队，建议优先处理标注「下一张」的作品，也可自行选择其他照片
       </p>
 
       {loading ? (
@@ -86,7 +90,9 @@ export function PhotosPage() {
               <div
                 key={photo.id}
                 onClick={() => handlePhotoClick(photo.id)}
-                className="bg-white rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+                className={`bg-white rounded-lg overflow-hidden border cursor-pointer hover:border-blue-300 hover:shadow-md transition-all ${
+                  photo.id === nextPhotoId ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'
+                }`}
               >
                 <div className="relative">
                   <CachedImage
@@ -96,6 +102,11 @@ export function PhotosPage() {
                     cacheEnabled={false}
                     className="w-full h-48 object-cover"
                   />
+                  {photo.id === nextPhotoId && (
+                    <span className="absolute top-2 left-2 px-2 py-0.5 text-xs font-medium rounded bg-blue-700 text-white shadow">
+                      下一张
+                    </span>
+                  )}
                   <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
                     <div className="opacity-0 hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2">
                       <Eye className="w-5 h-5 text-blue-800" />
