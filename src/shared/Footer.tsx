@@ -35,7 +35,18 @@ export function Footer(): ReactNode {
             </nav>
           </div>
         </div>
-        <p className="mt-8 text-center text-xs text-gray-400">© 2026 TLRphotos 航空摄影工作室</p>
+        <div className="mt-8 flex flex-col items-center gap-1 text-center text-xs text-gray-400 sm:flex-row sm:justify-center sm:gap-2">
+          <span>© 2026 TLRphotos 航空摄影工作室</span>
+          <span className="hidden sm:inline" aria-hidden="true">·</span>
+          <a
+            href="https://creativecommons.org/licenses/by/4.0/deed.zh-hans"
+            target="_blank"
+            rel="license noopener noreferrer"
+            className="hover:text-blue-800 transition-colors"
+          >
+            知识共享署名 4.0 国际许可协议 (CC BY 4.0)
+          </a>
+        </div>
       </div>
     </footer>
   );
