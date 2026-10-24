@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { useIsMobile } from '../../shared/useIsMobile';
+import { formatDateTime } from '../../shared/utils';
 import {
   getNotifications,
   markRead,
@@ -37,16 +38,6 @@ const TYPE_BADGE: Record<NotificationType, { label: string; className: string }>
 
 /** 未知类型的兜底徽章 */
 const FALLBACK_BADGE = { label: '通知', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
-
-/**
- * 格式化通知时间为中文短格式
- * @param iso ISO 时间字符串
- */
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
 
 /**
  * 格式化相对时间（移动端列表用）：刚刚 / N 分钟前 / N 小时前 / N 天前 / 超 30 天显示日期
@@ -323,7 +314,7 @@ export function NotificationPage() {
                     {item.title}
                   </span>
                   <span className="ml-auto text-xs text-gray-400 flex-shrink-0">
-                    {formatTime(item.created_at)}
+                    {formatDateTime(item.created_at, '')}
                   </span>
                 </div>
                 {item.content && (

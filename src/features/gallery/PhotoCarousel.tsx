@@ -9,7 +9,6 @@ import { useNavigate } from 'react-router-dom';
 import type { PhotoListItem } from './types';
 import { usePhotos } from '../../shared/PhotosContext';
 import { getHotPhotos } from '../../api/photos';
-import { useTheme } from '../../shared/ThemeContext';
 import { useIsMobile } from '../../shared/useIsMobile';
 import { CachedImage } from '../../components/CachedImage';
 
@@ -67,7 +66,6 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
  */
 export function PhotoCarousel() {
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const isMobile = useIsMobile();
   const { photos, isLoading: isFallbackLoading } = usePhotos();
   // 已确认热门照片：优先作为轮播内容；接口不可用或无热门时回退到最新照片
@@ -77,8 +75,6 @@ export function PhotoCarousel() {
   const [currentIndex, setCurrentIndex] = useState(0);
   // isAutoPlaying：是否处于自动播放状态，用户手动操作后暂停
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-
-  const isDark = theme === 'dark';
   const isLoading = isHotLoading || (hotPhotos.length === 0 && isFallbackLoading);
   // 优先展示管理端确认的热门作品（按综合热度排序），最多 6 张
   const carouselPhotos = (hotPhotos.length > 0 ? hotPhotos : photos).slice(0, 6);
@@ -138,9 +134,7 @@ export function PhotoCarousel() {
     return (
       <div className="relative w-full px-4 py-8">
         <div className="relative mx-auto max-w-[1200px] h-[400px] md:h-[500px] flex items-center justify-center">
-          <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${
-            isDark ? 'border-white/30 border-t-white' : 'border-gray-300 border-t-blue-600'
-          }`} />
+          <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin border-gray-300 border-t-blue-600`} />
         </div>
       </div>
     );
@@ -205,11 +199,7 @@ export function PhotoCarousel() {
             e.stopPropagation();
             goToPrev();
           }}
-          className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full p-3 transition-all hover:scale-110 ${
-            isDark
-              ? 'glass-sm hover:bg-white/10 text-white'
-              : 'bg-white/80 hover:bg-white text-gray-800 shadow-lg'
-          }`}
+          className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full p-3 transition-all hover:scale-110 bg-white/80 hover:bg-white text-gray-800 shadow-lg`}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -221,11 +211,7 @@ export function PhotoCarousel() {
             e.stopPropagation();
             goToNext();
           }}
-          className={`absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full p-3 transition-all hover:scale-110 ${
-            isDark
-              ? 'glass-sm hover:bg-white/10 text-white'
-              : 'bg-white/80 hover:bg-white text-gray-800 shadow-lg'
-          }`}
+          className={`absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full p-3 transition-all hover:scale-110 bg-white/80 hover:bg-white text-gray-800 shadow-lg`}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -243,8 +229,8 @@ export function PhotoCarousel() {
             }}
             className={`transition-all duration-300 rounded-full ${
               index === currentIndex
-                ? `${isDark ? 'w-8 h-3 bg-white/70' : 'w-8 h-3 bg-gray-800/70'}`
-                : `${isDark ? 'w-3 h-3 bg-white/20 hover:bg-white/40' : 'w-3 h-3 bg-gray-400/30 hover:bg-gray-400/50'}`
+                ? `w-8 h-3 bg-gray-800/70`
+                : `w-3 h-3 bg-gray-400/30 hover:bg-gray-400/50`
             }`}
           />
         ))}
@@ -253,11 +239,7 @@ export function PhotoCarousel() {
       <div className="flex justify-center mt-4">
         <button
           onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-          className={`text-sm flex items-center gap-2 transition-colors ${
-            isDark
-              ? 'text-slate-400 hover:text-slate-200'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
+          className={`text-sm flex items-center gap-2 transition-colors text-gray-500 hover:text-gray-700`}
         >
           {isAutoPlaying ? (
             <>

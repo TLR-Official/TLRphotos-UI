@@ -17,16 +17,7 @@ import { getNewsDetail } from '../../api/news';
 import { getArticleContent } from '../../api/articles';
 import type { NewsDetail } from '../../api/news';
 import { CachedImage } from '../../components/CachedImage';
-
-/**
- * 格式化新闻日期为中文日期（不含时分秒）
- * @param iso ISO 时间字符串
- */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
-}
+import { formatLongDate } from '../../shared/utils';
 
 /**
  * 新闻详情页组件
@@ -112,7 +103,7 @@ export function NewsDetailPage() {
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-snug">{detail.title}</h1>
         <div className="flex flex-wrap items-center gap-3 mt-3 text-sm text-gray-500">
           <span>作者：{detail.author_name}</span>
-          <span>{formatDate(detail.created_at)}</span>
+          <span>{formatLongDate(detail.created_at)}</span>
           <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">航空</span>
         </div>
 

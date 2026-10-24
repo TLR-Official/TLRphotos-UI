@@ -11,6 +11,7 @@ import { loadAuthUser } from '../services/authService';
 import { ensureHumanVerified } from '../services/verificationService';
 import { deleteFromOSS } from '../services/ossService';
 import { checkPenaltyCap } from '../services/penaltyService';
+import { parsePagination } from '../utils/pagination';
 
 const router = express.Router();
 const CLIENT_IP_HEADER = 'x-forwarded-for';
@@ -41,9 +42,7 @@ router.get('/threads', async (req, res) => {
   try {
     const boardId = typeof req.query.board_id === 'string' ? req.query.board_id : null;
     const sort = req.query.sort === 'hot' ? 'hot' : 'latest';
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const pageSize = Math.min(50, Math.max(1, parseInt(req.query.page_size as string) || 20));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 20 });
 
     const where = boardId ? 'WHERE board_id = ? AND status = \'published\'' : 'WHERE status = \'published\'';
     const params: any[] = boardId ? [boardId] : [];

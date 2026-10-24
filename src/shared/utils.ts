@@ -2,7 +2,11 @@
  * @file 通用工具函数
  * @description
  *  日期格式化相关的通用工具函数集合。
- *  包含完整日期、短日期与相对时间（"刚刚"、"x 分钟前" 等）格式化。
+ *  包含完整日期、短日期、相对时间（"刚刚"、"x 分钟前" 等）、
+ *  中文日期时间、中文长日期与本地 YYYY-MM-DD 格式化。
+ *
+ *  说明：V4.4.1 起，原先散落在申诉页 / 新闻页 / 通知页 / 用户主页各自定义的
+ *  同名格式化函数统一收敛到本文件，输出格式保持逐字一致。
  */
 
 /**
@@ -55,4 +59,43 @@ export function formatRelativeDate(dateString: string): string {
   if (diffDays < 30) return `${diffDays}天前`;
   // 超过 30 天回退为完整日期
   return formatDate(dateString);
+}
+
+/**
+ * 格式化为中文日期时间（年/月/日 时:分:秒，24 小时制）。
+ * 用于后台列表、通知、申诉等需要精确到时间的展示位。
+ * @param iso - ISO 时间字符串；null/undefined/空串/非法值返回兜底文案
+ * @param fallback - 兜底文案，默认 '-'（通知中心历史上用空串，调用处显式传 ''）
+ * @returns 形如 "2026/1/1 12:00:00" 的本地化字符串
+ */
+export function formatDateTime(iso: string | null | undefined, fallback = '-'): string {
+  if (!iso) return fallback;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+/**
+ * 格式化为中文长日期（仅年月日，不含时分秒）。
+ * 用于新闻列表/详情的发布日期展示。
+ * @param iso - ISO 时间字符串
+ * @returns 形如 "2026年1月1日" 的字符串；非法值返回空串
+ */
+export function formatLongDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+/**
+ * 格式化为本地时区 YYYY-MM-DD。
+ * 与 `toLocaleDateString` 不同，输出形态固定、不受语言环境影响，便于做键值/展示。
+ * @param iso - ISO 时间字符串
+ * @returns 形如 "2026-01-01" 的字符串；解析失败时原样返回入参
+ */
+export function formatDateOnly(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

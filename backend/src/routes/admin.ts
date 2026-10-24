@@ -27,6 +27,7 @@ import { isValidEmail } from '../services/authService';
 import { db } from '../db';
 import { tagsDb } from '../db/tagsDb';
 import { getProxyUrl } from '../utils/url';
+import { formatLocalDateTime } from '../utils/datetime';
 import { deleteUserSessions } from '../services/cookieService';
 import { createNotification } from '../services/notificationService';
 import { PENALTY_CAPS } from '../services/penaltyService';
@@ -1489,11 +1490,6 @@ router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zo
     forum_post: '论坛发帖',
     download: '下载',
   };
-  const formatDateTime = (iso: string) => {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
   let penaltyContent: string;
   if (level === 1) {
     penaltyContent = `因「${reason.trim()}」，您收到一次警告。请遵守社区规范，如有异议请联系管理员。`;
@@ -1501,10 +1497,10 @@ router.post('/users/:id/penalty', adminAuthMiddleware, requireRole(['super', 'zo
     const capsLabel = (JSON.parse(finalCaps) as string[])
       .map((c) => CAP_LABELS[c] ?? c)
       .join('、');
-    penaltyContent = `因「${reason.trim()}」，您的${capsLabel}功能被封禁 ${daysNum} 天，将于 ${formatDateTime(expiresAt!)} 自动恢复。`;
+    penaltyContent = `因「${reason.trim()}」，您的${capsLabel}功能被封禁 ${daysNum} 天，将于 ${formatLocalDateTime(expiresAt!)} 自动恢复。`;
   } else {
     penaltyContent = expiresAt
-      ? `因「${reason.trim()}」，您的账号被封禁 ${daysNum} 天，将于 ${formatDateTime(expiresAt)} 自动解封。`
+      ? `因「${reason.trim()}」，您的账号被封禁 ${daysNum} 天，将于 ${formatLocalDateTime(expiresAt)} 自动解封。`
       : `因「${reason.trim()}」，您的账号已被永久封禁。如有异议请联系管理员。`;
   }
   await createNotification({

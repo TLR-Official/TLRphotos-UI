@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, Gavel } from 'lucide-react';
 import { getAppeals, decideAppeal, getAdminWarnings } from './api';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import type { Appeal, AppealStatus, AdminWarning } from './types';
+import { formatDateTime } from '../shared/utils';
 
 /** 每页数量 */
 const PAGE_SIZE = 20;
@@ -46,17 +47,6 @@ const FAULT_BADGE: Record<'mistake' | 'violation', { label: string; className: s
   mistake: { label: '原审核失误', className: 'bg-amber-100 text-amber-700 border-amber-200' },
   violation: { label: '原审核违规', className: 'bg-red-100 text-red-700 border-red-200' },
 };
-
-/**
- * 格式化时间为中文短格式
- * @param iso ISO 时间字符串或 null
- */
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
 
 /**
  * 申诉裁决页组件
@@ -216,7 +206,7 @@ export function AppealsPage() {
                 )}
                 <span className="text-gray-500 truncate max-w-[320px]" title={w.reason}>{w.reason}</span>
                 <span className="ml-auto text-xs text-gray-400">
-                  记录人：{w.created_by_name || '未知'} · {formatTime(w.created_at)}
+                  记录人：{w.created_by_name || '未知'} · {formatDateTime(w.created_at)}
                 </span>
               </div>
             ))}
@@ -259,7 +249,7 @@ export function AppealsPage() {
                     </span>
                   )}
                   <span className="ml-auto text-xs text-gray-400">
-                    {formatTime(appeal.created_at)}
+                    {formatDateTime(appeal.created_at)}
                   </span>
                 </div>
 
@@ -270,7 +260,7 @@ export function AppealsPage() {
 
                 {appeal.response && (
                   <div className="mt-3 text-sm">
-                    <p className="text-gray-500 text-xs mb-1">裁决答复（{formatTime(appeal.decided_at)}）：</p>
+                    <p className="text-gray-500 text-xs mb-1">裁决答复（{formatDateTime(appeal.decided_at)}）：</p>
                     <p className="text-gray-600 whitespace-pre-wrap">{appeal.response}</p>
                   </div>
                 )}

@@ -18,6 +18,7 @@ import { getTagCategories } from '../../api/tags';
 import type { TagCategory } from '../../api/tags';
 import { getBoards } from '../../api/forum';
 import { CachedImage } from '../../components/CachedImage';
+import { formatDateOnly } from '../../shared/utils';
 
 /** 每页作品条数（后端上限 50） */
 const PHOTOS_PAGE_SIZE = 12;
@@ -34,17 +35,6 @@ const PENALTY_FALLBACK_BADGE = {
   label: '处罚',
   className: 'bg-gray-100 text-gray-700 border border-gray-200',
 };
-
-/**
- * 格式化为 YYYY-MM-DD（本地时区）
- * @param iso ISO 时间字符串；解析失败原样返回
- */
-function formatDateOnly(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 /** 状态标签：浅灰圆角小片 */
 function InfoChip({ children }: { children: React.ReactNode }) {

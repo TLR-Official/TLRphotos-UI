@@ -4,7 +4,6 @@
  * 支持自动解析 EXIF、可拖动水印预览、安全声明校验，并通过进度条反馈上传过程。
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useTheme } from '../../shared/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
@@ -38,7 +37,6 @@ interface ExifData {
  * @returns 上传页 JSX，未登录时渲染登录引导
  */
 export function UploadPage() {
-  const { theme } = useTheme();
   const navigate = useNavigate();
   const { isAuthenticated, token } = useUser();
   // V1.8.0：人机验证门（上传被 403 拦截时弹出）
@@ -151,13 +149,9 @@ export function UploadPage() {
     : 0;
   const displayFontSize = Math.max(1, Math.round(watermarkSize * (previewFontScale || 1)));
 
-  const inputCls = `w-full px-4 py-2 rounded-lg border ${
-    theme === 'dark'
-      ? 'border-gray-600 bg-slate-700 text-white'
-      : 'border-gray-300 bg-white text-gray-800'
-  } focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500`;
+  const inputCls = `w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500`;
 
-  const labelCls = `block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`;
+  const labelCls = `block text-sm font-medium mb-1 text-gray-700`;
 
   /**
    * 处理文件选择
@@ -371,7 +365,7 @@ export function UploadPage() {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className={`p-8 rounded-2xl ${theme === 'dark' ? 'bg-slate-800' : 'bg-white'} shadow-xl`}>
+        <div className={`p-8 rounded-2xl bg-white shadow-xl`}>
           <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">请先登录</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">上传图片需要登录账户</p>
           <button
@@ -390,7 +384,7 @@ export function UploadPage() {
       {verificationModal}
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className={`text-3xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>
+          <h1 className={`text-3xl font-bold mb-2 text-gray-800`}>
             上传图片
           </h1>
           <p className="text-gray-600 dark:text-gray-400">分享您的精彩交通摄影作品</p>
@@ -401,7 +395,7 @@ export function UploadPage() {
         )}
 
         {step === 'select' && (
-          <div className={`p-6 rounded-2xl ${theme === 'dark' ? 'bg-slate-800/95' : 'bg-white'} shadow-xl`}>
+          <div className={`p-6 rounded-2xl bg-white shadow-xl`}>
             <input
               ref={fileInputRef}
               type="file"
@@ -429,7 +423,7 @@ export function UploadPage() {
         )}
 
         {(step === 'fill' || step === 'uploading') && file && (
-          <div className={`p-6 rounded-2xl ${theme === 'dark' ? 'bg-slate-800/95' : 'bg-white'} shadow-xl`}>
+          <div className={`p-6 rounded-2xl bg-white shadow-xl`}>
             <div className="flex gap-6 mb-6">
               <div className="w-48 h-32 rounded-lg overflow-hidden flex-shrink-0 relative">
                 <img src={preview} alt={file.name} className="w-full h-full object-cover" />
@@ -469,8 +463,6 @@ export function UploadPage() {
                       className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
                         category === cat.id
                           ? 'bg-blue-700 text-white shadow-lg'
-                          : theme === 'dark'
-                          ? 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
@@ -532,7 +524,7 @@ export function UploadPage() {
 
               <div>
                 <label className={labelCls}>水印设置</label>
-                <div className={`mt-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-slate-700/50' : 'bg-gray-50'}`}>
+                <div className={`mt-3 p-4 rounded-lg bg-gray-50`}>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                       <span className="text-xs text-gray-500">水印文字</span>
@@ -542,11 +534,11 @@ export function UploadPage() {
                     </div>
                     <div>
                       <span className="text-xs text-gray-500">字体大小: {watermarkSize}px（基准 1200px 长边图像）→ 预览显示 {displayFontSize}px</span>
-                      <input type="range" min="12" max="72" value={watermarkSize} onChange={(e) => setWatermarkSize(Number(e.target.value))} className={`w-full mt-1 ${theme === 'dark' ? 'accent-blue-500' : ''}`} />
+                      <input type="range" min="12" max="72" value={watermarkSize} onChange={(e) => setWatermarkSize(Number(e.target.value))} className={`w-full mt-1 `} />
                     </div>
                     <div>
                       <span className="text-xs text-gray-500">透明度: {watermarkOpacity}%</span>
-                      <input type="range" min="10" max="100" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(Number(e.target.value))} className={`w-full mt-1 ${theme === 'dark' ? 'accent-blue-500' : ''}`} />
+                      <input type="range" min="10" max="100" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(Number(e.target.value))} className={`w-full mt-1 `} />
                     </div>
                   </div>
                   <div>
@@ -606,7 +598,7 @@ export function UploadPage() {
                   拍摄参数
                   <span className="ml-2 text-xs text-green-500">（已自动读取）</span>
                 </label>
-                <div className={`grid grid-cols-2 md:grid-cols-3 gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-slate-700/50' : 'bg-gray-50'}`}>
+                <div className={`grid grid-cols-2 md:grid-cols-3 gap-3 p-4 rounded-lg bg-gray-50`}>
                   <div>
                     <span className="text-xs text-gray-500">相机型号</span>
                     <input type="text" value={exif.camera_model || ''} onChange={(e) => setExif({ ...exif, camera_model: e.target.value })} disabled={step === 'uploading'} className={`${inputCls} mt-1`} />
@@ -634,7 +626,7 @@ export function UploadPage() {
                 </div>
               </div>
 
-              <div className={`flex items-start gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-slate-700/50' : 'bg-gray-50'}`}>
+              <div className={`flex items-start gap-3 p-4 rounded-lg bg-gray-50`}>
                 <input
                   type="checkbox"
                   id="hot-recommendation"
@@ -643,13 +635,13 @@ export function UploadPage() {
                   disabled={step === 'uploading'}
                   className="mt-1"
                 />
-                <label htmlFor="hot-recommendation" className={`text-sm flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                <label htmlFor="hot-recommendation" className={`text-sm flex-1 text-gray-700`}>
                   愿意将图片上传为热门图片
                   <span className="block mt-0.5 text-xs text-gray-500">勾选后，审核员将在审核时看到您的热门推荐意愿</span>
                 </label>
               </div>
 
-              <div className={`flex items-start gap-3 p-4 rounded-lg ${theme === 'dark' ? 'bg-red-900/20 border border-red-700/50' : 'bg-red-50 border border-red-200'}`}>
+              <div className={`flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200`}>
                 <input
                   type="checkbox"
                   id="safety-agreement"
@@ -658,7 +650,7 @@ export function UploadPage() {
                   disabled={step === 'uploading'}
                   className="mt-1"
                 />
-                <label htmlFor="safety-agreement" className={`text-sm flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                <label htmlFor="safety-agreement" className={`text-sm flex-1 text-gray-700`}>
                   <span className="text-red-500 font-medium">我确认本影像不涉及任何军事设施、装备或敏感区域</span>
                   <span className="text-red-500">*</span>
                 </label>

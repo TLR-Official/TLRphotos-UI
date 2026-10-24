@@ -8,7 +8,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getPhotoById, deletePhoto, likePhoto, unlikePhoto } from '../../api/photos';
 import { createAppeal, getMyAppeals } from '../../api/appeals';
 import type { MyAppeal } from '../../api/appeals';
-import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { useState, useEffect } from 'react';
 import { Heart, Eye, Download } from 'lucide-react';
@@ -29,7 +28,6 @@ import { MobileZoomableImage } from './MobileZoomableImage';
 export function PhotoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const { user, token } = useUser();
   // V1.8.0：人机验证门（删除照片被 403 拦截时弹出）
   const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
@@ -292,25 +290,17 @@ export function PhotoDetailPage() {
 
   if (isLoading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center theme-bg-transition ${
-        theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'
-      }`}>
-        <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${
-          theme === 'dark' ? 'border-white/30 border-t-white' : 'border-gray-300 border-t-blue-600'
-        }`} />
+      <div className={`min-h-screen flex items-center justify-center theme-bg-transition bg-gray-100`}>
+        <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin border-gray-300 border-t-blue-600`} />
       </div>
     );
   }
 
   if (!photo) {
     return (
-      <div className={`min-h-screen flex items-center justify-center theme-bg-transition ${
-        theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'
-      }`}>
+      <div className={`min-h-screen flex items-center justify-center theme-bg-transition bg-gray-100`}>
         <div className="text-center">
-          <h1 className={`text-2xl font-bold mb-4 theme-text-transition ${
-            theme === 'dark' ? 'text-white' : 'text-gray-800'
-          }`}>照片不存在</h1>
+          <h1 className={`text-2xl font-bold mb-4 theme-text-transition text-gray-800`}>照片不存在</h1>
           <button
             onClick={() => navigate('/')}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -371,11 +361,7 @@ export function PhotoDetailPage() {
             e.stopPropagation();
             navigate('/gallery');
           }}
-          className={`flex items-center gap-2 mb-6 transition-colors theme-text-transition ${
-            theme === 'dark'
-              ? 'text-slate-300 hover:text-white'
-              : 'text-slate-600 hover:text-slate-800'
-          }`}
+          className={`flex items-center gap-2 mb-6 transition-colors theme-text-transition text-slate-600 hover:text-slate-800`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -385,9 +371,7 @@ export function PhotoDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 flex justify-center items-start">
-            <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
+            <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition bg-white`}>
               {/* 移动端/触屏：双击 + pinch 手势缩放容器；「审核中」占位图不挂手势（viewable=false） */}
               {(isMobile || isTouch) && viewable ? (
                 <MobileZoomableImage
@@ -411,9 +395,7 @@ export function PhotoDetailPage() {
           <div className="space-y-6">
             <div
               onClick={() => photo.uploader && navigate(`/users/${photo.uploader.id}`)}
-              className={`rounded-xl shadow-lg p-4 theme-bg-transition ${
-                theme === 'dark' ? 'glass' : 'bg-white'
-              } ${photo.uploader ? 'cursor-pointer hover:shadow-xl transition-shadow' : ''}`}
+              className={`rounded-xl shadow-lg p-4 theme-bg-transition bg-white ${photo.uploader ? 'cursor-pointer hover:shadow-xl transition-shadow' : ''}`}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
@@ -434,27 +416,19 @@ export function PhotoDetailPage() {
                   )}
                 </div>
                 <div>
-                  <p className={`font-semibold ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>上传者</p>
+                  <p className={`font-semibold text-gray-900`}>上传者</p>
                   <p className={`text-sm ${
                     photo.uploader
-                      ? theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'
-                      : theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                      ? 'text-blue-600 hover:text-blue-500'
+                      : 'text-gray-400'
                   }`}>{photo.uploader?.username || '匿名用户'}</p>
                 </div>
               </div>
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h1 className={`text-2xl font-bold mb-2 transition-colors ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>{photo.title}</h1>
-              <p className={`text-sm theme-text-transition ${
-                theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
-              }`}>{formatDate(photo.created_at)}</p>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h1 className={`text-2xl font-bold mb-2 transition-colors text-gray-900`}>{photo.title}</h1>
+              <p className={`text-sm theme-text-transition text-gray-600`}>{formatDate(photo.created_at)}</p>
               {/* 移动端数据行：12px 灰色纯文本（无图标），桌面端由数据统计卡片承载 */}
               <p className="mt-2 text-xs text-gray-400 md:hidden">
                 {commentCount === null ? '—' : commentCount} 评论 · {likeCount} 点赞 · {viewCount.toLocaleString()} 浏览
@@ -544,46 +518,34 @@ export function PhotoDetailPage() {
               </div>
             )}
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>照片信息</h2>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>照片信息</h2>
               <div className="space-y-4">
                 {photo.registration_number && (
                   <div className="flex justify-between items-center">
-                    <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>注册号</span>
-                    <span className={`font-medium text-sm font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{photo.registration_number}</span>
+                    <span className={`text-sm text-gray-500`}>注册号</span>
+                    <span className={`font-medium text-sm font-mono text-gray-900`}>{photo.registration_number}</span>
                   </div>
                 )}
-                <DetailRow label="拍摄工具" value={photo.vehicle} theme={theme} />
-                <DetailRow label="相机型号" value={photo.camera_model} theme={theme} />
-                <DetailRow label="拍摄地点" value={photo.location} theme={theme} />
+                <DetailRow label="拍摄工具" value={photo.vehicle} />
+                <DetailRow label="相机型号" value={photo.camera_model} />
+                <DetailRow label="拍摄地点" value={photo.location} />
               </div>
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>拍摄参数</h2>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>拍摄参数</h2>
               <div className="grid grid-cols-2 gap-4">
-                <DetailRow label="焦距" value={photo.focal_length} theme={theme} />
-                <DetailRow label="ISO" value={photo.iso.toString()} theme={theme} />
-                <DetailRow label="快门" value={photo.shutter_speed} theme={theme} />
-                <DetailRow label="光圈" value={photo.aperture} theme={theme} />
+                <DetailRow label="焦距" value={photo.focal_length} />
+                <DetailRow label="ISO" value={photo.iso.toString()} />
+                <DetailRow label="快门" value={photo.shutter_speed} />
+                <DetailRow label="光圈" value={photo.aperture} />
               </div>
             </div>
 
             {/* 下载卡片：桌面端原位展示；移动端由底部固定下载栏承载（避免重复入口） */}
-            <div className={`hidden md:block rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>下载</h2>
+            <div className={`hidden md:block rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>下载</h2>
               {/* 下载带水印原图按钮：公开照片走浏览器原生下载（最快），未审核照片所有者带 token fetch */}
               <button
                 onClick={handleDownload}
@@ -606,12 +568,8 @@ export function PhotoDetailPage() {
               )}
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>数据统计</h2>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>数据统计</h2>
               <div className="flex gap-4 items-center flex-wrap">
                 {/* 点赞按钮：可点击切换状态，Heart 图标红色填充=已点赞/描边=未点赞；移动端热区 ≥44px */}
                 <button
@@ -622,9 +580,7 @@ export function PhotoDetailPage() {
                   className={`flex items-center gap-2 px-4 py-2 max-md:min-h-[44px] rounded-lg transition-all ${
                     isLiked
                       ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                      : theme === 'dark'
-                        ? 'bg-white/5 text-slate-300 hover:bg-white/10'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   } ${likeLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
                 >
                   <Heart
@@ -634,9 +590,7 @@ export function PhotoDetailPage() {
                   <span className="font-semibold text-lg">{likeCount}</span>
                 </button>
                 {/* 浏览数：纯展示，Eye 图标 + 数字；移动端浏览数并入标题卡数据行，此处隐藏 */}
-                <div className={`hidden md:flex items-center gap-2 px-4 py-2 ${
-                  theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
-                }`}>
+                <div className={`hidden md:flex items-center gap-2 px-4 py-2 text-gray-700`}>
                   <Eye className="w-5 h-5" strokeWidth={2} />
                   <span className="font-semibold text-lg">{viewCount.toLocaleString()}</span>
                 </div>
@@ -657,32 +611,18 @@ export function PhotoDetailPage() {
               )}
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>描述</h2>
-              <p className={`leading-relaxed ${
-                theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
-              }`}>{photo.description}</p>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>描述</h2>
+              <p className={`leading-relaxed text-gray-700`}>{photo.description}</p>
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-              theme === 'dark' ? 'glass' : 'bg-white'
-            }`}>
-              <h2 className={`text-lg font-semibold mb-4 ${
-                theme === 'dark' ? 'text-white' : 'text-gray-900'
-              }`}>标签</h2>
+            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
+              <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>标签</h2>
               <div className="flex flex-wrap gap-2">
                 {photo.tags.map((tag) => (
                   <span
                     key={tag}
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      theme === 'dark'
-                        ? 'bg-blue-500/20 text-blue-300'
-                        : 'bg-blue-50 text-blue-700'
-                    }`}
+                    className={`px-3 py-1 rounded-full text-sm font-medium bg-blue-50 text-blue-700`}
                   >
                     #{tag}
                   </span>
@@ -691,14 +631,10 @@ export function PhotoDetailPage() {
             </div>
 
             {isOwner && (
-              <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
-                theme === 'dark' ? 'glass' : 'bg-white'
-              }`}>
+              <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
                 {deleteConfirmStep > 0 ? (
                   <div className="space-y-4">
-                    <p className={`text-center font-medium ${
-                      theme === 'dark' ? 'text-red-400' : 'text-red-600'
-                    }`}>
+                    <p className={`text-center font-medium text-red-600`}>
                       {deleteConfirmStep === 1
                         ? '确定要删除这张照片吗？此操作无法撤销。'
                         : '再次确认：删除后将永久删除所有相关数据！'}
@@ -706,11 +642,7 @@ export function PhotoDetailPage() {
                     <div className="flex gap-4">
                       <button
                         onClick={() => setDeleteConfirmStep(0)}
-                        className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
-                          theme === 'dark'
-                            ? 'bg-white/10 text-slate-300 hover:bg-white/20'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
+                        className={`flex-1 py-2 rounded-lg font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200`}
                       >
                         取消
                       </button>
@@ -720,8 +652,6 @@ export function PhotoDetailPage() {
                         className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
                           isDeleting
                             ? 'opacity-50 cursor-not-allowed'
-                            : theme === 'dark'
-                            ? 'bg-red-500 text-white hover:bg-red-600'
                             : 'bg-red-500 text-white hover:bg-red-600'
                         }`}
                       >
@@ -736,8 +666,6 @@ export function PhotoDetailPage() {
                     className={`w-full py-3 rounded-lg font-medium transition-colors ${
                       isDeleting
                         ? 'opacity-50 cursor-not-allowed'
-                        : theme === 'dark'
-                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                         : 'bg-red-50 text-red-600 hover:bg-red-100'
                     }`}
                   >
@@ -799,15 +727,11 @@ export function PhotoDetailPage() {
  * @param value 行值文本
  * @param theme 当前主题，用于适配深浅色样式
  */
-function DetailRow({ label, value, theme }: { label: string; value: string; theme: 'dark' | 'light' }) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between items-center">
-      <span className={`text-sm ${
-        theme === 'dark' ? 'text-slate-400' : 'text-gray-500'
-      }`}>{label}</span>
-      <span className={`font-medium text-sm ${
-        theme === 'dark' ? 'text-white' : 'text-gray-900'
-      }`}>{value}</span>
+      <span className={`text-sm text-gray-500`}>{label}</span>
+      <span className={`font-medium text-sm text-gray-900`}>{value}</span>
     </div>
   );
 }

@@ -6,7 +6,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser, sendEmailCode, bindEmail } from '../../api/auth';
 import { useHumanVerification } from '../../shared/useHumanVerification';
@@ -110,7 +109,6 @@ function FieldRow({
  */
 export function ProfilePage() {
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const { user, isAuthenticated, updateUserInfo, refreshUser, token } = useUser();
   // V1.8.0：人机验证门（头像上传/资料修改/修改密码被 403 拦截时弹出）
   const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
@@ -1015,7 +1013,7 @@ export function ProfilePage() {
                 />
 
                 <div className="pt-4">
-                  <h3 className={`text-sm font-medium mb-4 ${'text-gray-700'}`}>
+                  <h3 className={`text-sm font-medium mb-4 text-gray-700`}>
                     自定义资料项
                   </h3>
                   {Object.keys(formData.custom_fields || {}).length > 0 && (
@@ -1032,33 +1030,21 @@ export function ProfilePage() {
                               newCustomFields[newKey] = field;
                               setFormData((prev) => ({ ...prev, custom_fields: newCustomFields }));
                             }}
-                            className={`w-24 px-3 py-2 rounded-lg border text-sm transition-all ${
-                              theme === 'dark'
-                                ? 'bg-white/10 border-white/20 text-white'
-                                : 'bg-gray-50 border-gray-200 text-gray-800'
-                            } focus:outline-none focus:border-blue-700`}
+                            className={`w-24 px-3 py-2 rounded-lg border text-sm transition-all bg-gray-50 border-gray-200 text-gray-800 focus:outline-none focus:border-blue-700`}
                           />
                           <input
                             type="text"
                             value={field.value}
                             onChange={(e) => handleCustomFieldChange(key, e.target.value, field.isPrivate)}
                             placeholder="字段值"
-                            className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all ${
-                              theme === 'dark'
-                                ? 'bg-white/10 border-white/20 text-white'
-                                : 'bg-gray-50 border-gray-200 text-gray-800'
-                            } focus:outline-none focus:border-blue-700`}
+                            className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all bg-gray-50 border-gray-200 text-gray-800 focus:outline-none focus:border-blue-700`}
                           />
                           <button
                             type="button"
                             onClick={() => handleCustomFieldChange(key, field.value, !field.isPrivate)}
                             className={`p-2 rounded-lg transition-colors ${
                               field.isPrivate
-                                ? theme === 'dark'
-                                  ? 'bg-red-500/20 text-red-400'
-                                  : 'bg-red-100 text-red-600'
-                                : theme === 'dark'
-                                ? 'bg-green-500/20 text-green-400'
+                                ? 'bg-red-100 text-red-600'
                                 : 'bg-green-100 text-green-600'
                             }`}
                           >
@@ -1076,11 +1062,7 @@ export function ProfilePage() {
                           <button
                             type="button"
                             onClick={() => removeCustomField(key)}
-                            className={`p-2 rounded-lg transition-colors ${
-                              theme === 'dark'
-                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                                : 'bg-red-100 text-red-600 hover:bg-red-200'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors bg-red-100 text-red-600 hover:bg-red-200`}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1093,11 +1075,7 @@ export function ProfilePage() {
                   <button
                     type="button"
                     onClick={addCustomField}
-                    className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${
-                      theme === 'dark'
-                        ? 'bg-white/10 text-slate-300 hover:bg-white/20'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
+                    className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1113,8 +1091,6 @@ export function ProfilePage() {
                     className={`flex-1 py-3 max-md:h-12 rounded-lg font-medium transition-all duration-300 ${
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
-                        : theme === 'dark'
-                        ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700'
                         : 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700'
                     } shadow-lg`}
                   >
@@ -1135,9 +1111,7 @@ export function ProfilePage() {
             {activeTab === 'password' && (
               <form onSubmit={handlePasswordSubmit} className="space-y-6">
                 <div className="flex items-center gap-4">
-                  <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    'text-gray-700'
-                  }`}>
+                  <label className={`w-24 text-sm font-medium flex-shrink-0 text-gray-700`}>
                     原密码
                   </label>
                   <div className="flex-1">
@@ -1149,8 +1123,6 @@ export function ProfilePage() {
                       className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.oldPassword
                           ? 'border-red-500 bg-red-50'
-                          : theme === 'dark'
-                          ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
                       } focus:outline-none focus:border-blue-700`}
                     />
@@ -1161,9 +1133,7 @@ export function ProfilePage() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    'text-gray-700'
-                  }`}>
+                  <label className={`w-24 text-sm font-medium flex-shrink-0 text-gray-700`}>
                     新密码
                   </label>
                   <div className="flex-1">
@@ -1175,8 +1145,6 @@ export function ProfilePage() {
                       className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.newPassword
                           ? 'border-red-500 bg-red-50'
-                          : theme === 'dark'
-                          ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
                       } focus:outline-none focus:border-blue-700`}
                     />
@@ -1187,9 +1155,7 @@ export function ProfilePage() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <label className={`w-24 text-sm font-medium flex-shrink-0 ${
-                    'text-gray-700'
-                  }`}>
+                  <label className={`w-24 text-sm font-medium flex-shrink-0 text-gray-700`}>
                     确认密码
                   </label>
                   <div className="flex-1">
@@ -1201,8 +1167,6 @@ export function ProfilePage() {
                       className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.confirmPassword
                           ? 'border-red-500 bg-red-50'
-                          : theme === 'dark'
-                          ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-gray-50 border-gray-200 text-gray-800'
                       } focus:outline-none focus:border-blue-700`}
                     />
@@ -1219,8 +1183,6 @@ export function ProfilePage() {
                     className={`flex-1 py-3 max-md:h-12 rounded-lg font-medium transition-all duration-300 ${
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
-                        : theme === 'dark'
-                        ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700'
                         : 'bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700'
                     } shadow-lg`}
                   >
@@ -1240,36 +1202,32 @@ export function ProfilePage() {
 
             {activeTab === 'cache' && (
               <div className="space-y-6">
-                <div className={`rounded-lg p-6 ${
-                  'bg-gray-50'
-                }`}>
-                  <h3 className={`text-base font-semibold mb-4 ${
-                    'text-gray-800'
-                  }`}>
+                <div className={`rounded-lg p-6 bg-gray-50`}>
+                  <h3 className={`text-base font-semibold mb-4 text-gray-800`}>
                     图片缓存统计
                   </h3>
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div>
-                      <p className={`text-xs ${'text-gray-500'}`}>当前缓存大小</p>
-                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
+                      <p className={`text-xs text-gray-500`}>当前缓存大小</p>
+                      <p className={`text-xl font-bold text-gray-900`}>
                         {cacheStats ? formatBytes(cacheStats.size) : '加载中...'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${'text-gray-500'}`}>最大容量</p>
-                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
+                      <p className={`text-xs text-gray-500`}>最大容量</p>
+                      <p className={`text-xl font-bold text-gray-900`}>
                         {cacheStats ? formatBytes(cacheStats.maxSize) : '-'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${'text-gray-500'}`}>缓存条目数</p>
-                      <p className={`text-xl font-bold ${'text-gray-900'}`}>
+                      <p className={`text-xs text-gray-500`}>缓存条目数</p>
+                      <p className={`text-xl font-bold text-gray-900`}>
                         {cacheStats ? cacheStats.entries : '-'}
                       </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${'text-gray-500'}`}>缓存命中率</p>
+                      <p className={`text-xs text-gray-500`}>缓存命中率</p>
                       <p className={`text-xl font-bold ${
                         cacheStats && cacheStats.hitRate > 0.5
                           ? 'text-green-500'
@@ -1282,15 +1240,11 @@ export function ProfilePage() {
 
                   {cacheStats && (
                     <div className="mb-4">
-                      <div className={`flex justify-between text-xs mb-1 ${
-                        'text-gray-500'
-                      }`}>
+                      <div className={`flex justify-between text-xs mb-1 text-gray-500`}>
                         <span>已用 {formatBytes(cacheStats.size)}</span>
                         <span>{formatBytes(cacheStats.maxSize)}</span>
                       </div>
-                      <div className={`h-2 rounded-full overflow-hidden ${
-                        'bg-gray-200'
-                      }`}>
+                      <div className={`h-2 rounded-full overflow-hidden bg-gray-200`}>
                         <div
                           className="h-full bg-gradient-to-r from-blue-600 to-blue-700 transition-all duration-500"
                           style={{ width: `${Math.min(100, (cacheStats.size / cacheStats.maxSize) * 100)}%` }}
@@ -1300,17 +1254,13 @@ export function ProfilePage() {
                   )}
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className={`rounded-lg p-3 text-center ${
-                      'bg-green-50'
-                    }`}>
+                    <div className={`rounded-lg p-3 text-center bg-green-50`}>
                       <p className="text-2xl font-bold text-green-500">{cacheStats?.hits ?? 0}</p>
-                      <p className={`text-xs ${'text-gray-500'}`}>缓存命中</p>
+                      <p className={`text-xs text-gray-500`}>缓存命中</p>
                     </div>
-                    <div className={`rounded-lg p-3 text-center ${
-                      'bg-orange-50'
-                    }`}>
+                    <div className={`rounded-lg p-3 text-center bg-orange-50`}>
                       <p className="text-2xl font-bold text-orange-500">{cacheStats?.misses ?? 0}</p>
-                      <p className={`text-xs ${'text-gray-500'}`}>缓存未命中</p>
+                      <p className={`text-xs text-gray-500`}>缓存未命中</p>
                     </div>
                   </div>
 
@@ -1326,11 +1276,7 @@ export function ProfilePage() {
                   <div className="flex gap-4">
                     <button
                       onClick={refreshCacheStats}
-                      className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
-                        theme === 'dark'
-                          ? 'bg-white/10 text-white hover:bg-white/20'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`flex-1 py-2.5 rounded-lg font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200`}
                     >
                       刷新统计
                     </button>
@@ -1348,9 +1294,7 @@ export function ProfilePage() {
                   </div>
                 </div>
 
-                <div className={`rounded-lg p-4 text-sm ${
-                  'bg-blue-50 text-blue-700'
-                }`}>
+                <div className={`rounded-lg p-4 text-sm bg-blue-50 text-blue-700`}>
                   <p className="font-medium mb-1">缓存说明</p>
                   <ul className="space-y-1 text-xs opacity-80">
                     <li>• 系统会自动缓存您访问过的图片到本地，加快后续加载速度</li>
@@ -1824,26 +1768,18 @@ export function ProfilePage() {
             )}
 
             {showPasswordConfirm && (
-              <div className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
-                'bg-black/50'
-              }`}>
-                <div className={`rounded-xl p-6 max-w-md w-full mx-4 ${
-                  'bg-white'
-                }`}>
-                  <h3 className={`text-lg font-bold mb-4 ${'text-gray-800'}`}>
+              <div className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 bg-black/50`}>
+                <div className={`rounded-xl p-6 max-w-md w-full mx-4 bg-white`}>
+                  <h3 className={`text-lg font-bold mb-4 text-gray-800`}>
                     确认修改密码
                   </h3>
-                  <p className={`mb-6 ${'text-gray-600'}`}>
+                  <p className={`mb-6 text-gray-600`}>
                     确定要修改密码吗？此操作无法撤销。
                   </p>
                   <div className="flex gap-4">
                     <button
                       onClick={() => setShowPasswordConfirm(false)}
-                      className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
-                        theme === 'dark'
-                          ? 'bg-white/10 text-slate-300 hover:bg-white/20'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`flex-1 py-2 rounded-lg font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200`}
                     >
                       取消
                     </button>
@@ -1853,8 +1789,6 @@ export function ProfilePage() {
                       className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
                         isSubmitting
                           ? 'opacity-50 cursor-not-allowed'
-                          : theme === 'dark'
-                          ? 'bg-red-500 text-white hover:bg-red-600'
                           : 'bg-red-500 text-white hover:bg-red-600'
                       }`}
                     >

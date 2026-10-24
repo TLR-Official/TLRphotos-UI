@@ -12,6 +12,7 @@ import { useUser } from '../../shared/UserContext';
 import { getMyAppeals, withdrawAppeal } from '../../api/appeals';
 import type { AppealStatus, MyAppeal } from '../../api/appeals';
 import { MobileBackHeader } from '../../shared/MobileBackHeader';
+import { formatDateTime } from '../../shared/utils';
 
 /** 申诉状态徽章样式映射（白底浅色系，状态语义清晰） */
 const STATUS_BADGE: Record<AppealStatus, { label: string; className: string }> = {
@@ -20,14 +21,6 @@ const STATUS_BADGE: Record<AppealStatus, { label: string; className: string }> =
   rejected: { label: '申诉未通过', className: 'bg-red-50 text-red-700 border-red-200' },
   withdrawn: { label: '已撤回', className: 'bg-gray-100 text-gray-500 border-gray-200' },
 };
-
-/** 格式化时间为中文短格式 */
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
 
 /**
  * 我的申诉页组件
@@ -147,7 +140,7 @@ export function MyAppealsPage() {
                     >
                       {appeal.photo_title || '作品已删除'}
                     </button>
-                    <span className="text-xs text-gray-400">{formatTime(appeal.created_at)}</span>
+                    <span className="text-xs text-gray-400">{formatDateTime(appeal.created_at)}</span>
                   </div>
 
                   {/* 申诉理由 */}
@@ -162,7 +155,7 @@ export function MyAppealsPage() {
                   {appeal.response && (
                     <div className="mt-3 rounded-lg bg-gray-50 p-3">
                       <p className="text-xs text-gray-500 mb-1">
-                        裁决答复（{formatTime(appeal.decided_at)}）：
+                        裁决答复（{formatDateTime(appeal.decided_at)}）：
                       </p>
                       <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
                         {appeal.response}

@@ -529,6 +529,16 @@ const initSchema = async () => {
   try {
     await db.run('CREATE INDEX IF NOT EXISTS idx_photos_registration_number ON photos(registration_number)');
   } catch {}
+  // V4.4.1：画廊/公开主页/管理端列表热点查询索引（纯读取优化，不改变任何查询结果）
+  //  - status + created_at：画廊列表 WHERE status='approved' ORDER BY created_at DESC、
+  //    管理端待审 ORDER BY created_at ASC 的覆盖式扫描
+  //  - user_id + status：公开主页 /auth/me/photos 的「某人已通过作品」过滤
+  //  - created_at：后台按时间排序的全量列表（无状态过滤）
+  try {
+    await db.run('CREATE INDEX IF NOT EXISTS idx_photos_status_created ON photos(status, created_at DESC)');
+    await db.run('CREATE INDEX IF NOT EXISTS idx_photos_user_status ON photos(user_id, status)');
+    await db.run('CREATE INDEX IF NOT EXISTS idx_photos_created_at ON photos(created_at DESC)');
+  } catch {}
   // V4.1.2-beta.3：结构化标签列（三层标签属性键值扁平 JSON）纳入正式迁移，
   // 历史环境为手工建列，缺失时会导致上传插入失败与第三层筛选不可用
   try {

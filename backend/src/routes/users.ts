@@ -11,38 +11,21 @@
  *              且仅映射 level/reason/expires_at/created_at（不含 capabilities/revoked 内部字段）。
  */
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import { db } from '../db';
 import { getActivePenalties } from '../services/penaltyService';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { getProxyUrl } from '../utils/url';
+import { parsePhotoTags } from '../utils/photoTags';
+import { getOptionalUserId } from '../utils/optionalAuth';
+import { parsePagination } from '../utils/pagination';
 
 const router = express.Router();
 
 // 公开读取限速：与 photos.ts 公开浏览同款（120 次/分，测试环境自动放行）
 const profileReadLimiter = createRateLimiter({ max: 120, message: '浏览过于频繁，请稍后再试' });
 
-// JWT 密钥：仅用于 is_self 判定的可选解析（与 photos.ts 同源）
-const JWT_SECRET = process.env.JWT_SECRET || '';
-
 /** 加入天数计算的毫秒换算 */
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * 从请求头解析 JWT 获取当前用户 ID（可选认证）。
- * 未登录或令牌无效时返回 null，不影响公开访问。
- */
-function getCurrentUserId(req: express.Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
 
 /** 公开用户档案统一列集：仅公开字段，绝不含 email/IP/banned_until/can_ban_manage */
 const PUBLIC_USER_COLUMNS = 'id, username, avatar_url, region, created_at';
@@ -50,28 +33,6 @@ const PUBLIC_USER_COLUMNS = 'id, username, avatar_url, region, created_at';
 /** 用户不存在统一响应（404 USER_NOT_FOUND） */
 function respondUserNotFound(res: express.Response) {
   return res.status(404).json({ success: false, code: 'USER_NOT_FOUND', message: '用户不存在' });
-}
-
-/**
- * 解析 photos.tags 字段为字符串数组（新数据 JSON 数组，旧数据空格分隔，与 photos.ts 同口径）。
- */
-function parsePhotoTags(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'string') return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
-  } catch {
-    return raw.split(' ').filter(Boolean);
-  }
-}
-
-/**
- * 解析分页参数：page 从 1 起；page_size 默认 defaultSize，上限 50。
- */
-function parsePagination(req: express.Request, defaultSize: number) {
-  const page = Math.max(1, parseInt(String(req.query.page)) || 1);
-  const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.page_size)) || defaultSize));
-  return { page, pageSize, offset: (page - 1) * pageSize };
 }
 
 /**
@@ -94,7 +55,7 @@ router.get('/:id/profile', profileReadLimiter, async (req, res) => {
       return respondUserNotFound(res);
     }
 
-    const isSelf = getCurrentUserId(req) === user.id;
+    const isSelf = getOptionalUserId(req) === user.id;
 
     // 作品统计：已通过数 + 已通过作品总浏览数（SUM views）
     const statRow = await db.get<{ c: number; v: number | null }>(
@@ -158,7 +119,7 @@ router.get('/:id/photos', profileReadLimiter, async (req, res) => {
       return respondUserNotFound(res);
     }
 
-    const { page, pageSize, offset } = parsePagination(req, 12);
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 12 });
 
     const params: unknown[] = [targetId];
     let where = "WHERE user_id = ? AND status = 'approved'";
@@ -205,7 +166,7 @@ router.get('/:id/threads', profileReadLimiter, async (req, res) => {
       return respondUserNotFound(res);
     }
 
-    const { page, pageSize, offset } = parsePagination(req, 10);
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 10 });
 
     const items = await db.all(
       `SELECT id, title, board_id, reply_count, like_count, created_at

@@ -13,6 +13,10 @@ import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
+import { parsePhotoTags } from '../utils/photoTags';
+import { getOptionalUserId } from '../utils/optionalAuth';
+import { parsePagination } from '../utils/pagination';
+import { formatLocalDateTime } from '../utils/datetime';
 import { verifyAdminToken } from '../services/adminService';
 import { loadAuthUser } from '../services/authService';
 import { ensureHumanVerified } from '../services/verificationService';
@@ -30,22 +34,6 @@ const photoReadLimiter = createRateLimiter({ max: 120, message: '浏览过于频
 
 // JWT 密钥：用于校验上传/删除接口的 Bearer Token
 const JWT_SECRET = process.env.JWT_SECRET || '';
-
-/**
- * 从请求头解析 JWT 获取当前用户 ID。
- * 未登录或令牌无效时返回 null。
- */
-function getCurrentUserId(req: express.Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * 浏览去重窗口：24 小时（毫秒）。
@@ -91,9 +79,7 @@ async function checkUploadBan(
   if (!Number.isFinite(untilMs) || untilMs <= Date.now()) return null;
 
   // 解禁时间格式化为本地时区 YYYY-MM-DD HH:mm
-  const d = new Date(untilMs);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const formatted = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const formatted = formatLocalDateTime(untilMs);
   return {
     status: 403,
     payload: {
@@ -127,20 +113,6 @@ function shouldNotifyDownload(photoId: string, viewerId: string): boolean {
     }
   }
   return true;
-}
-
-/**
- * 解析 photos.tags 字段为字符串数组。
- * 新数据为 JSON 数组字符串；旧数据兼容空格分隔。
- */
-function parsePhotoTags(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'string') return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
-  } catch {
-    return raw.split(' ').filter(Boolean);
-  }
 }
 
 /**
@@ -397,9 +369,11 @@ router.get('/tags', async (req, res) => {
 router.get('/', photoReadLimiter, async (req, res) => {
   try {
     // 解析分页参数：page 从 1 开始，limit 默认 50，上限 100 防止滥用
-    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 50));
-    const offset = (page - 1) * limit;
+    const { pageSize: limit, offset } = parsePagination(req, {
+      defaultSize: 50,
+      maxSize: 100,
+      sizeParam: 'limit',
+    });
 
     // 解析分区过滤参数：存在时使用参数化查询精确匹配，避免 SQL 注入
     const { category, tag, tag_key, tag_value } = req.query;
@@ -720,7 +694,7 @@ router.post('/:id/view', async (req, res) => {
     const { id } = req.params;
 
     // 登录按 user_id 去重，未登录按 client IP 去重
-    const currentUserId = getCurrentUserId(req);
+    const currentUserId = getOptionalUserId(req);
     const viewerKey = currentUserId ? `user:${currentUserId}` : `ip:${getClientIp(req)}`;
     const counted = await recordViewIfEligible(id, viewerKey);
 
@@ -810,7 +784,7 @@ router.get('/image/*', async (req: any, res) => {
       // 管理员可查看所有状态的照片，绕过审核状态限制
       const isAdmin = await isAdminRequest(req);
       if (!isAdmin) {
-        const currentUserId = getCurrentUserId(req);
+        const currentUserId = getOptionalUserId(req);
         // 非所有者尝试访问未审核照片 → 403 禁止
         if (!currentUserId || photo.user_id !== currentUserId) {
           console.log(`Blocked access to unapproved photo ${photo.id} (status: ${photo.status})`);

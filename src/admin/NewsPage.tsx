@@ -7,22 +7,13 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAdminNewsList, deleteNews } from './api';
 import type { AdminNewsItem } from './api';
+import { formatDateTime } from '../shared/utils';
 
 /** 每页数量（与后端默认一致） */
 const PAGE_SIZE = 20;
 
 /** 板块显示名映射（首批仅航空） */
 const BOARD_LABEL: Record<string, string> = { aviation: '航空' };
-
-/**
- * 格式化时间为中文短格式
- * @param iso ISO 时间字符串
- */
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
 
 /**
  * 新闻管理列表页组件
@@ -138,7 +129,7 @@ export function NewsPage() {
                     </div>
                     <div className="text-xs text-gray-500 mt-1 flex gap-3">
                       <span>作者：{item.author}</span>
-                      <span>{formatTime(item.published_at)}</span>
+                      <span>{formatDateTime(item.published_at)}</span>
                       <span>{item.image_count} 张配图</span>
                     </div>
                   </div>

@@ -26,6 +26,7 @@ import { adminAuthMiddleware, requireRole } from '../middleware/adminAuth';
 import { logAdminAction } from '../services/adminService';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { getProxyUrl } from '../utils/url';
+import { parsePagination } from '../utils/pagination';
 
 /** 新闻发布板块白名单：首批仅允许航空板块（取自三大基础板块定义，保证 id 一致） */
 const NEWS_ALLOWED_BOARD_IDS: string[] = (() => {
@@ -279,9 +280,7 @@ adminNewsRouter.put('/:id', ...newsAdminAccess, async (req, res) => {
  */
 adminNewsRouter.get('/', ...newsAdminAccess, async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
-    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.page_size)) || 20));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 20 });
 
     const items = await db.all(
       `SELECT a.id, a.title, a.excerpt, a.author, a.published_at, a.board_id,
@@ -344,9 +343,7 @@ const router = express.Router();
  */
 router.get('/', newsReadLimiter, async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
-    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.page_size)) || 10));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 10 });
 
     // 封面取 sort_order 最小的配图，联 photos 取图片路径后改写为代理 URL
     const items = await db.all(

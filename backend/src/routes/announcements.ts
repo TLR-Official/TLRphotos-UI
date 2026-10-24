@@ -20,6 +20,7 @@ import { db } from '../db';
 import { adminAuthMiddleware } from '../middleware/adminAuth';
 import { logAdminAction } from '../services/adminService';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { parsePagination } from '../utils/pagination';
 
 /** 标题长度上限 */
 const ANNOUNCEMENT_TITLE_MAX = 100;
@@ -96,9 +97,7 @@ const announcementAccess = [
  */
 adminAnnouncementsRouter.get('/', ...announcementAccess, async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
-    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.page_size)) || 20));
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, offset } = parsePagination(req, { defaultSize: 20 });
 
     const items = await db.all(
       'SELECT id, title, content, cover_url, is_active, created_by, created_at, updated_at FROM announcements ORDER BY created_at DESC LIMIT ? OFFSET ?',

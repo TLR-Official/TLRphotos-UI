@@ -11,19 +11,10 @@ import { useNavigate } from 'react-router-dom';
 import { CachedImage } from '../../components/CachedImage';
 import { getNewsList } from '../../api/news';
 import type { NewsListItem } from '../../api/news';
+import { formatLongDate } from '../../shared/utils';
 
 /** 每页条数（与后端默认一致） */
 const PAGE_SIZE = 10;
-
-/**
- * 格式化新闻日期为中文日期（不含时分秒）
- * @param iso ISO 时间字符串
- */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
-}
 
 /**
  * 新闻列表页组件
@@ -123,7 +114,7 @@ export function NewsListPage() {
                 </h2>
                 <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
                   <span>作者：{item.author_name}</span>
-                  <span>{formatDate(item.created_at)}</span>
+                  <span>{formatLongDate(item.created_at)}</span>
                 </div>
                 {item.excerpt && (
                   <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed max-md:hidden">{item.excerpt}</p>
