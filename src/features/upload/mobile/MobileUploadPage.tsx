@@ -12,7 +12,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import exifr from 'exifr';
 import { useUser } from '../../../shared/UserContext';
@@ -85,6 +85,7 @@ interface DraftPayload {
   registrationNumber: string;
   isHot: boolean;
   safetyAgreement: boolean;
+  licenseAgreement: boolean;
   watermark: WatermarkValue;
   savedAt: number;
 }
@@ -107,6 +108,7 @@ function loadDraft(): DraftPayload | null {
       registrationNumber: typeof parsed.registrationNumber === 'string' ? parsed.registrationNumber : '',
       isHot: parsed.isHot === true,
       safetyAgreement: parsed.safetyAgreement === true,
+      licenseAgreement: parsed.licenseAgreement === true,
       watermark:
         parsed.watermark &&
         typeof parsed.watermark.posIndex === 'number' &&
@@ -177,6 +179,8 @@ export function MobileUploadPage() {
   const [registrationNumber, setRegistrationNumber] = useState(initialDraft?.registrationNumber ?? '');
   const [isHot, setIsHot] = useState(initialDraft?.isHot ?? false);
   const [safetyAgreement, setSafetyAgreement] = useState(initialDraft?.safetyAgreement ?? false);
+  // 版权协议同意（必选）：勾选后方可提交
+  const [licenseAgreement, setLicenseAgreement] = useState(initialDraft?.licenseAgreement ?? false);
   const [watermark, setWatermark] = useState<WatermarkValue>(initialDraft?.watermark ?? DEFAULT_WATERMARK);
   const [exif, setExif] = useState<ExifData>({});
   const [hotSheetOpen, setHotSheetOpen] = useState(false);
@@ -214,6 +218,7 @@ export function MobileUploadPage() {
       registrationNumber,
       isHot,
       safetyAgreement,
+      licenseAgreement,
       watermark,
       savedAt: Date.now(),
     };
@@ -222,7 +227,7 @@ export function MobileUploadPage() {
     } catch {
       // 存储配额异常时静默忽略，不影响主流程
     }
-  }, [title, description, category, selectedTags, registrationNumber, isHot, safetyAgreement, watermark]);
+  }, [title, description, category, selectedTags, registrationNumber, isHot, safetyAgreement, licenseAgreement, watermark]);
 
   /** 内容区滚动到顶部（步骤切换时调用） */
   const scrollToTop = () => {
@@ -451,13 +456,17 @@ export function MobileUploadPage() {
       return;
     }
     setError(message);
-  }, [file, selectedTags, watermark, title, description, category, trimmedRegistration, isHot, exif, token, verificationGuard, navigate]);
+  }, [file, selectedTags, watermark, title, description, category, isRegistrationRequired, trimmedRegistration, isHot, exif, token, verificationGuard, navigate]);
 
   /** 提交入口：终步校验后进入上传遮罩 */
   const handleSubmit = () => {
     if (!file || uploading) return;
     if (!safetyAgreement) {
       setError('请勾选安全声明');
+      return;
+    }
+    if (!licenseAgreement) {
+      setError('请阅读并同意作品版权协议');
       return;
     }
     setError('');
@@ -826,6 +835,29 @@ export function MobileUploadPage() {
                     我确认本影像不涉及任何军事设施、装备或敏感区域
                   </span>
                   <span className="text-red-500">*</span>
+                </span>
+              </label>
+
+              {/* 版权协议同意（必选，与桌面端一致） */}
+              <label className="mt-3 flex min-h-[44px] cursor-pointer items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={licenseAgreement}
+                  onChange={(e) => setLicenseAgreement(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 accent-blue-700"
+                />
+                <span className="flex-1 text-sm text-gray-700">
+                  我已阅读并同意
+                  <Link
+                    to="/about"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mx-1 text-blue-700 underline"
+                  >
+                    《作品许可协议》
+                  </Link>
+                  ，理解作品经审核通过后将以 CC BY 4.0 协议公开展出，著作权仍归我所有
+                  <span className="text-blue-700">*</span>
                 </span>
               </label>
             </div>

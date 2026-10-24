@@ -4,7 +4,7 @@
  * 支持自动解析 EXIF、可拖动水印预览、安全声明校验，并通过进度条反馈上传过程。
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
 import { useHumanVerification } from '../../shared/useHumanVerification';
@@ -60,6 +60,8 @@ export function UploadPage() {
   const [exif, setExif] = useState<ExifData>({});
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [safetyAgreement, setSafetyAgreement] = useState(false);
+  // 版权协议同意（必选）：勾选后方可提交，作品入库后按 CC BY 4.0 公开展出
+  const [licenseAgreement, setLicenseAgreement] = useState(false);
   // 飞机注册号（仅航空分区必填，输入时自动转大写）与热门意愿（可选，默认不勾选）
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [isHot, setIsHot] = useState(false);
@@ -245,8 +247,8 @@ export function UploadPage() {
   // 航空分区须填写且格式合法；其他分区留空即通过，非法输入不阻断提交（后端会置空不落库）
   const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
 
-  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、至少一个第二层标签、已勾选安全声明
-  const canSubmit = title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement;
+  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、至少一个第二层标签、已勾选安全声明与作品版权协议
+  const canSubmit = title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement && licenseAgreement;
 
   /** 水印拖动开始：阻止默认行为并进入拖动状态 */
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -651,6 +653,30 @@ export function UploadPage() {
                 </label>
               </div>
 
+              <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 border border-blue-200">
+                <input
+                  type="checkbox"
+                  id="license-agreement"
+                  checked={licenseAgreement}
+                  onChange={(e) => setLicenseAgreement(e.target.checked)}
+                  disabled={step === 'uploading'}
+                  className="mt-1 accent-blue-700"
+                />
+                <label htmlFor="license-agreement" className="text-sm flex-1 text-gray-700">
+                  我已阅读并同意
+                  <Link
+                    to="/about"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mx-1 text-blue-700 underline hover:text-blue-800"
+                  >
+                    《作品许可协议》
+                  </Link>
+                  ，理解作品经审核通过后将以 CC BY 4.0 协议公开展出，著作权仍归我所有
+                  <span className="text-blue-700">*</span>
+                </label>
+              </div>
+
               <div className="flex justify-between pt-2">
                 <button
                   onClick={handleReSelect}
@@ -679,6 +705,7 @@ export function UploadPage() {
                   {title.trim() && isRegistrationValid && !category && '请选择分类'}
                   {title.trim() && isRegistrationValid && category && selectedTags.length === 0 && '请至少选择一个标签'}
                   {title.trim() && isRegistrationValid && category && selectedTags.length > 0 && !safetyAgreement && '请勾选安全声明'}
+                  {title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement && !licenseAgreement && '请阅读并同意作品版权协议'}
                 </p>
               )}
             </div>
