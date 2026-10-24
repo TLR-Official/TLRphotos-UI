@@ -1,7 +1,8 @@
 /**
  * 关于我们页面
  * 展示团队介绍角色卡（创始人/技术/审核/航空审核，简介文案占位待站长补充）、
- * 站点数据卡（已开站天数 / 已入库作品数，来自公开接口 /about/stats）
+ * 站点数据卡（已开站天数 / 已入库作品数，来自公开接口 /about/stats）、
+ * 作品许可协议说明（CC BY 4.0 站内化：适用范围/使用权利/署名义务/水印与原图）
  * 与「支持我们」占位卡。站点数据请求失败时展示重试按钮，不影响其余区块渲染。
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -110,6 +111,76 @@ export function AboutPage() {
                 </div>
               </div>
             )}
+          </div>
+        </section>
+
+        {/* 作品许可协议：CC BY 4.0 站内化说明 */}
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold text-black mb-4">作品许可协议</h2>
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <p className="text-sm text-gray-600 leading-relaxed">
+              经审核通过并在本站公开展出的摄影作品，采用
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/deed.zh-hans"
+                target="_blank"
+                rel="license noopener noreferrer"
+                className="mx-1 font-medium text-blue-700 hover:text-blue-800"
+              >
+                知识共享署名 4.0 国际许可协议（CC BY 4.0）
+              </a>
+              授权。著作权仍归各作品作者所有，本协议仅授权他人按下列条件使用作品。
+            </p>
+
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-black">适用范围</h3>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  仅限航空、铁路、公路三个分区内经审核入库的摄影作品。论坛帖子、评论区、新闻与专栏文章等文字内容不在此列，转载或引用前请先联系作者与站方。
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-black">你可以自由使用</h3>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  以任何媒介复制、传播作品；对作品进行裁剪、调色、合成等改编再创作，并可将其用于商业用途——以上均无需另行申请授权。
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-black">使用时须注明</h3>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  署名原作者，建议格式「作品标题 · 作者名 · 来源 TLRphotos」；附上本协议链接；若对作品做过修改，需一并说明。同时不得附加任何额外法律或技术限制，也不得以署名方式暗示作者或本站为你背书。
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-5">
+                <h3 className="font-semibold text-black">关于水印与原图</h3>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  站内提供的规范下载文件为带 TLRphotos 水印的版本，水印与版权信息不得裁切、遮挡或抹除。如需无水印原始文件，请直接联系作者本人取得另行授权。
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-5 text-xs text-gray-400">
+              协议全文：
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/deed.zh-hans"
+                target="_blank"
+                rel="license noopener noreferrer"
+                className="text-blue-700 hover:text-blue-800"
+              >
+                中文版本
+              </a>
+              {' · '}
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/legalcode"
+                target="_blank"
+                rel="license noopener noreferrer"
+                className="text-blue-700 hover:text-blue-800"
+              >
+                官方英文法律文本
+              </a>
+            </p>
           </div>
         </section>
 
