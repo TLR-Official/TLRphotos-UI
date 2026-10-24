@@ -12,6 +12,7 @@ import { getTagCategories } from '../../api/tags';
 import type { TagCategory } from '../../api/tags';
 import { TagSelector } from '../../components/TagSelector';
 import type { SelectedTag } from '../../components/TagSelector';
+import { computeBandPreviewLayout } from '../../shared/watermarkBand';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
@@ -38,7 +39,7 @@ interface ExifData {
  */
 export function UploadPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, token } = useUser();
+  const { isAuthenticated, token, user } = useUser();
   // V1.8.0：人机验证门（上传被 403 拦截时弹出）
   const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +82,8 @@ export function UploadPage() {
   //   - 字号 scaleFactor 计算（与后端 processImage 保持同一基准）
   //   - 位置百分比换算（0% = 真实图片左/上边，100% = 真实图片右/下边）
   const [renderedImageRect, setRenderedImageRect] = useState<{x:number;y:number;width:number;height:number} | null>(null);
+  // 原图原始尺寸，用于还原后端预览图坐标（底部信息条比例换算的基准）
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const previewImgRef = useRef<HTMLImageElement>(null);
 
   // 首次挂载拉取标签分类列表（航空/铁路/汽车）
@@ -133,6 +136,7 @@ export function UploadPage() {
     }
     if (imgBox && imgBox.width > 0 && imgBox.height > 0) {
       setRenderedImageRect({ x: imgBox.left, y: imgBox.top, width: imgBox.width, height: imgBox.height });
+      setNaturalSize({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
     }
   }, []);
 
@@ -150,6 +154,17 @@ export function UploadPage() {
     ? Math.max(renderedImageRect.width, renderedImageRect.height) / 1200
     : 0;
   const displayFontSize = Math.max(1, Math.round(watermarkSize * (previewFontScale || 1)));
+
+  // 底部信息条预览布局：比例与后端 imageService 完全同源（见 shared/watermarkBand.ts）
+  const bandLayout = renderedImageRect && naturalSize
+    ? computeBandPreviewLayout({
+        naturalWidth: naturalSize.width,
+        naturalHeight: naturalSize.height,
+        renderedWidth: renderedImageRect.width,
+        siteName: watermarkText,
+        ownerName: user?.username || 'TLRphotos 用户',
+      })
+    : null;
 
   const inputCls = `w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500`;
 
@@ -551,7 +566,7 @@ export function UploadPage() {
                         ref={previewImgRef}
                         src={preview}
                         alt="preview"
-                        className="w-full max-h-64 object-contain"
+                        className="block w-full max-h-64 object-contain"
                         onLoad={measureRenderedImage}
                         onError={measureRenderedImage}
                       />
@@ -582,6 +597,39 @@ export function UploadPage() {
                             }}
                           >
                             {watermarkText}
+                          </span>
+                        </div>
+                      ) : null}
+                      {/* 底部信息条预览：在图片下方额外扩展一块等宽纯黑区域（不遮挡画面），
+                          条内两行白字居中，比例与后端 extend + composite 完全同源 */}
+                      {renderedImageRect && bandLayout ? (
+                        <div
+                          className="relative select-none bg-black"
+                          style={{
+                            marginLeft: renderedImageRect.x,
+                            width: renderedImageRect.width,
+                            height: bandLayout.height,
+                          }}
+                        >
+                          <span
+                            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-white"
+                            style={{
+                              top: bandLayout.line1CenterY,
+                              fontSize: `${bandLayout.line1FontSize}px`,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {bandLayout.line1}
+                          </span>
+                          <span
+                            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-white"
+                            style={{
+                              top: bandLayout.line2CenterY,
+                              fontSize: `${bandLayout.line2FontSize}px`,
+                              fontWeight: 400,
+                            }}
+                          >
+                            {bandLayout.line2}
                           </span>
                         </div>
                       ) : null}

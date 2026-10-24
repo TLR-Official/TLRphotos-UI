@@ -1250,6 +1250,7 @@ router.post(
     }
 
     // 水印配置：仅当提供水印文本时构造配置对象，否则留空
+    // band：底部信息条（网站名 + 著作权=上传者用户名），与文字水印同一次渲染写入成品图
     let watermarkConfig: WatermarkConfig | undefined;
     if (watermarkText) {
       watermarkConfig = {
@@ -1258,6 +1259,11 @@ router.post(
         y: parseInt(watermarkY) || 0,
         opacity: parseFloat(watermarkOpacity) || 0.6,
         size: parseInt(watermarkSize) || 32,
+        band: {
+          siteName: 'TLRphotos',
+          ownerName: authUser.username || 'TLRphotos 用户',
+          year: new Date().getFullYear(),
+        },
       };
     }
 

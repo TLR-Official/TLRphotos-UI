@@ -147,7 +147,7 @@ type UploadPhase = 'uploading' | 'retrying' | 'failed' | 'success';
  */
 export function MobileUploadPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, token } = useUser();
+  const { isAuthenticated, token, user } = useUser();
   // 人机验证门：上传被 403 拦截时弹窗，通过后自动重试
   const { guard: verificationGuard, modal: verificationModal } = useHumanVerification();
   // 步骤提示条：最多显示 3 次，可手动「不再显示」
@@ -767,6 +767,7 @@ export function MobileUploadPage() {
             <WatermarkEditor
               preview={preview}
               text={WATERMARK_TEXT}
+              ownerName={user?.username || 'TLRphotos 用户'}
               value={watermark}
               onChange={setWatermark}
             />

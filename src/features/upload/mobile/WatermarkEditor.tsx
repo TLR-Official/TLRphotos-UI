@@ -10,12 +10,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { watermarkPosToXY, WATERMARK_POS_LABELS, WATERMARK_SIZE_TIERS } from './watermark';
 import type { WatermarkValue } from './watermark';
+import { computeBandPreviewLayout } from '../../../shared/watermarkBand';
 
 interface WatermarkEditorProps {
   /** 本地预览 ObjectURL */
   preview: string;
   /** 水印文字（固定，用户不可改） */
   text: string;
+  /** 底部信息条第二行的著作权人（上传者用户名） */
+  ownerName: string;
   /** 当前水印设置（受控） */
   value: WatermarkValue;
   /** 设置变更回调 */
@@ -27,11 +30,13 @@ interface WatermarkEditorProps {
  * @param props - 见 WatermarkEditorProps
  * @returns 水印设置与预览 JSX
  */
-export function WatermarkEditor({ preview, text, value, onChange }: WatermarkEditorProps) {
+export function WatermarkEditor({ preview, text, ownerName, value, onChange }: WatermarkEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   // 实际渲染的图片矩形（object-contain 后），用于 scaleFactor 与位置百分比换算
   const [rect, setRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  // 原图原始尺寸，用于还原后端预览图坐标（底部信息条比例换算的基准）
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   /** 测量 object-contain 后图片的真实渲染矩形（与桌面端 UploadPage 同一算法） */
   const measure = useCallback(() => {
@@ -52,6 +57,7 @@ export function WatermarkEditor({ preview, text, value, onChange }: WatermarkEdi
       width: drawnW,
       height: drawnH,
     });
+    setNaturalSize({ width: nw, height: nh });
   }, []);
 
   // 图片源变化 / 窗口尺寸变化 → 重新测量
@@ -67,6 +73,17 @@ export function WatermarkEditor({ preview, text, value, onChange }: WatermarkEdi
   const pos = watermarkPosToXY(value.posIndex);
   const opacityPercent = Math.round(value.opacity * 100);
 
+  // 底部信息条预览布局：比例与后端 imageService 完全同源（见 shared/watermarkBand.ts）
+  const bandLayout = rect && naturalSize
+    ? computeBandPreviewLayout({
+        naturalWidth: naturalSize.width,
+        naturalHeight: naturalSize.height,
+        renderedWidth: rect.width,
+        siteName: text,
+        ownerName,
+      })
+    : null;
+
   return (
     <div className="space-y-5">
       {/* 实时预览：水印文字按位置/字号/透明度叠加在实际渲染的图片矩形上 */}
@@ -80,7 +97,7 @@ export function WatermarkEditor({ preview, text, value, onChange }: WatermarkEdi
             ref={imgRef}
             src={preview}
             alt="水印预览"
-            className="max-h-[38vh] w-full object-contain"
+            className="block max-h-[38vh] w-full object-contain"
             onLoad={measure}
             onError={measure}
           />
@@ -105,6 +122,34 @@ export function WatermarkEditor({ preview, text, value, onChange }: WatermarkEdi
                 }}
               >
                 {text}
+              </span>
+            </div>
+          )}
+          {/* 底部信息条：在图片下方扩展等宽纯黑区域（不遮挡画面），条内两行白字居中 */}
+          {rect && bandLayout && (
+            <div
+              className="relative select-none bg-black"
+              style={{ marginLeft: rect.x, width: rect.width, height: bandLayout.height }}
+            >
+              <span
+                className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-white"
+                style={{
+                  top: bandLayout.line1CenterY,
+                  fontSize: `${bandLayout.line1FontSize}px`,
+                  fontWeight: 600,
+                }}
+              >
+                {bandLayout.line1}
+              </span>
+              <span
+                className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-white"
+                style={{
+                  top: bandLayout.line2CenterY,
+                  fontSize: `${bandLayout.line2FontSize}px`,
+                  fontWeight: 400,
+                }}
+              >
+                {bandLayout.line2}
               </span>
             </div>
           )}
