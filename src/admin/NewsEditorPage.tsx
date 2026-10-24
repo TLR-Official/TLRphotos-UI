@@ -12,6 +12,7 @@ import { createNews, updateNews } from './api';
 import { getNewsDetail } from '../api/news';
 import { getArticleContent } from '../api/articles';
 import { searchPhotos } from '../api/photos';
+import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import type { PhotoListItem } from '../features/gallery/types';
 
 /** 新闻固定板块 id（首批仅航空，与后端 NEWS_ALLOWED_BOARD_IDS 一致） */
@@ -195,6 +196,7 @@ export function NewsEditorPage({ newsId }: { newsId?: string }) {
 
   return (
     <div className="max-w-4xl">
+      <MobileReadOnlyNotice />
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800">{isEdit ? '编辑新闻' : '新建新闻'}</h2>
         <button

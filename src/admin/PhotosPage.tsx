@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Eye, ShieldAlert } from 'lucide-react';
 import { getPendingPhotos, getAdminToken } from './api';
 import type { AdminPhoto } from './types';
 import { CachedImage } from '../components/CachedImage';
+import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 
 /**
  * 照片审核列表页组件
@@ -71,6 +72,7 @@ export function PhotosPage() {
 
   return (
     <div>
+      <MobileReadOnlyNotice />
       <h2 className="text-2xl font-bold text-gray-800 mb-2">照片审核</h2>
       <p className="text-sm text-gray-500 mb-6">
         共 {total} 张待审核照片，按上传时间正序排队，建议优先处理标注「下一张」的作品，也可自行选择其他照片
@@ -120,7 +122,7 @@ export function PhotosPage() {
                     <p className="text-gray-600 text-xs mt-1 font-mono">注册号: {photo.registration_number}</p>
                   )}
                   {photo.is_hot === 1 && (
-                    <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded border border-violet-200 bg-violet-50 text-violet-700">热门意愿</span>
+                    <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded border border-blue-200 bg-blue-50 text-blue-700">热门意愿</span>
                   )}
                   <p className="text-gray-400 text-xs mt-1">{new Date(photo.created_at).toLocaleString('zh-CN')}</p>
                 </div>

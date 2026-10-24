@@ -24,7 +24,7 @@ const PHOTOS_PAGE_SIZE = 12;
 
 /** 处罚等级徽章配置：L1 淡紫 / L2 淡蓝 / L3 深蓝实底（三色体系内取色） */
 const PENALTY_LEVEL_BADGE: Record<number, { label: string; className: string }> = {
-  1: { label: '警告', className: 'bg-violet-50 text-violet-700 border border-violet-200' },
+  1: { label: '警告', className: 'bg-blue-50 text-blue-700 border border-blue-200' },
   2: { label: '功能封禁', className: 'bg-blue-50 text-blue-700 border border-blue-200' },
   3: { label: '账号封禁', className: 'bg-blue-700 text-white border border-blue-700' },
 };
@@ -191,9 +191,9 @@ export function PublicProfilePage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="max-w-6xl mx-auto px-4 py-8 max-md:py-4">
         {/* 头部卡 */}
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-8">
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-8 max-md:p-5">
           <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
             <div className="w-24 h-24 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
               {profile.avatar_url ? (
@@ -279,12 +279,12 @@ export function PublicProfilePage() {
           </div>
         )}
 
-        {/* 作品区：分区 Tab + 卡片网格 */}
+        {/* 作品区：分区 Tab + 卡片网格（移动端 Tab 换行展示，避免横向滑动） */}
         <div className="mt-8">
-          <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
+          <div className="flex items-center gap-1 border-b border-gray-200 flex-wrap md:flex-nowrap md:overflow-x-auto">
             <button
               onClick={() => setActiveCategory(null)}
-              className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+              className={`px-4 py-2 max-md:py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                 activeCategory === null
                   ? 'border-blue-700 text-blue-700 font-medium'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -296,7 +296,7 @@ export function PublicProfilePage() {
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                className={`px-4 py-2 max-md:py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   activeCategory === cat.id
                     ? 'border-blue-700 text-blue-700 font-medium'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -340,7 +340,7 @@ export function PublicProfilePage() {
               <button
                 onClick={() => fetchPhotos(photosPage + 1)}
                 disabled={photosLoading}
-                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                className="px-6 py-2.5 max-md:h-12 max-md:w-full rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
                 {photosLoading ? '加载中...' : '加载更多'}
               </button>

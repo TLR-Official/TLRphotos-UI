@@ -4,10 +4,12 @@
  *              点赞按钮、回复按钮、删除按钮。
  *              纯受控：所有操作经回调上抛，是否可删由父层计算，任意主题可复用。
  */
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CommentDTO } from '../../../api/comments';
 import { formatRelativeDate } from '../../../shared/utils';
-import { Heart, Reply, Trash2 } from 'lucide-react';
+import { useIsMobile } from '../../../shared/useIsMobile';
+import { Heart, MoreHorizontal, Reply, Trash2 } from 'lucide-react';
 
 export interface CommentItemProps {
   comment: CommentDTO;
@@ -43,6 +45,28 @@ export function CommentItem({
   onDelete,
 }: CommentItemProps) {
   const liked = comment.is_liked === true;
+  const isMobile = useIsMobile();
+  // 移动端「…」操作菜单开关与容器引用（点击外部/Escape 关闭）
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
     <div className="min-w-0">
@@ -81,7 +105,7 @@ export function CommentItem({
           type="button"
           onClick={() => onToggleLike?.(comment)}
           aria-label={liked ? '取消点赞' : '点赞'}
-          className={`inline-flex items-center gap-1 transition-colors ${
+          className={`inline-flex items-center gap-1 transition-colors max-md:min-h-[44px] ${
             liked ? 'text-red-500' : 'text-gray-500 hover:text-red-500'
           }`}
         >
@@ -91,7 +115,8 @@ export function CommentItem({
           <span>{comment.like_count}</span>
         </button>
 
-        {replyable && (
+        {/* 桌面端：回复/删除内联按钮（保持原交互不变） */}
+        {!isMobile && replyable && (
           <button
             type="button"
             onClick={() => onReply?.(comment)}
@@ -102,7 +127,7 @@ export function CommentItem({
           </button>
         )}
 
-        {canDelete && (
+        {!isMobile && canDelete && (
           <button
             type="button"
             onClick={() => onDelete?.(comment.id)}
@@ -112,6 +137,51 @@ export function CommentItem({
             <Trash2 className="h-3.5 w-3.5" />
             删除
           </button>
+        )}
+
+        {/* 移动端：回复/删除收进右侧「…」菜单（触发热区 44×44，菜单项高度 ≥44px） */}
+        {isMobile && (replyable || canDelete) && (
+          <div ref={menuRef} className="relative ml-auto">
+            <button
+              type="button"
+              aria-label="更多操作"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-20 mt-1 w-32 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                {replyable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onReply?.(comment);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    <Reply className="h-4 w-4" />
+                    回复
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete?.(comment.id);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

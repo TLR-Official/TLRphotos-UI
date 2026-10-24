@@ -8,7 +8,8 @@
  *   - forum_moderator：仅论坛治理（V4.3.0 落地：板块管理 + 帖子管理）；
  *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone } from 'lucide-react';
+import { useState } from 'react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 
@@ -51,6 +52,9 @@ const menuItems = [
  * @returns 后台布局 JSX
  */
 export function Layout({ admin, children, currentPage, onNavigate, onLogout }: LayoutProps) {
+  // 移动端全屏菜单抽屉开关（桌面端不渲染，零影响）
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   /** 退出登录：清除本地 token 后通知父组件 */
   const handleLogout = () => {
     setAdminToken(null);
@@ -82,30 +86,42 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
     return ['dashboard', 'photos'].includes(page);
   };
 
+  // 按角色过滤后的可见菜单（侧边栏与移动端抽屉共用）
+  const visibleMenus = menuItems.filter((item) => canAccess(item.id));
+
+  /**
+   * 渲染菜单按钮列表
+   * @param closeAfterNav 点击菜单项后是否关闭抽屉（移动端抽屉传入 true）
+   */
+  const renderMenuButtons = (closeAfterNav: boolean) =>
+    visibleMenus.map((item) => (
+      <button
+        key={item.id}
+        onClick={() => {
+          onNavigate(item.id);
+          if (closeAfterNav) setMobileMenuOpen(false);
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+          currentPage === item.id
+            ? 'bg-blue-50 text-blue-800 font-medium'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+        }`}
+      >
+        <item.icon className="w-5 h-5" />
+        <span>{item.label}</span>
+      </button>
+    ));
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      {/* 桌面端侧边栏（移动端隐藏） */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col">
         <div className="p-6 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-800">TLRphotos</h1>
           <p className="text-sm text-gray-500 mt-1">管理后台</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          {menuItems.filter(item => canAccess(item.id)).map(item => (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                currentPage === item.id
-                  ? 'bg-blue-50 text-blue-800 font-medium'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-              }`}
-            >
-              <item.icon className="w-5 h-5" />
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+        <nav className="flex-1 p-4 space-y-1">{renderMenuButtons(false)}</nav>
 
         <div className="p-4 border-t border-gray-200">
           <button
@@ -118,11 +134,65 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
         </div>
       </aside>
 
-      <div className="flex-1">
-        <main className="p-6">
+      <div className="flex-1 min-w-0">
+        {/* 移动端顶栏（仅 ≤768px）：Logo + 汉堡按钮（44px 热区） */}
+        <header className="md:hidden sticky top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 h-12">
+          <div>
+            <h1 className="text-base font-bold text-gray-800">TLRphotos</h1>
+          </div>
+          <button
+            type="button"
+            aria-label="打开菜单"
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex h-11 w-11 items-center justify-center text-gray-700"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        </header>
+
+        <main className="p-4 md:p-6">
           {children}
         </main>
       </div>
+
+      {/* 移动端全屏菜单抽屉（仅 ≤768px）：遮罩 + 菜单列表，点项或遮罩关闭 */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div
+            className="absolute inset-0 bg-black/40"
+            aria-hidden="true"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white shadow-xl flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h1 className="text-lg font-bold text-gray-800">TLRphotos</h1>
+                <p className="text-xs text-gray-500 mt-0.5">管理后台</p>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭菜单"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex h-11 w-11 items-center justify-center text-gray-500"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-4 space-y-1">{renderMenuButtons(true)}</nav>
+
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                <span>退出登录</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

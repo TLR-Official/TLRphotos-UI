@@ -5,6 +5,7 @@
  */
 import { useState, type FormEvent } from 'react';
 import { SendHorizontal } from 'lucide-react';
+import { useIsMobile } from '../../../shared/useIsMobile';
 
 const MAX_LENGTH = 1000;
 
@@ -26,6 +27,7 @@ export function CommentComposer({
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const isMobile = useIsMobile();
 
   if (!isAuthenticated) {
     return (
@@ -64,6 +66,13 @@ export function CommentComposer({
       <textarea
         value={content}
         onChange={(event) => setContent(event.target.value.slice(0, MAX_LENGTH))}
+        onFocus={(event) => {
+          // 移动端：等待虚拟键盘弹出后滚动到视口中央，避免输入框被键盘遮挡
+          if (isMobile) {
+            const el = event.target;
+            setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+          }
+        }}
         placeholder={placeholder}
         rows={3}
         className="w-full resize-y rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"

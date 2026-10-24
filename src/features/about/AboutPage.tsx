@@ -95,7 +95,7 @@ export function AboutPage() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-6 max-md:gap-4">
                 <div>
                   <p className="text-3xl font-bold text-blue-700">
                     {stats?.site_days ?? '--'}
@@ -115,7 +115,7 @@ export function AboutPage() {
 
         {/* 支持我们（占位卡） */}
         <section className="mt-10">
-          <div className="bg-violet-50 border border-violet-200 rounded-xl p-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
             <h2 className="text-lg font-semibold text-black">支持我们</h2>
             <p className="mt-2 text-sm text-gray-600">
               支持形式正在规划中（投票 / 捐赠，敬请期待）。

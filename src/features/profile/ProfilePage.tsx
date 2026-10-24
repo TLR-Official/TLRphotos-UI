@@ -5,6 +5,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import { useTheme } from '../../shared/ThemeContext';
 import { useUser } from '../../shared/UserContext';
 import { uploadAvatar, changePassword, getUserStats, getMyPhotos, updateUser, sendEmailCode, bindEmail } from '../../api/auth';
@@ -65,7 +66,7 @@ function FieldRow({
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`w-full px-4 py-2 rounded-lg border transition-all duration-300 ${
+          className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all duration-300 ${
             error
               ? 'border-red-500 bg-red-50'
               : 'bg-gray-50 border-gray-200 focus:border-blue-700 text-gray-800'
@@ -600,7 +601,7 @@ export function ProfilePage() {
                 value={emailModalAddr}
                 onChange={(e) => setEmailModalAddr(e.target.value)}
                 placeholder="请输入新邮箱地址"
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-700 transition-all"
+                className="w-full px-4 py-2.5 max-md:h-12 max-md:text-base rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-700 transition-all"
               />
 
               {/* 验证码输入 + 重发 */}
@@ -612,13 +613,13 @@ export function ProfilePage() {
                   value={emailModalCode}
                   onChange={(e) => setEmailModalCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="请输入 6 位验证码"
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-700 transition-all"
+                  className="flex-1 px-4 py-2.5 max-md:h-12 max-md:text-base rounded-lg border border-gray-200 bg-white text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-700 transition-all"
                 />
                 <button
                   type="button"
                   disabled={emailModalCooldown > 0 || emailModalSending || !emailModalToken}
                   onClick={handleSendEmailModalCode}
-                  className={`flex-shrink-0 px-4 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex-shrink-0 px-4 max-md:h-12 rounded-lg text-sm font-medium transition-all ${
                     emailModalCooldown > 0 || emailModalSending || !emailModalToken
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       : 'bg-blue-700 text-white hover:bg-blue-800'
@@ -669,11 +670,11 @@ export function ProfilePage() {
           </div>
         </div>
       )}
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 py-8 max-md:py-4">
         {/* 头部：用户信息 */}
-        <div className="rounded-2xl shadow-xl overflow-hidden bg-white mb-6">
-          <div className="p-6 border-b border-gray-100">
-            <div className="flex items-center justify-between">
+        <div className="rounded-2xl shadow-xl overflow-hidden bg-white mb-6 max-md:mb-4">
+          <div className="p-6 max-md:p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between max-md:flex-col max-md:items-start max-md:gap-3">
               <div className="flex items-center gap-4">
                 <div className="relative">
                   <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
@@ -712,18 +713,18 @@ export function ProfilePage() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 max-md:w-full">
                 {viewMode === 'settings' && (
                   <button
                     onClick={() => setViewMode('dashboard')}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2 max-md:min-h-11 max-md:flex-1 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                   >
                     返回仪表盘
                   </button>
                 )}
                 <button
                   onClick={() => setViewMode('settings')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 max-md:min-h-11 max-md:flex-1 rounded-lg text-sm font-medium transition-colors ${
                     viewMode === 'settings'
                       ? 'bg-blue-700 text-white'
                       : 'bg-blue-50 text-blue-800 hover:bg-blue-100'
@@ -770,12 +771,12 @@ export function ProfilePage() {
               </div>
             </div>
 
-            {/* 过审率 + 互动数据 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-xl p-5 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-gray-500">过审率</p>
-                  <p className="text-2xl font-bold text-blue-800">
+            {/* 过审率 + 互动数据（移动端等宽三列紧凑展示） */}
+            <div className="grid grid-cols-3 gap-2 md:gap-4">
+              <div className="rounded-xl p-5 max-md:p-3 bg-white shadow-sm">
+                <div className="flex items-center justify-between mb-2 max-md:flex-col max-md:items-start max-md:gap-1">
+                  <p className="text-sm max-md:text-xs text-gray-500">过审率</p>
+                  <p className="text-2xl max-md:text-lg font-bold text-blue-800">
                     {statsLoading ? '-' : `${stats?.approvalRate || 0}%`}
                   </p>
                 </div>
@@ -786,15 +787,15 @@ export function ProfilePage() {
                   />
                 </div>
               </div>
-              <div className="rounded-xl p-5 bg-white shadow-sm">
-                <p className="text-sm text-gray-500 mb-1">总浏览量</p>
-                <p className="text-2xl font-bold text-blue-600">
+              <div className="rounded-xl p-5 max-md:p-3 bg-white shadow-sm">
+                <p className="text-sm max-md:text-xs text-gray-500 mb-1">总浏览量</p>
+                <p className="text-2xl max-md:text-lg font-bold text-blue-600">
                   {statsLoading ? '-' : stats?.totalViews?.toLocaleString() || 0}
                 </p>
               </div>
-              <div className="rounded-xl p-5 bg-white shadow-sm">
-                <p className="text-sm text-gray-500 mb-1">总点赞数</p>
-                <p className="text-2xl font-bold text-pink-600">
+              <div className="rounded-xl p-5 max-md:p-3 bg-white shadow-sm">
+                <p className="text-sm max-md:text-xs text-gray-500 mb-1">总点赞数</p>
+                <p className="text-2xl max-md:text-lg font-bold text-pink-600">
                   {statsLoading ? '-' : stats?.totalLikes?.toLocaleString() || 0}
                 </p>
               </div>
@@ -844,11 +845,32 @@ export function ProfilePage() {
               </div>
             </div>
 
+            {/* 移动端功能列表（仅 ≤768px）：行高 ≥56px，右侧 ChevronRight */}
+            <nav aria-label="我的功能" className="rounded-xl bg-white shadow-sm overflow-hidden md:hidden">
+              {([
+                { label: '我的作品', onClick: () => navigate('/my-works') },
+                { label: '我的申诉', onClick: () => navigate('/my-appeals') },
+                { label: '通知中心', onClick: () => navigate('/notifications') },
+                { label: '公开主页', onClick: () => user?.id && navigate(`/users/${user.id}`) },
+                { label: '设置', onClick: () => setViewMode('settings') },
+              ] as const).map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.onClick}
+                  className="flex w-full items-center justify-between px-4 h-14 border-b border-gray-100 last:border-b-0 text-left active:bg-gray-50 transition-colors"
+                >
+                  <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                  <ChevronRight className="h-5 w-5 text-gray-400" />
+                </button>
+              ))}
+            </nav>
+
             {/* 最近动态 */}
             {stats?.recentUploads !== undefined && stats.recentUploads > 0 && (
               <div className="rounded-xl p-4 bg-blue-50 border border-blue-200">
                 <p className="text-sm text-blue-800">
-                  📸 最近 7 天上传了 <span className="font-semibold">{stats.recentUploads}</span> 张照片
+                  最近 7 天上传了 <span className="font-semibold">{stats.recentUploads}</span> 张照片
                 </p>
               </div>
             )}
@@ -858,7 +880,7 @@ export function ProfilePage() {
         {/* Settings 视图 */}
         {viewMode === 'settings' && (
           <div className="rounded-2xl shadow-xl overflow-hidden bg-white">
-          <div className="flex border-b">
+          <div className="flex border-b max-md:grid max-md:grid-cols-3">
             <button
               onClick={() => setActiveTab('profile')}
               className={`flex-1 py-4 text-sm font-medium transition-colors ${
@@ -1088,7 +1110,7 @@ export function ProfilePage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className={`flex-1 py-3 rounded-lg font-medium transition-all duration-300 ${
+                    className={`flex-1 py-3 max-md:h-12 rounded-lg font-medium transition-all duration-300 ${
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
                         : theme === 'dark'
@@ -1124,7 +1146,7 @@ export function ProfilePage() {
                       value={passwordForm.oldPassword}
                       onChange={(e) => handlePasswordInputChange('oldPassword', e.target.value)}
                       placeholder="请输入原密码"
-                      className={`w-full px-4 py-2 rounded-lg border transition-all ${
+                      className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.oldPassword
                           ? 'border-red-500 bg-red-50'
                           : theme === 'dark'
@@ -1150,7 +1172,7 @@ export function ProfilePage() {
                       value={passwordForm.newPassword}
                       onChange={(e) => handlePasswordInputChange('newPassword', e.target.value)}
                       placeholder="请输入新密码"
-                      className={`w-full px-4 py-2 rounded-lg border transition-all ${
+                      className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.newPassword
                           ? 'border-red-500 bg-red-50'
                           : theme === 'dark'
@@ -1176,7 +1198,7 @@ export function ProfilePage() {
                       value={passwordForm.confirmPassword}
                       onChange={(e) => handlePasswordInputChange('confirmPassword', e.target.value)}
                       placeholder="请再次输入新密码"
-                      className={`w-full px-4 py-2 rounded-lg border transition-all ${
+                      className={`w-full px-4 py-2 max-md:h-12 max-md:text-base rounded-lg border transition-all ${
                         passwordErrors.confirmPassword
                           ? 'border-red-500 bg-red-50'
                           : theme === 'dark'
@@ -1194,7 +1216,7 @@ export function ProfilePage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className={`flex-1 py-3 rounded-lg font-medium transition-all duration-300 ${
+                    className={`flex-1 py-3 max-md:h-12 rounded-lg font-medium transition-all duration-300 ${
                       isSubmitting
                         ? 'opacity-50 cursor-not-allowed'
                         : theme === 'dark'

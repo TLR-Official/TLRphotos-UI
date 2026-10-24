@@ -93,8 +93,8 @@ export function MyAuditsPage() {
       {loading ? (
         <div className="text-gray-800 text-center py-10">加载中...</div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left px-4 py-3 text-gray-600 font-medium">作品</th>

@@ -2,6 +2,7 @@
  * 照片轮播图组件
  * 优先展示管理端已确认的热门作品（GET /photos/hot，按综合热度排序），无热门时回退到最新照片；
  * 支持自动播放、左右切换、指示点跳转，点击单张幻灯片跳转至对应照片详情页。
+ * 移动端（≤768px）改为横滑 Snap 滚动卡片（不自动播放、无箭头/指示点），桌面端轮播逻辑不变。
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ import type { PhotoListItem } from './types';
 import { usePhotos } from '../../shared/PhotosContext';
 import { getHotPhotos } from '../../api/photos';
 import { useTheme } from '../../shared/ThemeContext';
+import { useIsMobile } from '../../shared/useIsMobile';
 import { CachedImage } from '../../components/CachedImage';
 
 /** 轮播图单张幻灯片 props */
@@ -66,6 +68,7 @@ function CarouselSlide({ photo, isActive, onClick }: Omit<CarouselSlideProps, 't
 export function PhotoCarousel() {
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const isMobile = useIsMobile();
   const { photos, isLoading: isFallbackLoading } = usePhotos();
   // 已确认热门照片：优先作为轮播内容；接口不可用或无热门时回退到最新照片
   const [hotPhotos, setHotPhotos] = useState<PhotoListItem[]>([]);
@@ -97,16 +100,16 @@ export function PhotoCarousel() {
     }
   }, [carouselPhotos.length, currentIndex]);
 
-  // 自动播放定时器：每 4 秒切换下一张；卸载或暂停时清理
+  // 自动播放定时器：每 4 秒切换下一张；卸载或暂停时清理；移动端为横滑卡片不自动播放
   useEffect(() => {
-    if (!isAutoPlaying || carouselPhotos.length === 0) return;
+    if (isMobile || !isAutoPlaying || carouselPhotos.length === 0) return;
 
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % carouselPhotos.length);
     }, 4000);
 
     return () => clearInterval(timer);
-  }, [isAutoPlaying, carouselPhotos.length]);
+  }, [isMobile, isAutoPlaying, carouselPhotos.length]);
 
   /** 切换到上一张并暂停自动播放 */
   const goToPrev = useCallback(() => {
@@ -138,6 +141,48 @@ export function PhotoCarousel() {
           <div className={`w-8 h-8 border-4 border-t-transparent rounded-full animate-spin ${
             isDark ? 'border-white/30 border-t-white' : 'border-gray-300 border-t-blue-600'
           }`} />
+        </div>
+      </div>
+    );
+  }
+
+  // 移动端：横滑 Snap 滚动卡片（不自动播放、无箭头/指示点），桌面端渲染下方轮播
+  if (isMobile) {
+    return (
+      <div className="w-full py-2">
+        {/* -mx-4 抵消外层页面水平 padding，实现首尾卡片出血对齐与相邻卡片 peek 效果 */}
+        <div className="-mx-4 flex gap-3 overflow-x-auto px-4 snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {carouselPhotos.map((photo) => (
+            <div
+              key={photo.id}
+              onClick={() => handleSlideClick(photo)}
+              className="w-[85%] shrink-0 snap-center cursor-pointer"
+            >
+              <div className="relative aspect-[4/3] overflow-hidden rounded-xl shadow-lg">
+                <CachedImage
+                  src={photo.thumbnail_path}
+                  alt={photo.title}
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4">
+                  <h2 className="mb-1 truncate text-base font-bold text-white">{photo.title}</h2>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {photo.tags.slice(0, 2).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-white/30 bg-white/20 px-2 py-0.5 text-xs text-white/90 backdrop-blur-md"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    <span className="ml-1 text-[11px] text-white/70">
+                      {photo.views ?? 0} 浏览 · {photo.likes ?? 0} 点赞
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );

@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react';
 import { getAnnouncements } from '../api/announcements';
 import type { Announcement } from '../api/announcements';
 
@@ -114,13 +114,13 @@ export function TopBanner() {
   return (
     <div className="bg-blue-50 border-b border-blue-200">
       <div className="max-w-7xl mx-auto px-4">
-        {/* 收起横条：封面缩略图 + 最新公告标题 */}
-        <div className="flex items-center gap-3 py-2.5">
+        {/* 收起横条：封面缩略图 + 最新公告标题（移动端固定 48px 单行，封面缩略图隐藏） */}
+        <div className="flex items-center gap-3 h-12 md:h-auto md:py-2.5">
           {latest.cover_url && (
             <img
               src={latest.cover_url}
               alt=""
-              className="h-10 w-16 rounded object-cover flex-shrink-0"
+              className="hidden md:block h-10 w-16 rounded object-cover flex-shrink-0"
             />
           )}
           <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-700 text-white">
@@ -128,12 +128,14 @@ export function TopBanner() {
           </span>
           <button
             onClick={() => setExpanded(true)}
-            className="min-w-0 flex-1 text-left"
+            className="min-w-0 flex-1 text-left flex items-center gap-1"
             aria-label="展开公告"
           >
-            <span className="block truncate text-sm font-medium text-blue-900 hover:text-blue-700 transition-colors">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-blue-900 hover:text-blue-700 transition-colors">
               {latest.title}
             </span>
+            {/* 移动端单行标题右箭头，提示可点击展开 */}
+            <ChevronRight className="w-4 h-4 flex-shrink-0 text-blue-400 md:hidden" />
           </button>
           {visible.length > 1 && (
             <span className="hidden sm:inline flex-shrink-0 text-xs text-blue-400">
@@ -147,10 +149,11 @@ export function TopBanner() {
           >
             {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
+          {/* 关闭按钮：移动端热区 44×44（h-11 w-11），桌面端保持原 24px 尺寸 */}
           <button
             onClick={dismissVisible}
             aria-label="关闭公告"
-            className="flex-shrink-0 p-1 rounded text-blue-400 hover:text-blue-700 hover:bg-blue-100 transition-colors"
+            className="flex flex-shrink-0 items-center justify-center h-11 w-11 p-0 md:h-auto md:w-auto md:p-1 rounded text-blue-400 hover:text-blue-700 hover:bg-blue-100 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>

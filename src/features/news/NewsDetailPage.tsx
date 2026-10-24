@@ -199,9 +199,9 @@ export function NewsDetailPage() {
           </section>
         )}
 
-        {/* 页脚显著版权行（后端拼好：@作者名 ©TLRphotos {年} 版权所有） */}
-        <div className="mt-10 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4">
-          <p className="text-sm font-bold text-blue-800 text-center tracking-wide">
+        {/* 页脚版权标注行（后端拼好：@作者名 ©TLRphotos {年} 版权所有），12px 灰字 */}
+        <div className="mt-10 border-t border-gray-100 pt-4">
+          <p className="text-xs text-gray-500 text-center">
             {detail.copyright_notice}
           </p>
         </div>

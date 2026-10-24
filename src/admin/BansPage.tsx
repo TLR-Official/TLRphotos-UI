@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search, User, X, ShieldAlert, Gavel, Undo2, Ban } from 'lucide-react';
 import { getUsers, getUserPenalties, penalizeUser, revokePenalty, submitAdminVerification } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
+import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import type { User as SiteUser, Penalty, AdminUser } from './types';
 
 /** 期限下拉选项（天） */
@@ -247,6 +248,7 @@ export function BansPage({ currentAdmin }: { currentAdmin?: AdminUser | null }) 
   return (
     <div>
       {verificationModal}
+      <MobileReadOnlyNotice />
       <h2 className="text-2xl font-bold text-gray-800 mb-6">用户封禁管理</h2>
 
       {/* 操作结果提示 */}

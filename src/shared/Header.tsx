@@ -6,6 +6,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Bell } from 'lucide-react';
 import { useUser } from './UserContext';
 import { getUnreadCount } from '../api/notifications';
 
@@ -84,10 +85,31 @@ export function Header() {
           }}
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"
         >
-          <img src="/favicon.svg" alt="TLRphotos Logo" className="h-24 w-24 object-contain" />
-          <span className="text-lg font-medium theme-text-transition text-slate-800">交通摄影网</span>
+          <img src="/favicon.svg" alt="TLRphotos Logo" className="h-12 w-12 md:h-24 md:w-24 object-contain" />
+          <span className="hidden md:inline text-lg font-medium theme-text-transition text-slate-800">交通摄影网</span>
         </button>
         <div className="flex items-center gap-4">
+          {/* 移动端通知铃铛：未读角标沿用 blue-700，点击进通知中心（未登录引导登录） */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(isAuthenticated ? '/notifications' : '/auth');
+            }}
+            aria-label="通知中心"
+            className="relative flex md:hidden h-11 w-11 items-center justify-center text-slate-700"
+          >
+            <Bell className="h-6 w-6" />
+            {unreadCount > 0 && (
+              <span
+                className="absolute right-1 top-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold leading-none bg-blue-700 text-white"
+                title={`${unreadCount} 条未读通知`}
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+          {/* 桌面端导航菜单组：移动端隐藏 */}
+          <div className="hidden md:flex items-center gap-4">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -133,10 +155,11 @@ export function Header() {
           >
             关于我们
           </button>
+          </div>
 
           {isAuthenticated ? (
             <div
-              className="relative"
+              className="relative hidden md:block"
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
             >
@@ -242,7 +265,7 @@ export function Header() {
                 e.stopPropagation();
                 navigate('/auth');
               }}
-              className="theme-text-transition px-4 py-2 rounded-full bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-lg"
+              className="hidden md:block theme-text-transition px-4 py-2 rounded-full bg-gradient-to-r from-blue-700 to-blue-800 text-white hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-lg"
             >
               登录
             </button>

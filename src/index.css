@@ -204,3 +204,46 @@ code {
 .page-light .text-sub {
   color: #64748b;
 }
+
+/* ========================================
+   移动端基础设施 (Mobile Wave 0)
+   安全区变量 / 工具类 / 移动端字号增量
+   ======================================== */
+
+:root {
+  /* 四方向安全区变量（刘海屏/底部手势条） */
+  --safe-top: env(safe-area-inset-top);
+  --safe-right: env(safe-area-inset-right);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+}
+
+/* 底部安全区内边距：底部固定元素使用 */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 动态视口高度：避免移动端浏览器地址栏遮挡 */
+.h-dvh {
+  height: 100dvh;
+}
+
+/* 移动端底部 TabBar 总高度（56px 内容 + 底部安全区） */
+.mobile-tabbar-height {
+  height: calc(56px + env(safe-area-inset-bottom));
+}
+
+/* 移动端字号增量调整：正文 14px/22px，页面主标题 20px/28px */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+    line-height: 22px;
+  }
+
+  h1 {
+    font-size: 20px;
+    line-height: 28px;
+    letter-spacing: -0.2px;
+    margin: 16px 0;
+  }
+}

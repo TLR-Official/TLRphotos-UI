@@ -61,9 +61,10 @@ export function ThreadDetailPage() {
         <Link to={`/forum/b/${thread.board_id}`} className="hover:text-blue-700">{thread.board_id}</Link>
       </div>
 
-      <article className="bg-white rounded-lg border border-gray-200 p-6">
+      {/* 楼主发言卡：移动端左侧 3px 深蓝边与评论区视觉分层 */}
+      <article className="bg-white rounded-lg border border-gray-200 p-6 max-md:border-l-[3px] max-md:border-l-blue-700 max-md:p-4">
         <h1 className="text-2xl font-bold text-black mb-3">{thread.title}</h1>
-        <div className="flex items-center justify-between text-sm text-gray-500 mb-6">
+        <div className="flex items-center justify-between text-sm text-gray-500 mb-6 max-md:flex-wrap max-md:gap-y-2">
           <span>
             {/* V4.1.0：作者名可点击跳转公开主页 */}
             <Link
@@ -76,9 +77,10 @@ export function ThreadDetailPage() {
           </span>
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-500">{thread.reply_count} 回复 · {likeCount} 点赞 · {thread.view_count} 浏览</span>
+            {/* 点赞 pill：移动端热区 ≥44px（h-11），纯文字无图标 */}
             <button
               onClick={handleLike}
-              className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+              className={`inline-flex items-center justify-center px-3 py-1 rounded-full border text-xs font-medium transition-colors max-md:h-11 max-md:px-5 ${
                 liked
                   ? 'bg-blue-700 border-blue-700 text-white'
                   : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
@@ -95,7 +97,7 @@ export function ThreadDetailPage() {
 
         {user?.id === thread.author_id && (
           <div className="mt-6 pt-4 border-t border-gray-200">
-            <button onClick={handleDelete} className="text-sm text-gray-500 hover:text-red-600">删除帖子</button>
+            <button onClick={handleDelete} className="text-sm text-gray-500 hover:text-red-600 max-md:inline-flex max-md:min-h-[44px] max-md:items-center">删除帖子</button>
           </div>
         )}
       </article>

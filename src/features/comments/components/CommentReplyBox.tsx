@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { CornerDownLeft, X } from 'lucide-react';
+import { useIsMobile } from '../../../shared/useIsMobile';
 
 export interface CommentReplyBoxProps {
   /** 被回复者展示名 */
@@ -22,10 +23,20 @@ export function CommentReplyBox({
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+    const el = textareaRef.current;
+    el?.focus();
+    // 移动端：等待虚拟键盘弹出后滚动到视口中央，避免输入框被键盘遮挡
+    if (isMobile) {
+      const timer = setTimeout(
+        () => el?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
+        300
+      );
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile]);
 
   const trimmed = content.trim();
 

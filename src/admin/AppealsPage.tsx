@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Gavel } from 'lucide-react';
 import { getAppeals, decideAppeal, getAdminWarnings } from './api';
+import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import type { Appeal, AppealStatus, AdminWarning } from './types';
 
 /** 每页数量 */
@@ -154,6 +155,7 @@ export function AppealsPage() {
 
   return (
     <div>
+      <MobileReadOnlyNotice />
       <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">申诉裁决</h2>

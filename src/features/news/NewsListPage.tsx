@@ -100,10 +100,10 @@ export function NewsListPage() {
             <button
               key={item.id}
               onClick={() => navigate(`/news/${item.id}`)}
-              className="w-full text-left flex gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+              className="w-full text-left flex gap-4 p-4 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors max-md:flex-col max-md:gap-0 max-md:p-0 max-md:overflow-hidden"
             >
-              {/* 封面缩略图 */}
-              <div className="w-36 h-24 sm:w-48 sm:h-32 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+              {/* 封面缩略图（移动端 16:9 通栏） */}
+              <div className="w-36 h-24 sm:w-48 sm:h-32 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 max-md:w-full max-md:h-auto max-md:aspect-video max-md:rounded-none">
                 {item.cover_image ? (
                   <CachedImage
                     src={item.cover_image}
@@ -116,8 +116,8 @@ export function NewsListPage() {
                   </div>
                 )}
               </div>
-              {/* 文本信息 */}
-              <div className="min-w-0 flex-1">
+              {/* 文本信息（移动端卡片下部内边距） */}
+              <div className="min-w-0 flex-1 max-md:px-4 max-md:py-3">
                 <h2 className="text-base sm:text-lg font-bold text-gray-900 line-clamp-2">
                   {item.title}
                 </h2>
@@ -126,7 +126,7 @@ export function NewsListPage() {
                   <span>{formatDate(item.created_at)}</span>
                 </div>
                 {item.excerpt && (
-                  <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed">{item.excerpt}</p>
+                  <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed max-md:hidden">{item.excerpt}</p>
                 )}
               </div>
             </button>

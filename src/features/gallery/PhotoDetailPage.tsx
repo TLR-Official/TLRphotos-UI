@@ -16,7 +16,9 @@ import type { PhotoDetail } from './types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
 import { useHumanVerification } from '../../shared/useHumanVerification';
+import { useIsMobile, useIsTouch } from '../../shared/useIsMobile';
 import { CommentList } from '../comments/components/CommentList';
+import { MobileZoomableImage } from './MobileZoomableImage';
 
 
 /**
@@ -53,6 +55,11 @@ export function PhotoDetailPage() {
   // 下载状态：isDownloading 防重复点击，downloadError 失败提示（3 秒自动清空）
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
+  // 移动端能力探测：isMobile 驱动布局（与 md: 断点一致），isTouch 补充触屏手势场景
+  const isMobile = useIsMobile();
+  const isTouch = useIsTouch();
+  // 评论总数（由 CommentList onTotalChange 回填，用于移动端数据行展示）
+  const [commentCount, setCommentCount] = useState<number | null>(null);
 
   // V4.0.0 申诉状态（仅所有者且照片被驳回时启用）：
   // - myAppeal：该照片的最新一条申诉记录（含状态与裁决答复）
@@ -190,6 +197,8 @@ export function PhotoDetailPage() {
 
   // 仅当当前登录用户与照片上传者 id 一致时，判定为所有者
   const isOwner = user && photo && photo.user_id === user.id;
+  // 是否可查看真实图片（与 CachedImage「审核中」占位逻辑一致）：已审核或携带凭证
+  const viewable = !(photo?.status && photo.status !== 'approved' && !token);
 
   /**
    * 下载带水印原图
@@ -379,13 +388,23 @@ export function PhotoDetailPage() {
             <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'
             }`}>
-              <CachedImage
-                src={photo.watermarked_url || photo.preview_url || photo.original_url}
-                alt={photo.title}
-                status={photo.status}
-                authToken={token || undefined}
-                className="block max-w-full h-auto"
-              />
+              {/* 移动端/触屏：双击 + pinch 手势缩放容器；「审核中」占位图不挂手势（viewable=false） */}
+              {(isMobile || isTouch) && viewable ? (
+                <MobileZoomableImage
+                  src={photo.watermarked_url || photo.preview_url || photo.original_url}
+                  alt={photo.title}
+                  status={photo.status}
+                  authToken={token || undefined}
+                />
+              ) : (
+                <CachedImage
+                  src={photo.watermarked_url || photo.preview_url || photo.original_url}
+                  alt={photo.title}
+                  status={photo.status}
+                  authToken={token || undefined}
+                  className="block max-w-full h-auto"
+                />
+              )}
             </div>
           </div>
 
@@ -436,6 +455,10 @@ export function PhotoDetailPage() {
               <p className={`text-sm theme-text-transition ${
                 theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
               }`}>{formatDate(photo.created_at)}</p>
+              {/* 移动端数据行：12px 灰色纯文本（无图标），桌面端由数据统计卡片承载 */}
+              <p className="mt-2 text-xs text-gray-400 md:hidden">
+                {commentCount === null ? '—' : commentCount} 评论 · {likeCount} 点赞 · {viewCount.toLocaleString()} 浏览
+              </p>
             </div>
 
             {/* V4.0.0：所有者查看被驳回照片时的申诉状态卡 */}
@@ -554,7 +577,8 @@ export function PhotoDetailPage() {
               </div>
             </div>
 
-            <div className={`rounded-xl shadow-lg p-6 theme-bg-transition ${
+            {/* 下载卡片：桌面端原位展示；移动端由底部固定下载栏承载（避免重复入口） */}
+            <div className={`hidden md:block rounded-xl shadow-lg p-6 theme-bg-transition ${
               theme === 'dark' ? 'glass' : 'bg-white'
             }`}>
               <h2 className={`text-lg font-semibold mb-4 ${
@@ -589,13 +613,13 @@ export function PhotoDetailPage() {
                 theme === 'dark' ? 'text-white' : 'text-gray-900'
               }`}>数据统计</h2>
               <div className="flex gap-4 items-center flex-wrap">
-                {/* 点赞按钮：可点击切换状态，Heart 图标红色填充=已点赞/描边=未点赞 */}
+                {/* 点赞按钮：可点击切换状态，Heart 图标红色填充=已点赞/描边=未点赞；移动端热区 ≥44px */}
                 <button
                   onClick={handleToggleLike}
                   disabled={likeLoading}
                   aria-label={isLiked ? '取消点赞' : '点赞'}
                   title={user ? (isLiked ? '取消点赞' : '点赞') : '请先登录后点赞'}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                  className={`flex items-center gap-2 px-4 py-2 max-md:min-h-[44px] rounded-lg transition-all ${
                     isLiked
                       ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
                       : theme === 'dark'
@@ -609,8 +633,8 @@ export function PhotoDetailPage() {
                   />
                   <span className="font-semibold text-lg">{likeCount}</span>
                 </button>
-                {/* 浏览数：纯展示，Eye 图标 + 数字 */}
-                <div className={`flex items-center gap-2 px-4 py-2 ${
+                {/* 浏览数：纯展示，Eye 图标 + 数字；移动端浏览数并入标题卡数据行，此处隐藏 */}
+                <div className={`hidden md:flex items-center gap-2 px-4 py-2 ${
                   theme === 'dark' ? 'text-slate-300' : 'text-gray-700'
                 }`}>
                   <Eye className="w-5 h-5" strokeWidth={2} />
@@ -734,7 +758,35 @@ export function PhotoDetailPage() {
         <CommentList
           subject={{ subjectType: 'photo', subjectId: id || '' }}
           title="作品评论"
+          onTotalChange={setCommentCount}
         />
+      </div>
+
+      {/* 移动端：为底部固定下载栏预留空间，防止遮挡评论区底部内容 */}
+      <div className="h-20 md:hidden" aria-hidden="true" />
+
+      {/* 移动端底部固定下载栏：位于全局 MobileTabBar（56px + 安全区）正上方；
+          下载逻辑与桌面端完全一致（公开照片原生导航下载 / 未审核所有者 fetch blob） */}
+      <div
+        className="fixed inset-x-0 z-40 border-t border-gray-200 bg-white px-4 py-2 md:hidden"
+        style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
+      >
+        {downloadError && (
+          <p className="mb-1 text-center text-xs text-red-500">{downloadError}</p>
+        )}
+        <button
+          onClick={handleDownload}
+          disabled={isDownloading}
+          title={photo.watermarked_url ? '下载带水印原图' : '下载原图（无水印版）'}
+          className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-bold shadow-md transition-all ${
+            isDownloading
+              ? 'opacity-50 cursor-not-allowed bg-blue-600 text-white'
+              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98]'
+          }`}
+        >
+          <Download className="w-5 h-5" strokeWidth={2.5} />
+          {isDownloading ? '下载中...' : (photo.watermarked_url ? '下载带水印原图' : '下载原图')}
+        </button>
       </div>
     </main>
   );

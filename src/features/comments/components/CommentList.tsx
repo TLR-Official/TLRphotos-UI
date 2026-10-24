@@ -5,6 +5,7 @@
  *              照片详情页 / 文章详情页 / 未来论坛帖子页只需：
  *                <CommentList subject={{ subjectType, subjectId }} />
  */
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Flame, Loader2, MessageSquare, RefreshCw } from 'lucide-react';
 import type { CommentSubject } from '../../../api/comments';
@@ -18,9 +19,11 @@ export interface CommentListProps {
   subject: CommentSubject;
   /** 标题文案，默认"评论" */
   title?: string;
+  /** 评论总数变化回调（可选；照片详情页移动端数据行使用），论坛/文章页不传不受影响 */
+  onTotalChange?: (total: number) => void;
 }
 
-export function CommentList({ subject, title = '评论' }: CommentListProps) {
+export function CommentList({ subject, title = '评论', onTotalChange }: CommentListProps) {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useUser();
   const {
@@ -44,6 +47,12 @@ export function CommentList({ subject, title = '评论' }: CommentListProps) {
   const activeArchives = (data?.archiveThreads ?? []).filter(
     (archive) => !archive.rehydrated_at
   );
+
+  // 评论总数变化时上报（发布/删除后 total 变化也会同步）
+  const total = data?.total;
+  useEffect(() => {
+    if (total !== undefined) onTotalChange?.(total);
+  }, [total, onTotalChange]);
 
   return (
     <section className="space-y-5" aria-label={title}>

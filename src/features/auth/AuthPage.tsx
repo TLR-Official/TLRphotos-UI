@@ -409,8 +409,8 @@ export function AuthPage() {
     setTimeout(() => setError(''), 3000);
   };
 
-  // 输入框通用样式
-  const inputClass = 'w-full pl-12 pr-4 py-4 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-all duration-300';
+  // 输入框通用样式（移动端 ≤768px：h-12 固定高 + 16px 字号防 iOS 聚焦放大）
+  const inputClass = 'w-full pl-12 pr-4 py-4 rounded-xl bg-white border border-gray-200 text-base text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:border-transparent transition-all duration-300 max-md:h-12 max-md:py-0';
 
   return (
     <div className="flex items-center justify-center py-8">

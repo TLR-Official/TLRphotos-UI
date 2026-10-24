@@ -27,9 +27,9 @@ export function RecommendPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-10">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">热门推荐</h1>
+    <div className="mx-auto max-w-[1200px] px-4 py-6 md:py-10">
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">热门推荐</h1>
         <p className="mt-2 text-sm text-gray-500">
           编辑确认的热门作品，按浏览量与人气综合排序；点击任意作品查看详情。
         </p>
@@ -50,7 +50,7 @@ export function RecommendPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 md:gap-6 lg:grid-cols-3">
           {photos.map((photo, index) => (
             <button
               key={photo.id}
@@ -63,15 +63,20 @@ export function RecommendPage() {
                   alt={photo.title}
                   className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
-                <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white">
+                <span className="absolute left-2 top-2 md:left-3 md:top-3 rounded-full bg-black/60 px-2 py-0.5 md:px-2.5 md:py-1 text-xs font-medium text-white">
                   No.{index + 1}
                 </span>
               </div>
-              <div className="px-4 py-3">
-                <h2 className="truncate text-base font-medium text-gray-900">{photo.title}</h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  {photo.tags.slice(0, 3).map((tag) => (
-                    <span key={tag} className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-800">
+              <div className="px-2.5 py-2 md:px-4 md:py-3">
+                <h2 className="truncate text-sm md:text-base font-medium text-gray-900">{photo.title}</h2>
+                <div className="mt-1.5 md:mt-2 flex flex-wrap items-center gap-1 md:gap-2 text-xs text-gray-500">
+                  {photo.tags.slice(0, 3).map((tag, tagIndex) => (
+                    <span
+                      key={tag}
+                      className={`rounded-full bg-blue-50 px-2 py-0.5 text-blue-800 ${
+                        tagIndex >= 2 ? 'hidden md:inline' : ''
+                      }`}
+                    >
                       {tag}
                     </span>
                   ))}

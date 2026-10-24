@@ -37,6 +37,7 @@ import {
 import type { AdminPhotoDetail, AdminUser } from './types';
 import { CachedImage } from '../components/CachedImage';
 import { AuditToolkit } from './audit-tools';
+import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 
 /**
  * 照片审核详情页组件
@@ -244,6 +245,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
 
   return (
     <div className="max-w-6xl mx-auto">
+      <MobileReadOnlyNotice />
       {/* 顶部：返回按钮 + 标题 + 状态徽章 */}
       <div className="flex items-center justify-between mb-6">
         <button
@@ -256,7 +258,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-gray-800">{photo.title}</h1>
           {photo.is_hot_confirmed === 1 && (
-            <span className="px-2.5 py-1 rounded-full text-xs font-medium border bg-violet-50 text-violet-700 border-violet-200">
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200">
               已确认热门
             </span>
           )}
@@ -524,7 +526,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               <button
                 onClick={handleConfirmHot}
                 disabled={hotLoading}
-                className="px-4 py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 disabled:opacity-50 text-violet-700 rounded-lg text-sm font-medium transition-colors"
+                className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 disabled:opacity-50 text-blue-700 rounded-lg text-sm font-medium transition-colors"
               >
                 {hotLoading ? '提交中...' : '确认热门'}
               </button>

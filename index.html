@@ -9,20 +9,25 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     
     <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+
     <!-- Web App Manifest -->
-    <link rel="manifest" href="/site.webmanifest" />
-    
+    <link rel="manifest" href="/manifest.json" />
+
     <!-- Theme Color -->
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#1d4ed8" />
     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="baidu-site-verification" content="codeva-12y9IttgeM" />
     <title>TLRphotos - 航空摄影工作室</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
   </body>
 </html>

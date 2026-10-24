@@ -11,6 +11,7 @@ import {
   type RootCommentSummaryDTO,
 } from '../../../api/comments';
 import { buildCommentTree, type TreeNode } from '../../../utils/commentTree';
+import { useIsMobile } from '../../../shared/useIsMobile';
 import { CommentItem } from './CommentItem';
 import { CommentReplyBox } from './CommentReplyBox';
 
@@ -43,38 +44,48 @@ export function CommentThread({
 }: CommentThreadProps) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const isMobile = useIsMobile();
 
   const canDeleteOf = (comment: CommentDTO) =>
     isAdmin || (comment.user_id !== null && comment.user_id === currentUserId);
 
-  const renderNode = (node: TreeNode<CommentDTO>) => (
-    <div key={node.id} className="min-w-0">
-      <CommentItem
-        comment={node}
-        currentUserId={currentUserId}
-        canDelete={canDeleteOf(node)}
-        onToggleLike={onToggleLike}
-        onReply={(c) => setReplyingTo(c.id)}
-        onDelete={onDelete}
-      />
-      {replyingTo === node.id && (
-        <div className="ml-6 mt-2">
-          <CommentReplyBox
-            targetAuthor={node.author}
-            onSubmit={(content) =>
-              onSubmitReply({ parentId: node.id, rootId: thread.id, content })
-            }
-            onCancel={() => setReplyingTo(null)}
-          />
-        </div>
-      )}
-      {node.children.length > 0 && (
-        <div className="ml-4 mt-3 space-y-4 border-l border-gray-100 pl-3 md:ml-6 md:pl-4">
-          {node.children.map(renderNode)}
-        </div>
-      )}
-    </div>
-  );
+  const renderNode = (node: TreeNode<CommentDTO>) => {
+    // 移动端三级平铺：depth≥2 节点的子节点（即 L3）不再追加缩进，与父级同层展示，
+    // 互回语境由 CommentItem 的"回复 @用户"前缀表达；桌面端保持原嵌套结构。
+    const flattenChildren = isMobile && (node.depth ?? 1) >= 2;
+    return (
+      <div key={node.id} className="min-w-0">
+        <CommentItem
+          comment={node}
+          currentUserId={currentUserId}
+          canDelete={canDeleteOf(node)}
+          onToggleLike={onToggleLike}
+          onReply={(c) => setReplyingTo(c.id)}
+          onDelete={onDelete}
+        />
+        {replyingTo === node.id && (
+          <div className="ml-6 mt-2">
+            <CommentReplyBox
+              targetAuthor={node.author}
+              onSubmit={(content) =>
+                onSubmitReply({ parentId: node.id, rootId: thread.id, content })
+              }
+              onCancel={() => setReplyingTo(null)}
+            />
+          </div>
+        )}
+        {node.children.length > 0 &&
+          (flattenChildren ? (
+            <div className="mt-3 space-y-4">{node.children.map(renderNode)}</div>
+          ) : (
+            // 移动端每级缩进 12px（ml-3），桌面端维持 ml-6
+            <div className="ml-3 mt-3 space-y-4 border-l border-gray-100 pl-3 md:ml-6 md:pl-4">
+              {node.children.map(renderNode)}
+            </div>
+          ))}
+      </div>
+    );
+  };
 
   const replyRoots = buildCommentTree(thread.replies, { depthOf: (r) => r.depth });
 
@@ -107,7 +118,8 @@ export function CommentThread({
       )}
 
       {replyRoots.length > 0 && (
-        <div className="ml-4 mt-4 space-y-5 border-l border-gray-100 pl-3 md:ml-6 md:pl-4">
+        // 移动端 L2 缩进 12px（ml-3），桌面端维持 ml-6
+        <div className="ml-3 mt-4 space-y-5 border-l border-gray-100 pl-3 md:ml-6 md:pl-4">
           {replyRoots.map(renderNode)}
         </div>
       )}

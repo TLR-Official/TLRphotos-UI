@@ -152,8 +152,8 @@ export function MyWorksPage() {
           </p>
         </div>
 
-        {/* 状态筛选 */}
-        <div className="flex gap-2 flex-wrap mb-6">
+        {/* 状态筛选（桌面端 chips） */}
+        <div className="hidden md:flex gap-2 flex-wrap mb-6">
           {([
             { key: 'all', label: '全部' },
             { key: 'pending', label: '待审核' },
@@ -167,6 +167,27 @@ export function MyWorksPage() {
                 photoFilter === key
                   ? 'bg-blue-700 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 状态筛选（移动端 segmented 三枚等宽，再点已选状态回到全部） */}
+        <div className="md:hidden grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl mb-4" role="group" aria-label="状态筛选">
+          {([
+            { key: 'approved', label: '已通过' },
+            { key: 'pending', label: '待审核' },
+            { key: 'rejected', label: '未通过' },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPhotoFilter(photoFilter === key ? 'all' : key)}
+              className={`h-11 rounded-lg text-sm font-medium transition-colors ${
+                photoFilter === key
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-gray-600'
               }`}
             >
               {label}
@@ -195,7 +216,7 @@ export function MyWorksPage() {
 
         {/* 照片网格 */}
         {!loading && myPhotos.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
             {myPhotos.map((photo) => (
               <div
                 key={photo.id}
@@ -245,14 +266,23 @@ export function MyWorksPage() {
                     {new Date(photo.created_at).toLocaleDateString('zh-CN')}
                   </p>
 
-                  {/* 驳回理由与审核员编号（V4.1.2-beta.3：便于追责与申诉举证） */}
+                  {/* 驳回理由与审核员编号（V4.1.2-beta.3：便于追责与申诉举证；移动端两行截断+查看详情） */}
                   {photo.status === 'rejected' && photo.rejection_reason && (
                     <div className="mt-2 p-2 rounded-lg bg-red-100 border border-red-200">
                       <p className="text-xs font-medium text-red-700 mb-0.5">驳回理由：</p>
-                      <p className="text-xs text-red-600">{photo.rejection_reason}</p>
+                      <p className="text-xs text-red-600 line-clamp-2">{photo.rejection_reason}</p>
                       {photo.reviewer_name && (
                         <p className="text-xs text-red-500 mt-1">审核员：{photo.reviewer_name}</p>
                       )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/photos/${photo.id}`);
+                        }}
+                        className="mt-1 text-xs font-medium text-blue-700"
+                      >
+                        查看详情
+                      </button>
                     </div>
                   )}
 
@@ -281,7 +311,7 @@ export function MyWorksPage() {
                             )}
                           </div>
                         )}
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 max-md:flex-col">
                           {/* 无进行中申诉时可发起（含撤回/被驳回后重新申诉） */}
                           {(!appeal || appeal.status !== 'pending') && (
                             <button
@@ -290,9 +320,19 @@ export function MyWorksPage() {
                                 setAppealPhotoId(photo.id);
                                 setAppealReason('');
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-medium transition-colors"
+                              className="px-2.5 py-1 max-md:min-h-11 max-md:px-4 max-md:text-sm rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-medium transition-colors"
                             >
                               {appeal ? '再次申诉' : '发起申诉'}
+                            </button>
+                          )}
+                          {/* 已有进行中申诉：置灰展示状态（后端重复发起返回 409 APPEAL_IN_PROGRESS） */}
+                          {appeal && appeal.status === 'pending' && (
+                            <button
+                              disabled
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-2.5 py-1 max-md:min-h-11 max-md:px-4 max-md:text-sm rounded-lg bg-gray-200 text-gray-500 text-xs font-medium cursor-not-allowed"
+                            >
+                              申诉处理中
                             </button>
                           )}
                           {/* 仅 pending 可撤回 */}
@@ -303,7 +343,7 @@ export function MyWorksPage() {
                                 handleWithdrawAppeal(appeal);
                               }}
                               disabled={appealLoading}
-                              className="px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-medium transition-colors"
+                              className="px-2.5 py-1 max-md:min-h-11 max-md:px-4 max-md:text-sm rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-medium transition-colors"
                             >
                               撤回申诉
                             </button>
