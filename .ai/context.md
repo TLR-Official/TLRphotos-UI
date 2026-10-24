@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-10-24 08:05 | [docs] 新增移动端全站PRD：混合架构选型/19页清单/交互排版规范/引导体系/验收标准 (V4.3.0-beta.1) | docs/prd-mobile-full-site.md、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-24 08:00 | [release] 版本号升级至 V4.3.0-beta — 管理端论坛治理页落地（板块管理 + 帖子管理，替换占位页） | 全项目 |
 | 2026-10-24 08:00 | [feat] 管理端论坛治理页落地（V4.3.0-beta）— 替换 V4.0.0 起 /admin/forum 占位页：新建 ForumPage 双 tab，板块管理（列表含停用状态与基础板块徽章、编辑弹窗名称/描述/图标/排序、启停切换、删除、按 CANONICAL 白名单幂等补齐基础板块按钮）+ 帖子管理（板块筛选/最新最热排序/分页/置顶切换/删除挂人机验证门级联删除评论）；admin/api.ts 新增 7 个论坛治理封装（帖子列表复用公开 GET /api/forum/threads），types.ts 新增 ForumBoard/ForumThreadItem；AdminApp 移除 PlaceholderPage 接入 ForumPage 并传 currentAdmin 角色门（super/zone_master/forum_moderator，与后端 /api/admin/forum/* 一致）；复用既有后端契约零 API 变更；build index-BY4_n2hL.js，oxlint 0 错误 | src/admin/ForumPage.tsx（新增）、src/admin/AdminApp.tsx、src/admin/Layout.tsx、src/admin/api.ts、src/admin/types.ts |
 | 2026-10-23 23:47 | [release] 版本号升级至 V4.2.0-beta — 标签体系与审核流转迭代（三层标签浏览/上传标签必填/顺序审核软约束/申诉责任判定/热门推荐） | 全项目 |
