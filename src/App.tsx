@@ -335,11 +335,12 @@ function HomePageContent() {
                 onClick={() => handlePhotoClick(photo.id)}
                 className="group cursor-pointer rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl bg-white"
               >
-                <div className="aspect-[4/3] overflow-hidden">
+                {/* 固定 4:3 容器 + object-contain：按原比例完整展示作品，不裁切构图 */}
+                <div className="aspect-[4/3] overflow-hidden bg-gray-50">
                   <CachedImage
                     src={photo.thumbnail_path}
                     alt={photo.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                   />
                 </div>
                 <div className="p-4">
