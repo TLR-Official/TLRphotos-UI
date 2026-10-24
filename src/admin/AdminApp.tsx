@@ -6,6 +6,7 @@
  * V4.0.0：新增 /admin/appeals（申诉裁决）、/admin/my-audits（我的已处理）、
  * /admin/forum（论坛治理占位页）与 /admin/news（新闻管理：列表 / 新建 / 编辑）。
  * V4.1.0：新增 /admin/bans（用户封禁管理）与 /admin/announcements（公告管理）。
+ * V4.3.0：/admin/forum 落地为论坛治理页（板块管理 + 帖子管理），占位页移除。
  */
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -24,6 +25,7 @@ import { NewsPage } from './NewsPage';
 import { NewsEditorPage } from './NewsEditorPage';
 import { BansPage } from './BansPage';
 import { AnnouncementsPage } from './AnnouncementsPage';
+import { ForumPage } from './ForumPage';
 import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
 import type { AdminUser } from './types';
 
@@ -67,24 +69,6 @@ function getPageIdFromPath(pathname: string): string {
   if (pathname.startsWith('/admin/announcements')) return 'announcements';
   if (pathname.startsWith('/admin/dashboard')) return 'dashboard';
   return 'dashboard';
-}
-
-/**
- * 占位页（V4 本轮未实现的模块）：论坛治理
- * @param title 页面标题
- * @param description 说明文案
- * @returns 占位卡片 JSX
- */
-function PlaceholderPage({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
-      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
-        <p className="text-gray-800 font-medium">该模块将在下轮迭代开放</p>
-        <p className="text-sm text-gray-500 mt-2">{description}</p>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -230,7 +214,7 @@ export function AdminApp() {
       case 'logs':
         return <LogsPage />;
       case 'forum':
-        return <PlaceholderPage title="论坛治理" description="论坛板块治理与帖子管理功能将在下轮迭代实现。" />;
+        return <ForumPage currentAdmin={admin} />;
       case 'news':
         return <NewsPage />;
       case 'bans':

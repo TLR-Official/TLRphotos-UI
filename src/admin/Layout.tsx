@@ -5,7 +5,7 @@
  *   - super：全部菜单；
  *   - zone_master：仪表盘/照片审核/申诉裁决/我的已处理/管理员管理/日志；
  *   - zone_auditor：仪表盘/照片审核/我的已处理（V4 扩展个人审核记录）；
- *   - forum_moderator：仅论坛治理（V4 本轮占位页）；
+ *   - forum_moderator：仅论坛治理（V4.3.0 落地：板块管理 + 帖子管理）；
  *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
 import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone } from 'lucide-react';

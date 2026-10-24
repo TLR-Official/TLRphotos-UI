@@ -180,6 +180,36 @@ export interface AdminWarning {
   photo_title?: string | null;
 }
 
+/** V4.3.0：论坛板块（管理端 GET /forum/boards 全量含停用） */
+export interface ForumBoard {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  sort_order: number;
+  thread_count: number;
+  /** 1=启用 / 0=停用 */
+  is_active: number;
+}
+
+/** V4.3.0：论坛帖子列表项（公开接口 GET /api/forum/threads） */
+export interface ForumThreadItem {
+  id: string;
+  board_id: string;
+  title: string;
+  author_id: string;
+  author_name: string;
+  /** 1=置顶 */
+  is_pinned: number;
+  view_count: number;
+  like_count: number;
+  reply_count: number;
+  ref_type: string | null;
+  ref_id: string | null;
+  created_at: string;
+  last_reply_at: string | null;
+}
+
 /** V4.1.0：站点公告条目（管理端 GET /announcements 全量含已下线） */
 export interface Announcement {
   id: string;

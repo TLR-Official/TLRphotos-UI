@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -340,6 +340,100 @@ export async function getAdminWarnings(page = 1, pageSize = 20): Promise<{ succe
   });
   return response.json();
 }
+
+// ============================================================================
+// 论坛治理（V4.3.0：板块 CRUD / 帖子置顶与删除，角色门 super/zone_master/forum_moderator）
+// ============================================================================
+
+/** 获取论坛板块列表（含停用板块） */
+export async function getAdminForumBoards(): Promise<{ success: boolean; data?: ForumBoard[]; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/boards`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 创建板块（白名单收敛：仅允许航空/铁路/公路三大基础板块）。
+ * 名称不在白名单返回 400 BOARD_LIMITED；已存在幂等返回 200（data.existed=true）。
+ * @param name 板块名称
+ */
+export async function createForumBoard(name: string): Promise<{ success: boolean; data?: { id: string; name: string; existed: boolean }; code?: string; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/boards`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  return response.json();
+}
+
+/**
+ * 更新板块（名称/描述/图标/排序/启停，COALESCE 语义：仅传入字段生效）
+ * @param id 板块 id
+ * @param patch 待更新字段
+ */
+export async function updateForumBoard(
+  id: string,
+  patch: Partial<Pick<ForumBoard, 'name' | 'description' | 'icon' | 'sort_order' | 'is_active'>>
+): Promise<{ success: boolean; code?: string; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/boards/${id}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return response.json();
+}
+
+/**
+ * 删除板块：三大基础板块返回 400 BOARD_PROTECTED；其余板块下有帖子返回 409
+ * @param id 板块 id
+ */
+export async function deleteForumBoard(id: string): Promise<{ success: boolean; code?: string; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/boards/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 帖子置顶切换
+ * @param id 帖子 id
+ */
+export async function togglePinThread(id: string): Promise<{ success: boolean; data?: { is_pinned: number }; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/threads/${id}/pin`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 管理员删除帖子（级联删除评论等关联数据），需管理员人机验证门
+ * @param id 帖子 id
+ */
+export async function deleteForumThread(id: string): Promise<{ success: boolean; code?: string; message?: string }> {
+  const response = await fetch(`${API_BASE}/forum/threads/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 帖子列表（复用公开接口 GET /api/forum/threads，无需鉴权）
+ * @param params 板块筛选 / 排序 / 分页
+ */
+export async function getForumThreads(params: { board_id?: string; sort?: 'latest' | 'hot'; page?: number; page_size?: number } = {}): Promise<{ success: boolean; data?: { items: ForumThreadItem[]; total: number; page: number; page_size: number }; message?: string }> {
+  const sp = new URLSearchParams();
+  if (params.board_id) sp.set('board_id', params.board_id);
+  if (params.sort) sp.set('sort', params.sort);
+  sp.set('page', String(params.page ?? 1));
+  sp.set('page_size', String(params.page_size ?? 20));
+  const response = await fetch(`/api/forum/threads?${sp.toString()}`);
+  return response.json();
+}
+
 
 /**
  * 对用户实施三级处罚（V4.1.0，高危操作需人机验证门）
