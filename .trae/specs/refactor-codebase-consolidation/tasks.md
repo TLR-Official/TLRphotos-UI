@@ -50,4 +50,4 @@
 - [x] 撰写 `docs/refactor-report-v4.4.1.md`：精简统计（删/增行数、文件数）、性能量化（索引前后耗时、构建体积）、逐项调整点说明、不可合并项留档。
 - [x] `.ai/context.md` Changelog **顶部**追加：`| 2026-10-24 HH:mm | [refactor] 全库去重与死代码清理（V4.4.1） | backend/src/utils/*、src/shared/utils.ts、src/db.ts |`。
 - [x] 版本同步三处：`package.json` → `4.4.1-beta`、`.ai/context.md`、`.trae/rules/版本管理规则.md`（当前版本 + 历史表新增行）。
-- [ ] 逐文件 `git add`（禁止 `git add .` / `-A`），提交 `[refactor] 全库重复实现合并与死代码清理 | V4.4.1-beta | 2026-10-24 HH:mm`，推送 `origin main`。
+- [x] 逐文件 `git add`（禁止 `git add .` / `-A`），提交 `[refactor] 全库重复实现合并与死代码清理 | V4.4.1-beta | 2026-10-24 HH:mm`，推送 `origin main`（commit 3860f85）。
