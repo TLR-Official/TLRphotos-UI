@@ -328,7 +328,8 @@ export function UploadPage() {
         tags: tagsList,
         category: category,
         structured_tags: JSON.stringify(structuredTags),
-        registration_number: trimmedRegistration,
+        // 注册号仅航空分区提交，避免切换分类后残留旧值
+        registration_number: isRegistrationRequired ? trimmedRegistration : '',
         is_hot: isHot ? 1 : 0,
         ...exif,
       };
@@ -478,32 +479,26 @@ export function UploadPage() {
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片标题" className={inputCls} />
               </div>
 
-              <div>
-                <label className={labelCls}>
-                  飞机注册号{' '}
-                  {isRegistrationRequired ? (
-                    <span className="text-red-500">*</span>
-                  ) : (
-                    <span className="text-xs font-normal text-gray-400">（选填，仅航空分区必填）</span>
+              {/* 飞机注册号：仅航空分区展示并要求填写，其余分区完全不出现 */}
+              {isRegistrationRequired && (
+                <div>
+                  <label className={labelCls}>飞机注册号 <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={registrationNumber}
+                    onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
+                    disabled={step === 'uploading'}
+                    placeholder="如 B-1234"
+                    maxLength={20}
+                    className={inputCls}
+                  />
+                  {trimmedRegistration && !isRegistrationFormatValid && (
+                    <p className="mt-1 text-xs text-red-500">
+                      请填写有效的飞机注册号（2-20 位字母/数字/连字符）
+                    </p>
                   )}
-                </label>
-                <input
-                  type="text"
-                  value={registrationNumber}
-                  onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
-                  disabled={step === 'uploading'}
-                  placeholder={isRegistrationRequired ? '如 B-1234' : '选填，如 B-1234'}
-                  maxLength={20}
-                  className={inputCls}
-                />
-                {trimmedRegistration && !isRegistrationFormatValid && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {isRegistrationRequired
-                      ? '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'
-                      : '注册号格式不正确（2-20 位字母/数字/连字符），该信息将不会保存'}
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className={labelCls}>照片描述</label>

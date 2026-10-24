@@ -377,7 +377,7 @@ export function MobileUploadPage() {
       tags: tagsList,
       category,
       structured_tags: JSON.stringify(structuredTags),
-      registration_number: trimmedRegistration,
+      registration_number: isRegistrationRequired ? trimmedRegistration : '',
       is_hot: isHot ? 1 : 0,
       ...exif,
       watermarkText: WATERMARK_TEXT,
@@ -702,38 +702,34 @@ export function MobileUploadPage() {
                 )}
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  飞机注册号{' '}
-                  {isRegistrationRequired ? (
-                    <span className="text-red-500">*</span>
-                  ) : (
-                    <span className="text-xs font-normal text-gray-400">（选填，仅航空分区必填）</span>
+              {/* 飞机注册号：仅航空分区展示并要求填写，其余分区完全不出现 */}
+              {isRegistrationRequired && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    飞机注册号 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    ref={registrationInputRef}
+                    type="text"
+                    value={registrationNumber}
+                    onChange={(e) =>
+                      setRegistrationNumber(
+                        e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20),
+                      )
+                    }
+                    placeholder="如 B-1234"
+                    maxLength={20}
+                    autoCapitalize="characters"
+                    className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">如 B-1234 / G-DCDE，2~20 位字母数字或连字符</p>
+                  {trimmedRegistration && !isRegistrationFormatValid && (
+                    <p className="mt-1 text-xs text-red-500">
+                      请填写有效的飞机注册号（2-20 位字母/数字/连字符）
+                    </p>
                   )}
-                </label>
-                <input
-                  ref={registrationInputRef}
-                  type="text"
-                  value={registrationNumber}
-                  onChange={(e) =>
-                    setRegistrationNumber(
-                      e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20),
-                    )
-                  }
-                  placeholder={isRegistrationRequired ? '如 B-1234' : '选填，如 B-1234'}
-                  maxLength={20}
-                  autoCapitalize="characters"
-                  className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
-                />
-                <p className="mt-1 text-xs text-gray-400">如 B-1234 / G-DCDE，2~20 位字母数字或连字符</p>
-                {trimmedRegistration && !isRegistrationFormatValid && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {isRegistrationRequired
-                      ? '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'
-                      : '注册号格式不正确（2-20 位字母/数字/连字符），该信息将不会保存'}
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3">
                 <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-3 py-2">
@@ -796,10 +792,13 @@ export function MobileUploadPage() {
                       ))}
                     </dd>
                   </div>
-                  <div className="flex">
-                    <dt className="w-20 flex-shrink-0 text-gray-500">注册号</dt>
-                    <dd className="flex-1 text-gray-800">{trimmedRegistration || '未填写'}</dd>
-                  </div>
+                  {/* 注册号仅在航空分区展示（与第 2 步表单一致） */}
+                  {isRegistrationRequired && (
+                    <div className="flex">
+                      <dt className="w-20 flex-shrink-0 text-gray-500">注册号</dt>
+                      <dd className="flex-1 text-gray-800">{trimmedRegistration}</dd>
+                    </div>
+                  )}
                   <div className="flex">
                     <dt className="w-20 flex-shrink-0 text-gray-500">热门意愿</dt>
                     <dd className="flex-1 text-gray-800">{isHot ? '愿意' : '否'}</dd>
