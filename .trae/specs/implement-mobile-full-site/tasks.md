@@ -39,14 +39,14 @@
 
 ## Wave 4：PWA 与收尾
 
-- [ ] Task 4.1: PWA 基础：`public/manifest.json` + 图标（192/512）+ Service Worker 仅静态资源缓存 + index.html 注册
-- [ ] Task 4.2: 新手引导与功能提示（localStorage `tip_` 前缀、每条最多 3 次）：首页单屏浮层、上传页提示条、注册号常驻灰字提示
-- [ ] Task 4.3: 全量回归与验收
+- [x] Task 4.1: PWA 基础：`public/manifest.json` + 图标（192/512）+ Service Worker 仅静态资源缓存 + index.html 注册
+- [x] Task 4.2: 新手引导与功能提示（localStorage `tip_` 前缀、每条最多 3 次）：首页单屏浮层、上传页提示条、注册号常驻灰字提示
+- [x] Task 4.3: 全量回归与验收
   - 后端：26 套件 451 用例全绿（零后端改动，防回归）
   - 前端：oxlint 0 错误、`npm run build` 通过、确认 `/m/*` chunk 独立分包且首包 gzip ≤350KB
   - 视口验收：360/390/430px 三档 19 页无横向滚动条；热区抽查 ≥44×44px；无紫色残留、论坛无 emoji
   - 浏览器实测（chrome-devtools 移动仿真）：A1 未登录浏览、A2 注册登录、A3 上传全链路、A6 下载
-- [ ] Task 4.4: 版本发布：三处同步升级 V4.4.0-beta（package.json / .ai/context.md Changelog / 版本管理规则.md）+ api.md 备注移动端 page_size 差异 + 提交推送 + 部署验证
+- [x] Task 4.4: 版本发布：三处同步升级 V4.4.0-beta（package.json / .ai/context.md Changelog / 版本管理规则.md）+ api.md 备注移动端 page_size 差异 + 提交推送 + 部署验证
 
 ## Task Dependencies
 
