@@ -131,6 +131,154 @@ export interface ProcessedImages {
 }
 
 /**
+ * 在预览图上合成文字水印与底部信息条，输出可直接落库的水印图（webp）。
+ * 抽为独立函数以便存量照片重渲染脚本复用，保证历史图与新上传图完全同源。
+ * @param previewBuffer 预览图 Buffer（≤1200px，未叠加任何水印）
+ * @param watermarkConfig 水印配置（文字 + 底部信息条）
+ * @returns 水印图 webp Buffer，高度 = 预览图高 + 信息条高（无 band 时等于预览图高）
+ */
+export async function renderWatermarkedImage(
+  previewBuffer: Buffer,
+  watermarkConfig: WatermarkConfig,
+): Promise<Buffer> {
+  const fontSize = watermarkConfig.size || 32;
+  const opacity = watermarkConfig.opacity || 0.6;
+
+  // 基于预览图实际尺寸计算水印位置、字体缩放与底部信息条布局
+  let textBuffer: Buffer | undefined;
+  let bandBuffer: Buffer | undefined;
+  let baseBuffer: Buffer | undefined;
+  let previewMetaInstance: ReturnType<typeof sharp> | undefined;
+  let textLayerInstance: ReturnType<typeof sharp> | undefined;
+  let bandLayerInstance: ReturnType<typeof sharp> | undefined;
+  let baseInstance: ReturnType<typeof sharp> | undefined;
+  let watermarkInstance: ReturnType<typeof sharp> | undefined;
+  try {
+    previewMetaInstance = sharp(previewBuffer);
+    const previewMetadata = await previewMetaInstance.metadata();
+    const processedWidth = previewMetadata.width || 1200;
+    const processedHeight = previewMetadata.height || 1200;
+
+    // 1) 用户可拖动文字水印：坐标与字号均以原图（预览图）坐标系为基准
+    let compositeBase: Buffer = previewBuffer;
+    if (watermarkConfig.text) {
+      // 将百分比坐标钳制到 [0,100] 区间，再换算为像素坐标
+      const xPercent = Math.min(Math.max(watermarkConfig.x, 0), 100);
+      const yPercent = Math.min(Math.max(watermarkConfig.y, 0), 100);
+      const x = (processedWidth * xPercent) / 100;
+      const y = (processedHeight * yPercent) / 100;
+
+      // 字体随图片长边线性缩放，保证不同尺寸下水印视觉比例一致
+      const scaleFactor = Math.max(processedWidth, processedHeight) / 1200;
+      const scaledFontSize = fontSize * scaleFactor;
+
+      // 构造透明背景的 SVG 文本图层，再通过 sharp 渲染为 PNG 用于合成
+      textLayerInstance = sharp({
+        create: {
+          width: processedWidth,
+          height: processedHeight,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([{
+          input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${processedHeight}">
+              <text x="${x}" y="${y}" font-family="${watermarkConfig.font || 'Arial'}"
+                    font-size="${scaledFontSize}" font-weight="600" fill="white" opacity="${opacity}"
+                    text-anchor="middle" dominant-baseline="middle"
+                    stroke="black" stroke-width="1" stroke-opacity="${opacity * 0.5}">
+                ${watermarkConfig.text}
+              </text>
+            </svg>`),
+          top: 0,
+          left: 0,
+        }])
+        .png();
+      textBuffer = await textLayerInstance.toBuffer();
+
+      // 水印文字先落到图片区域，后续黑条在画布外侧扩展，二者互不遮挡
+      baseInstance = sharp(previewBuffer)
+        .composite([{ input: textBuffer, top: 0, left: 0, blend: 'over' }])
+        .png();
+      baseBuffer = await baseInstance.toBuffer();
+      compositeBase = baseBuffer;
+    }
+
+    // 2) 底部信息条：在图片下方扩展等宽不透明黑条，条内两行居中白字
+    let bandHeight = 0;
+    if (watermarkConfig.band) {
+      const band = watermarkConfig.band;
+      const metrics = computeBandMetrics(processedWidth, processedHeight);
+      bandHeight = metrics.bandHeight;
+      const xCenter = processedWidth / 2;
+      const line1 = resolveLineText(band.siteName, metrics.line1FontSize, metrics.maxTextWidth);
+      const line2 = resolveLineText(
+        `© ${band.year ?? new Date().getFullYear()} ${band.ownerName}`,
+        metrics.line2FontSize,
+        metrics.maxTextWidth,
+      );
+
+      bandLayerInstance = sharp({
+        create: {
+          width: processedWidth,
+          height: metrics.bandHeight,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([{
+          input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${metrics.bandHeight}">
+              <text x="${xCenter}" y="${metrics.line1CenterY}" font-family="${BAND_FONT_FAMILY}"
+                    font-size="${line1.fontSize}" font-weight="600" fill="#ffffff"
+                    text-anchor="middle" dominant-baseline="middle">${escapeXml(line1.text)}</text>
+              <text x="${xCenter}" y="${metrics.line2CenterY}" font-family="${BAND_FONT_FAMILY}"
+                    font-size="${line2.fontSize}" font-weight="400" fill="#ffffff"
+                    text-anchor="middle" dominant-baseline="middle">${escapeXml(line2.text)}</text>
+            </svg>`),
+          top: 0,
+          left: 0,
+        }])
+        .png();
+      bandBuffer = await bandLayerInstance.toBuffer();
+    }
+
+    // 3) 一次输出：向下扩展黑条 + 叠加条内文字，位置与层级由同一画布决定
+    watermarkInstance = sharp(compositeBase);
+    if (bandHeight > 0) {
+      watermarkInstance = watermarkInstance.extend({
+        bottom: bandHeight,
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+      });
+    }
+    if (bandBuffer) {
+      watermarkInstance = watermarkInstance.composite([{
+        input: bandBuffer,
+        top: processedHeight,
+        left: 0,
+        blend: 'over',
+      }]);
+    }
+    return await watermarkInstance.webp({ quality: 90 }).toBuffer();
+  } finally {
+    // 显式销毁临时 sharp 实例
+    try { (previewMetaInstance as any)?.destroy?.(); } catch { /* ignore */ }
+    try { (textLayerInstance as any)?.destroy?.(); } catch { /* ignore */ }
+    try { (bandLayerInstance as any)?.destroy?.(); } catch { /* ignore */ }
+    try { (baseInstance as any)?.destroy?.(); } catch { /* ignore */ }
+    try { (watermarkInstance as any)?.destroy?.(); } catch { /* ignore */ }
+    if (textBuffer) {
+      try { (textBuffer as any).fill?.(0); } catch { /* ignore */ }
+    }
+    if (bandBuffer) {
+      try { (bandBuffer as any).fill?.(0); } catch { /* ignore */ }
+    }
+    if (baseBuffer) {
+      try { (baseBuffer as any).fill?.(0); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
  * 处理原始图片，生成缩略图、预览图（及可选水印图）
  * @param buffer 原始图片二进制数据
  * @param fileName 原始文件名，用于推导 OSS Key
@@ -195,142 +343,8 @@ export async function processImage(
 
   let watermarkedBuffer: Buffer | undefined;
   if (watermarkConfig && (watermarkConfig.text || watermarkConfig.band)) {
-    const fontSize = watermarkConfig.size || 32;
-    const opacity = watermarkConfig.opacity || 0.6;
-
-    // 基于预览图实际尺寸计算水印位置、字体缩放与底部信息条布局
-    let textBuffer: Buffer | undefined;
-    let bandBuffer: Buffer | undefined;
-    let baseBuffer: Buffer | undefined;
-    let previewMetaInstance: ReturnType<typeof sharp> | undefined;
-    let textLayerInstance: ReturnType<typeof sharp> | undefined;
-    let bandLayerInstance: ReturnType<typeof sharp> | undefined;
-    let baseInstance: ReturnType<typeof sharp> | undefined;
-    let watermarkInstance: ReturnType<typeof sharp> | undefined;
-    try {
-      previewMetaInstance = sharp(previewBuffer);
-      const previewMetadata = await previewMetaInstance.metadata();
-      const processedWidth = previewMetadata.width || 1200;
-      const processedHeight = previewMetadata.height || 1200;
-
-      // 1) 用户可拖动文字水印：坐标与字号均以原图（预览图）坐标系为基准
-      let compositeBase: Buffer = previewBuffer;
-      if (watermarkConfig.text) {
-        // 将百分比坐标钳制到 [0,100] 区间，再换算为像素坐标
-        const xPercent = Math.min(Math.max(watermarkConfig.x, 0), 100);
-        const yPercent = Math.min(Math.max(watermarkConfig.y, 0), 100);
-        const x = (processedWidth * xPercent) / 100;
-        const y = (processedHeight * yPercent) / 100;
-
-        // 字体随图片长边线性缩放，保证不同尺寸下水印视觉比例一致
-        const scaleFactor = Math.max(processedWidth, processedHeight) / 1200;
-        const scaledFontSize = fontSize * scaleFactor;
-
-        // 构造透明背景的 SVG 文本图层，再通过 sharp 渲染为 PNG 用于合成
-        textLayerInstance = sharp({
-          create: {
-            width: processedWidth,
-            height: processedHeight,
-            channels: 4,
-            background: { r: 0, g: 0, b: 0, alpha: 0 },
-          },
-        })
-          .composite([{
-            input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${processedHeight}">
-              <text x="${x}" y="${y}" font-family="${watermarkConfig.font || 'Arial'}"
-                    font-size="${scaledFontSize}" font-weight="600" fill="white" opacity="${opacity}"
-                    text-anchor="middle" dominant-baseline="middle"
-                    stroke="black" stroke-width="1" stroke-opacity="${opacity * 0.5}">
-                ${watermarkConfig.text}
-              </text>
-            </svg>`),
-            top: 0,
-            left: 0,
-          }])
-          .png();
-        textBuffer = await textLayerInstance.toBuffer();
-
-        // 水印文字先落到图片区域，后续黑条在画布外侧扩展，二者互不遮挡
-        baseInstance = sharp(previewBuffer)
-          .composite([{ input: textBuffer, top: 0, left: 0, blend: 'over' }])
-          .png();
-        baseBuffer = await baseInstance.toBuffer();
-        compositeBase = baseBuffer;
-      }
-
-      // 2) 底部信息条：在图片下方扩展等宽不透明黑条，条内两行居中白字
-      let bandHeight = 0;
-      if (watermarkConfig.band) {
-        const band = watermarkConfig.band;
-        const metrics = computeBandMetrics(processedWidth, processedHeight);
-        bandHeight = metrics.bandHeight;
-        const xCenter = processedWidth / 2;
-        const line1 = resolveLineText(band.siteName, metrics.line1FontSize, metrics.maxTextWidth);
-        const line2 = resolveLineText(
-          `© ${band.year ?? new Date().getFullYear()} ${band.ownerName}`,
-          metrics.line2FontSize,
-          metrics.maxTextWidth,
-        );
-
-        bandLayerInstance = sharp({
-          create: {
-            width: processedWidth,
-            height: metrics.bandHeight,
-            channels: 4,
-            background: { r: 0, g: 0, b: 0, alpha: 0 },
-          },
-        })
-          .composite([{
-            input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${processedWidth}" height="${metrics.bandHeight}">
-              <text x="${xCenter}" y="${metrics.line1CenterY}" font-family="${BAND_FONT_FAMILY}"
-                    font-size="${line1.fontSize}" font-weight="600" fill="#ffffff"
-                    text-anchor="middle" dominant-baseline="middle">${escapeXml(line1.text)}</text>
-              <text x="${xCenter}" y="${metrics.line2CenterY}" font-family="${BAND_FONT_FAMILY}"
-                    font-size="${line2.fontSize}" font-weight="400" fill="#ffffff"
-                    text-anchor="middle" dominant-baseline="middle">${escapeXml(line2.text)}</text>
-            </svg>`),
-            top: 0,
-            left: 0,
-          }])
-          .png();
-        bandBuffer = await bandLayerInstance.toBuffer();
-      }
-
-      // 3) 一次输出：向下扩展黑条 + 叠加条内文字，位置与层级由同一画布决定
-      watermarkInstance = sharp(compositeBase);
-      if (bandHeight > 0) {
-        watermarkInstance = watermarkInstance.extend({
-          bottom: bandHeight,
-          background: { r: 0, g: 0, b: 0, alpha: 1 },
-        });
-      }
-      if (bandBuffer) {
-        watermarkInstance = watermarkInstance.composite([{
-          input: bandBuffer,
-          top: processedHeight,
-          left: 0,
-          blend: 'over',
-        }]);
-      }
-      watermarkedBuffer = await watermarkInstance.webp({ quality: 90 }).toBuffer();
-    } finally {
-      // 显式销毁临时 sharp 实例
-      try { (previewMetaInstance as any)?.destroy?.(); } catch { /* ignore */ }
-      try { (textLayerInstance as any)?.destroy?.(); } catch { /* ignore */ }
-      try { (bandLayerInstance as any)?.destroy?.(); } catch { /* ignore */ }
-      try { (baseInstance as any)?.destroy?.(); } catch { /* ignore */ }
-      try { (watermarkInstance as any)?.destroy?.(); } catch { /* ignore */ }
-      if (textBuffer) {
-        try { (textBuffer as any).fill?.(0); } catch { /* ignore */ }
-      }
-      if (bandBuffer) {
-        try { (bandBuffer as any).fill?.(0); } catch { /* ignore */ }
-      }
-      if (baseBuffer) {
-        try { (baseBuffer as any).fill?.(0); } catch { /* ignore */ }
-      }
-    }
-
+    // 合成逻辑集中在 renderWatermarkedImage，存量重渲染脚本与上传流程共用同一实现
+    watermarkedBuffer = await renderWatermarkedImage(previewBuffer, watermarkConfig);
     console.log(`[ImageProcessing] Watermark added in ${Date.now() - startTime}ms`);
   }
 
