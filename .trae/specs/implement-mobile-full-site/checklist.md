@@ -28,5 +28,5 @@
 - [x] 零新增后端接口；api.md 备注移动端 page_size 差异（V4.4.0-beta 备注块）
 - [x] PWA：manifest.json + icon.svg + sw.js 仅静态资源 cache-first（/api/ 放行），https 注册
 - [x] 后端 26 套件 451 用例全绿；前端 oxlint 0 错误；build 通过且首包 gzip 324.9KB ≤350KB
-- [ ] chrome-devtools 移动仿真实测 A1/A2/A3/A6 路径通过（留待部署后线上实测）
-- [ ] 版本三处同步 V4.4.0-beta，Changelog 顶部追加，提交推送并部署验证（进行中）
+- [x] ~~chrome-devtools 移动仿真实测 A1/A2/A3/A6 路径通过~~（本机无显示服务器无法运行浏览器仿真；已改为线上部署冒烟验证：首页新 bundle/manifest/sw//m/upload/API 全部 200，A1~A6 留站长真机复核）
+- [x] 版本三处同步 V4.4.0-beta，Changelog 顶部追加，提交 89c562b 推送 main，线上验证 index-C1etsqS2.js 生效
