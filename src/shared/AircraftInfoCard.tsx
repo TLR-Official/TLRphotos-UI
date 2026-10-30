@@ -19,6 +19,8 @@ interface AircraftInfoCardProps {
   /** 是否允许查询（非航空分区 / 未登录时传 false） */
   enabled?: boolean;
   className?: string;
+  /** 命中回调：识别成功时触发，供父组件自动回填表单（V4.6.2） */
+  onHit?: (info: AircraftLookupResult) => void;
 }
 
 type LookupState =
@@ -27,7 +29,7 @@ type LookupState =
   | { status: 'hit'; info: AircraftLookupResult }
   | { status: 'miss' };
 
-export function AircraftInfoCard({ registration, enabled = true, className = '' }: AircraftInfoCardProps) {
+export function AircraftInfoCard({ registration, enabled = true, className = '', onHit }: AircraftInfoCardProps) {
   const [state, setState] = useState<LookupState>({ status: 'idle' });
   // 请求序号：输入变化后丢弃过期响应，避免旧结果覆盖新结果
   const seqRef = useRef(0);
@@ -49,13 +51,14 @@ export function AircraftInfoCard({ registration, enabled = true, className = '' 
       if (seqRef.current !== seq) return;
       if (res.success && res.data) {
         setState({ status: 'hit', info: res.data });
+        onHit?.(res.data);
       } else {
         setState({ status: 'miss' });
       }
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [normalized, isValid, enabled]);
+  }, [normalized, isValid, enabled, onHit]);
 
   if (state.status === 'idle') return null;
 

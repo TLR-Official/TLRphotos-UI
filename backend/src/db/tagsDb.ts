@@ -155,6 +155,7 @@ const seedTags = async () => {
   const aviationAttributes: TagAttribute[] = [
     { id: 'av_flight_model', object_id: 'av_flight', key: '机型', key_en: 'model', label: '机型', type: 'text' },
     { id: 'av_flight_type', object_id: 'av_flight', key: '机型类型', key_en: 'type', label: '机型类型', type: 'select', options: JSON.stringify(['窄体机', '宽体机', '支线客机', '货机', '公务机', '螺旋桨客机', '直升机', '通用航空']) },
+    { id: 'av_flight_airline', object_id: 'av_flight', key: '航司', key_en: 'airline', label: '航司', type: 'text' },
     { id: 'av_airport_name', object_id: 'av_airport', key: '机场名称', key_en: 'airport_name', label: '机场名称', type: 'text' },
     { id: 'av_airport_iata', object_id: 'av_airport', key: 'IATA代码', key_en: 'iata_code', label: 'IATA代码', type: 'text' },
     { id: 'av_airport_facility', object_id: 'av_airport', key: '设施类型', key_en: 'facility_type', label: '设施类型', type: 'select', options: JSON.stringify(['航站楼', '塔台', '跑道', '滑行道', '停机坪', '廊桥', '行李转盘']) },
@@ -196,12 +197,20 @@ const seedTags = async () => {
 };
 
 /**
- * 存量清理（V4.6.1）：移除「飞行器」下的「注册号」属性。
- * 注册号已由上传页独立字段采集并落库 photos.registration_number，
- * 标签属性里再存一份属于重复数据，故此处幂等删除（每次启动执行，无则跳过）。
+ * 存量清理与补齐（V4.6.1 / V4.6.2）：
+ *  - 移除「飞行器」下的「注册号」属性（注册号已由上传页独立字段采集，重复数据）。
+ *  - 补齐「飞行器」下的「航司」属性（V4.6.2 新增，上传时由注册号识别结果自动写入）。
+ * 幂等执行：每次启动调用，已存在则跳过。
  */
 const cleanupDeprecatedAttributes = async () => {
   await tagsDb.run("DELETE FROM tag_attributes WHERE id = 'av_flight_reg'");
+
+  const airlineRow = await tagsDb.get("SELECT id FROM tag_attributes WHERE id = 'av_flight_airline'");
+  if (!airlineRow) {
+    await tagsDb.run(
+      "INSERT INTO tag_attributes (id, object_id, key, key_en, label, type, options) VALUES ('av_flight_airline', 'av_flight', '航司', 'airline', '航司', 'text', NULL)",
+    );
+  }
 };
 
 /**

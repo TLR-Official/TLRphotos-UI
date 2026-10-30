@@ -64,6 +64,39 @@ function normalizeIsHot(input: unknown): number {
 }
 
 /**
+ * 将注册号识别结果合并进结构化标签 structured_tags（V4.6.2）。
+ * 仅当用户未手动填写对应字段（值为空）时才写入识别结果，避免覆盖用户输入。
+ * @param structuredTagsJson 已过滤敏感词的 structured_tags JSON 字符串
+ * @param aircraftInfo 注册号识别结果（可能为 null）
+ * @returns 合并后的 structured_tags JSON 字符串
+ */
+function mergeAircraftInfoIntoTags(
+  structuredTagsJson: string,
+  aircraftInfo: { aircraftType?: string; airline?: string } | null,
+): string {
+  if (!aircraftInfo || (!aircraftInfo.aircraftType && !aircraftInfo.airline)) {
+    return structuredTagsJson;
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(structuredTagsJson || '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) parsed = {};
+  } catch {
+    parsed = {};
+  }
+  let changed = false;
+  if (aircraftInfo.aircraftType && !parsed['机型']) {
+    parsed['机型'] = aircraftInfo.aircraftType;
+    changed = true;
+  }
+  if (aircraftInfo.airline && !parsed['航司']) {
+    parsed['航司'] = aircraftInfo.airline;
+    changed = true;
+  }
+  return changed ? JSON.stringify(parsed) : structuredTagsJson;
+}
+
+/**
  * 上传禁令校验（V4.1.0 处罚分级）：检查用户活跃 L2 处罚的 capabilities 快照是否封禁 upload 能力
  * （expires_at 过期或已撤销的记录自动失效）。命中禁令返回 403 响应负载
  * （code=UPLOAD_BANNED，message 含解禁时间 YYYY-MM-DD HH:mm，取自 penalty.expires_at）；
@@ -1007,7 +1040,7 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       return res.status(denied.status).json(denied.payload);
     }
 
-    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot, category } = req.body;
+    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot, category, structured_tags } = req.body;
 
     if (!key) {
       return res.status(400).json({ success: false, message: '文件Key不能为空' });
@@ -1042,11 +1075,32 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       });
     }
 
+    // 结构化标签 JSON：解析后逐字段过滤敏感值，解析失败兜底为空对象
+    let validatedStructuredTags = '{}';
+    if (structured_tags) {
+      try {
+        const parsedTags = typeof structured_tags === 'string' ? JSON.parse(structured_tags) : structured_tags;
+        const filteredTags: Record<string, any> = {};
+        const bl = ['军用', '部队', '歼', '运-8', '运-9', '直-10', '直-20', '坦克', '装甲', '导弹', '雷达站', '军港', '护卫舰', '驱逐舰'];
+        for (const [k, value] of Object.entries(parsedTags)) {
+          if (!bl.some((w) => String(value).includes(w))) {
+            filteredTags[k] = value;
+          }
+        }
+        validatedStructuredTags = JSON.stringify(filteredTags);
+      } catch {
+        validatedStructuredTags = '{}';
+      }
+    }
+
     // 确认 OSS 上传结果，返回原图与缩略图 URL
     const uploadResult = await completeUpload(key);
 
     // 等待航空器识别结果（已与 OSS 确认并行发起）
     const aircraftInfo = await aircraftInfoPromise;
+
+    // V4.6.2：将识别出的机型/航司写入结构化标签「机型」「航司」字段（仅当用户未手动填写时）
+    const structuredTagsWithAircraft = mergeAircraftInfoIntoTags(validatedStructuredTags, aircraftInfo);
 
     // tags 字段支持数组或中英文逗号分隔字符串，统一序列化为 JSON 数组字符串存储
     const newPhoto = {
@@ -1055,6 +1109,7 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       original_url: uploadResult.url,
       user_id: userId, // V1.5.0：补 user_id 字段，防止落库为 NULL
       tags: JSON.stringify(parsedTagList),
+      structured_tags: structuredTagsWithAircraft,
       width: width || 0,
       height: height || 0,
       description: description || '',
@@ -1092,13 +1147,14 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       newId = String(currentMaxId + 1).padStart(6, '0');
 
       await db.run(
-        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         newId,
         newPhoto.title,
         newPhoto.thumbnail_path,
         newPhoto.original_url,
         newPhoto.user_id,
         newPhoto.tags,
+        newPhoto.structured_tags,
         newPhoto.width,
         newPhoto.height,
         newPhoto.description,
@@ -1353,6 +1409,9 @@ router.post(
     // 等待航空器识别结果（此前已与图片处理并行发起，此处通常已完成，不额外增加等待）
     const aircraftInfo = await aircraftInfoPromise;
 
+    // V4.6.2：将识别出的机型/航司写入结构化标签「机型」「航司」字段（仅当用户未手动填写时）
+    const structuredTagsWithAircraft = mergeAircraftInfoIntoTags(validatedStructuredTags, aircraftInfo);
+
     const newPhoto = {
       id: newId,
       title: title || '未命名照片',
@@ -1364,7 +1423,7 @@ router.post(
       user_id: userId || null,
       category: category || null,
       tags: JSON.stringify(parsedTagList),
-      structured_tags: validatedStructuredTags,
+      structured_tags: structuredTagsWithAircraft,
       width: width || 0,
       height: height || 0,
       description: description || '',

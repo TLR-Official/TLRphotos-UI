@@ -14,6 +14,7 @@ import { TagSelector } from '../../components/TagSelector';
 import type { SelectedTag } from '../../components/TagSelector';
 import { computeBandPreviewLayout } from '../../shared/watermarkBand';
 import { AircraftInfoCard } from '../../shared/AircraftInfoCard';
+import type { AircraftLookupResult } from '../../api/aircraft';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
@@ -262,6 +263,19 @@ export function UploadPage() {
   const isRegistrationFormatValid = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(trimmedRegistration);
   // 航空分区须填写且格式合法；其他分区留空即通过，非法输入不阻断提交（后端会置空不落库）
   const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
+
+  // V4.6.2：注册号识别命中后，自动回填「飞行器」标签的「机型」「航司」属性（仅当用户未填写时）
+  const handleAircraftHit = useCallback((info: AircraftLookupResult) => {
+    setSelectedTags((prev) =>
+      prev.map((tag) => {
+        if (tag.objectId !== 'av_flight') return tag;
+        const attrs = { ...tag.attributes };
+        if (info.aircraft_type && !attrs['机型']) attrs['机型'] = info.aircraft_type;
+        if (info.airline && !attrs['航司']) attrs['航司'] = info.airline;
+        return { ...tag, attributes: attrs };
+      }),
+    );
+  }, []);
 
   // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、至少一个第二层标签、已勾选安全声明与作品版权协议
   const canSubmit = title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement && licenseAgreement;
@@ -519,6 +533,7 @@ export function UploadPage() {
                   <AircraftInfoCard
                     registration={registrationNumber}
                     enabled={isAuthenticated && step !== 'uploading'}
+                    onHit={handleAircraftHit}
                   />
                 </div>
               )}

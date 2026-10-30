@@ -19,6 +19,7 @@ import { useUser } from '../../../shared/UserContext';
 import { useHumanVerification } from '../../../shared/useHumanVerification';
 import { MobileBackHeader } from '../../../shared/MobileBackHeader';
 import { AircraftInfoCard } from '../../../shared/AircraftInfoCard';
+import type { AircraftLookupResult } from '../../../api/aircraft';
 import { useTip } from '../../../shared/useTip';
 import { TagSelector } from '../../../components/TagSelector';
 import type { SelectedTag } from '../../../components/TagSelector';
@@ -290,6 +291,19 @@ export function MobileUploadPage() {
   const trimmedRegistration = registrationNumber.trim();
   const isRegistrationFormatValid = REGISTRATION_PATTERN.test(trimmedRegistration);
   const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
+
+  // V4.6.2：注册号识别命中后，自动回填「飞行器」标签的「机型」「航司」属性（仅当用户未填写时）
+  const handleAircraftHit = useCallback((info: AircraftLookupResult) => {
+    setSelectedTags((prev) =>
+      prev.map((tag) => {
+        if (tag.objectId !== 'av_flight') return tag;
+        const attrs = { ...tag.attributes };
+        if (info.aircraft_type && !attrs['机型']) attrs['机型'] = info.aircraft_type;
+        if (info.airline && !attrs['航司']) attrs['航司'] = info.airline;
+        return { ...tag, attributes: attrs };
+      }),
+    );
+  }, []);
 
   /** 步骤前进（携带各步校验，失败时给出具体错误并定位） */
   const goNext = () => {
@@ -739,7 +753,7 @@ export function MobileUploadPage() {
                     </p>
                   )}
                   {/* 注册号合法后自动识别机型与航司（仅登录态查询） */}
-                  <AircraftInfoCard registration={registrationNumber} enabled={isAuthenticated} />
+                  <AircraftInfoCard registration={registrationNumber} enabled={isAuthenticated} onHit={handleAircraftHit} />
                 </div>
               )}
 
