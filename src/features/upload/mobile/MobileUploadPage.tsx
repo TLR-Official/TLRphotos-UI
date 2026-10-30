@@ -18,6 +18,7 @@ import exifr from 'exifr';
 import { useUser } from '../../../shared/UserContext';
 import { useHumanVerification } from '../../../shared/useHumanVerification';
 import { MobileBackHeader } from '../../../shared/MobileBackHeader';
+import { AircraftInfoCard } from '../../../shared/AircraftInfoCard';
 import { useTip } from '../../../shared/useTip';
 import { TagSelector } from '../../../components/TagSelector';
 import type { SelectedTag } from '../../../components/TagSelector';
@@ -737,6 +738,8 @@ export function MobileUploadPage() {
                       请填写有效的飞机注册号（2-20 位字母/数字/连字符）
                     </p>
                   )}
+                  {/* 注册号合法后自动识别机型与航司（仅登录态查询） */}
+                  <AircraftInfoCard registration={registrationNumber} enabled={isAuthenticated} />
                 </div>
               )}
 

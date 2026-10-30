@@ -12,6 +12,7 @@ dotenv.config();
 import express from 'express';
 import path from 'path';
 import photosRouter from './routes/photos';
+import aircraftRouter from './routes/aircraft';
 import articlesRouter from './routes/articles';
 import columnRouter from './routes/column';
 import authRouter from './routes/auth';
@@ -71,6 +72,8 @@ app.use((req, res, next) => {
 // 业务路由挂载：每个路由对应一组 /api/* 接口（含 V1.8.0 人机验证路由）
 app.use('/api/auth', authRouter);
 app.use('/api/photos', photosRouter);
+// V4.6.0：注册号 → 机型/航司 查询（上传表单实时回显）
+app.use('/api/aircraft', aircraftRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/column', columnRouter);
 app.use('/api/tags', tagsRouter);

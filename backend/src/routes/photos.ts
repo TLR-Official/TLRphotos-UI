@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
+import { lookupAircraft } from '../services/aircraftLookupService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
 import { parsePhotoTags } from '../utils/photoTags';
 import { getOptionalUserId } from '../utils/optionalAuth';
@@ -235,15 +236,22 @@ router.get('/search', photoReadLimiter, async (req, res) => {
   try {
     const { keyword, registration, tag, tag_key, tag_value, category, is_hot, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
-    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, is_hot, created_at FROM photos WHERE status = "approved"';
+    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, aircraft_type, airline, is_hot, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
     const conditions: string[] = [];
 
     // 关键词匹配：转义 LIKE 特殊字符防止用户输入干扰 SQL 通配符；注册号同步纳入关键词检索
+    // V4.6.0：机型/所属航司也纳入关键词检索（如搜「777」「国航」可直接命中）
     if (keyword) {
       const escapedKeyword = escapeLikePattern(String(keyword));
-      conditions.push('(title LIKE ? OR description LIKE ? OR UPPER(registration_number) LIKE ?)');
-      params.push(`%${escapedKeyword}%`, `%${escapedKeyword}%`, `%${escapedKeyword.toUpperCase()}%`);
+      conditions.push('(title LIKE ? OR description LIKE ? OR UPPER(registration_number) LIKE ? OR aircraft_type LIKE ? OR airline LIKE ?)');
+      params.push(
+        `%${escapedKeyword}%`,
+        `%${escapedKeyword}%`,
+        `%${escapedKeyword.toUpperCase()}%`,
+        `%${escapedKeyword}%`,
+        `%${escapedKeyword}%`,
+      );
     }
 
     // 注册号检索（V3.2.0）：归一化大写后模糊匹配，支持完整注册号或片段
@@ -1017,6 +1025,11 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       });
     }
 
+    // V4.6.0：航空分区按注册号自动识别机型/所属航司，与 OSS 确认并行，失败降级为空
+    const aircraftInfoPromise = isAviationCategory && normalizedRegistration
+      ? lookupAircraft(normalizedRegistration).catch(() => null)
+      : Promise.resolve(null);
+
     // 第二层标签必填（V4.1.2-beta.3）：tags 须至少包含一个标签对象名，保证作品可被二层下钻检索
     const parsedTagList = tags
       ? (Array.isArray(tags) ? tags : String(tags).split(/[,，]/).map((t: string) => t.trim())).filter(Boolean)
@@ -1031,6 +1044,9 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
 
     // 确认 OSS 上传结果，返回原图与缩略图 URL
     const uploadResult = await completeUpload(key);
+
+    // 等待航空器识别结果（已与 OSS 确认并行发起）
+    const aircraftInfo = await aircraftInfoPromise;
 
     // tags 字段支持数组或中英文逗号分隔字符串，统一序列化为 JSON 数组字符串存储
     const newPhoto = {
@@ -1051,6 +1067,8 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       shutter_speed: shutter_speed || '',
       aperture: aperture || '',
       registration_number: normalizedRegistration,
+      aircraft_type: aircraftInfo?.aircraftType || '',
+      airline: aircraftInfo?.airline || '',
       is_hot: normalizeIsHot(is_hot),
       likes: 0,
       views: 0,
@@ -1074,7 +1092,7 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
       newId = String(currentMaxId + 1).padStart(6, '0');
 
       await db.run(
-        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         newId,
         newPhoto.title,
         newPhoto.thumbnail_path,
@@ -1093,6 +1111,8 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
         newPhoto.shutter_speed,
         newPhoto.aperture,
         newPhoto.registration_number,
+        newPhoto.aircraft_type,
+        newPhoto.airline,
         newPhoto.is_hot,
         newPhoto.likes,
         newPhoto.views,
@@ -1249,6 +1269,12 @@ router.post(
       });
     }
 
+    // V4.6.0：航空分区按注册号自动识别机型/所属航司。
+    // 与图片处理并行发起，命中即落库；超时/未收录/上游异常一律降级为 null，绝不阻断上传。
+    const aircraftInfoPromise = isAviationCategory && normalizedRegistration
+      ? lookupAircraft(normalizedRegistration).catch(() => null)
+      : Promise.resolve(null);
+
     // 水印配置：仅当提供水印文本时构造配置对象，否则留空
     // band：底部信息条（网站名 + 著作权=上传者用户名），与文字水印同一次渲染写入成品图
     let watermarkConfig: WatermarkConfig | undefined;
@@ -1324,6 +1350,9 @@ router.post(
     }
     const newId = String(currentMaxId + 1).padStart(6, '0');
 
+    // 等待航空器识别结果（此前已与图片处理并行发起，此处通常已完成，不额外增加等待）
+    const aircraftInfo = await aircraftInfoPromise;
+
     const newPhoto = {
       id: newId,
       title: title || '未命名照片',
@@ -1348,6 +1377,8 @@ router.post(
       shutter_speed: shutter_speed || '',
       aperture: aperture || '',
       registration_number: normalizedRegistration,
+      aircraft_type: aircraftInfo?.aircraftType || '',
+      airline: aircraftInfo?.airline || '',
       is_hot: normalizeIsHot(is_hot),
       likes: 0,
       views: 0,
@@ -1359,8 +1390,8 @@ router.post(
       `INSERT INTO photos
         (id, title, thumbnail_path, original_url, preview_url, watermarked_url, watermark_config, user_id,
          category, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude,
-         focal_length, iso, shutter_speed, aperture, registration_number, is_hot, likes, views, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline, is_hot, likes, views, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newPhoto.id,
       newPhoto.title,
       newPhoto.thumbnail_path,
@@ -1384,6 +1415,8 @@ router.post(
       newPhoto.shutter_speed,
       newPhoto.aperture,
       newPhoto.registration_number,
+      newPhoto.aircraft_type,
+      newPhoto.airline,
       newPhoto.is_hot,
       newPhoto.likes,
       newPhoto.views,

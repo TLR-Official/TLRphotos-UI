@@ -13,6 +13,10 @@ export interface PhotoListItem {
   height?: number;
   /** 飞机注册号（旧数据可能为 null） */
   registration_number?: string | null;
+  /** 自动识别的机型（V4.6.0，如 "Boeing 777-300ER"；未识别为空串或 null） */
+  aircraft_type?: string | null;
+  /** 自动识别的所属航司（V4.6.0，如 "Air China"；未识别为空串或 null） */
+  airline?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
   /** 浏览量（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */

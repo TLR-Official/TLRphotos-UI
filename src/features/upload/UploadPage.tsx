@@ -13,6 +13,7 @@ import type { TagCategory } from '../../api/tags';
 import { TagSelector } from '../../components/TagSelector';
 import type { SelectedTag } from '../../components/TagSelector';
 import { computeBandPreviewLayout } from '../../shared/watermarkBand';
+import { AircraftInfoCard } from '../../shared/AircraftInfoCard';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
@@ -514,6 +515,11 @@ export function UploadPage() {
                       请填写有效的飞机注册号（2-20 位字母/数字/连字符）
                     </p>
                   )}
+                  {/* 注册号合法后自动识别机型与航司（仅登录态查询） */}
+                  <AircraftInfoCard
+                    registration={registrationNumber}
+                    enabled={isAuthenticated && step !== 'uploading'}
+                  />
                 </div>
               )}
 

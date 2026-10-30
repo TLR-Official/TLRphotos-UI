@@ -527,6 +527,8 @@ export function PhotoDetailPage() {
                     <span className={`font-medium text-sm font-mono text-gray-900`}>{photo.registration_number}</span>
                   </div>
                 )}
+                {photo.aircraft_type && <DetailRow label="机型" value={photo.aircraft_type} />}
+                {photo.airline && <DetailRow label="所属航司" value={photo.airline} />}
                 <DetailRow label="拍摄工具" value={photo.vehicle} />
                 <DetailRow label="相机型号" value={photo.camera_model} />
                 <DetailRow label="拍摄地点" value={photo.location} />

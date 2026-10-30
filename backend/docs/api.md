@@ -5,7 +5,7 @@
 - **基础路径**: `/api`
 - **后端地址**: `http://localhost:3001`
 - **数据格式**: JSON
-- **文档版本**: V4.1.0-beta（2026-10-18，同步 V4.1 迭代：处罚三级分级（警告/功能封禁/账号封禁）与撤销 / 功能权限扩至七项 / 公开用户主页三端点 / 公告横幅 / 评论·论坛·下载执法点 / region 省份采集）
+- **文档版本**: V4.6.0-beta（2026-10-30，新增飞机注册号 → 机型/所属航司自动识别：`GET /api/aircraft/lookup` 查询接口，上传落库 `photos.aircraft_type` / `photos.airline` 并纳入列表与关键词检索）
 - **统一响应格式**:
   ```json
   {
@@ -16,6 +16,8 @@
   ```
 
 > **V4.4.0-beta 移动端适配备注**：移动端（视口 ≤768px）纯前端适配，零新增接口。列表类接口的 `page_size`/`pageSize` 默认值由前端按设备选择（移动端倾向更小分页），均走既有参数，不构成契约变更；`/m/*` 独立移动页复用本文档全部契约。
+>
+> **V4.6.0-beta 航空器识别说明**：航空分区上传时，服务端按注册号查询第三方航空器库，命中则把机型（`aircraft_type`，如 `Boeing 777-300ER`）与所属航司（`airline`，如 `Air China`）写入照片记录；未收录/上游超时/异常一律降级为空字符串，**绝不阻断上传**。存量照片通过回填脚本补齐，缺失时字段为 `""`，前端应按「未识别」展示。
 
 ---
 
@@ -115,6 +117,7 @@
 ```
 
 > V3.2.0 起列表项新增 `registration_number`（飞机注册号，存量数据可能为 `null`）与 `is_hot`（0/1）字段。
+> V4.6.0-beta 起列表项新增 `aircraft_type`（机型，如 `Boeing 777-300ER`）与 `airline`（所属航司，如 `Air China`），未识别时为 `""`；`keyword` 关键词同时匹配 `title` / `description` / `registration_number` / `aircraft_type` / `airline`。
 > V4.1.2-beta.3 起 `GET /api/photos` 与 `GET /api/photos/search` 共用标签筛选能力：`tag`（逗号分隔多标签 AND）、`tag_key` + `tag_value`（第三层属性）均生效。
 
 ### 获取所有标签
@@ -182,6 +185,9 @@
     "likes": 1256,
     "views": 8932,
     "is_liked": false,
+    "registration_number": "B-1234",
+    "aircraft_type": "Boeing 777-300ER",
+    "airline": "Air China",
     "created_at": "2024-05-15T18:30:00Z"
   }
 }
@@ -189,6 +195,7 @@
 
 **字段说明**:
 - `is_liked`: 当前登录用户是否已点赞；未登录或未点赞时返回 `false`，前端用于切换点赞按钮视觉状态
+- `registration_number` / `aircraft_type` / `airline`（V4.6.0-beta）：注册号及服务端自动识别的机型与所属航司；非航空分区或未识别时为 `null` / `""`，前端应做空态处理，不可视为错误
 - `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复计数只计 1 次）
 - `reviewer`（V4.1.2-beta.3）：仅 `status=rejected` 时非空，形如 `{ "name": "审核员用户名", "reviewed_at": "2026-10-23T12:00:00Z" }`；不暴露管理员内部 ID
 
@@ -417,6 +424,7 @@ Content-Type: multipart/form-data
 | image | file | 是 | 图片文件（JPG/PNG/WebP/HEIC，最大50MB） |
 | category | string | 是 | 照片分区（aviation/railway/automobile），未提供时返回 400 `请选择照片分区` |
 | registration_number | string | 条件必填 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）。**V4.1.2-beta.2 起仅 `category=aviation` 时必填**，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }`；其他分区选填，空值或非法格式不阻断，落库为 `null` |
+| aircraft_type / airline | — | 只读 | V4.6.0-beta：服务端按 `registration_number` 自动识别后写入，客户端**无需也不应提交**；识别失败时落库为 `""`，不影响上传 |
 | is_hot | string | 否 | 「愿意推荐为热门图片」意愿标记（V3.2.0）：`true`/`1` 视为勾选，其余为未勾选（0）；仅作审核参考，不公开展示 |
 | title | string | 否 | 照片标题，默认"未命名照片" |
 | tags | string/array | 是 | 第二层标签对象名（V4.1.2-beta.3 起强制必填）：数组或中英文逗号分隔字符串，至少一个；为空返回 400 `{ code: "TAG_OBJECT_REQUIRED" }` |
@@ -456,6 +464,51 @@ Content-Type: multipart/form-data
 - 标题、描述、标签、结构化标签会进行敏感词校验，包含敏感词时返回 400
 - 缺少 `category` 字段时返回 400 `{ success: false, message: "请选择照片分区" }`
 - **水印底部信息条（V4.5.0 起）**：提供 `watermarkText` 时，水印图在完成文字水印合成后，会在画面下方**额外扩展**一块等宽纯黑（RGB 0,0,0 / alpha 1）信息条，不覆盖、不裁切画面本体；条内居中两行白字，第一行为固定站名 `TLRphotos`，第二行为 `© {年份} {上传者用户名}`（用户名取自当前登录用户，缺失时回落 `TLRphotos 用户`）。信息条为水印图的一部分，下载水印图时随图一并获得。布局比例：条高 = 短边 × 11%（下限 48px，上限图高 40%），文字可用宽度 = 图宽 × 92%，两行字号 = 条高 × 30% / 26%（下限 10px，仍超宽则截断补 `…`），行中心位于条内 36% / 74%。接口入参无新增字段，无需客户端额外分步操作。
+
+---
+
+## 航空器信息查询 (Aircraft, V4.6.0)
+
+### 按注册号查询机型与所属航司
+
+**GET** `/api/aircraft/lookup`
+
+**需登录**：请求头必须包含 `Authorization: Bearer <token>`（上传流程本身已登录）。
+
+**查询参数**:
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| reg | string | 飞机注册号，必填；服务端去空格并转大写，2-20 位字母/数字/连字符 |
+
+**响应（命中）**:
+```json
+{
+  "success": true,
+  "data": {
+    "registration": "B-2088",
+    "aircraft_type": "Boeing 777-300ER",
+    "icao_type": "B77W",
+    "manufacturer": "Boeing",
+    "airline": "Air China",
+    "country": "China",
+    "source": "adsbdb"
+  }
+}
+```
+
+**错误响应**:
+| 状态码 | code | 说明 |
+|--------|------|------|
+| 400 | `INVALID_REGISTRATION` | 注册号缺失或格式非法 |
+| 401 | `AUTH_REQUIRED` | 未登录 / token 失效 |
+| 404 | `AIRCRAFT_NOT_FOUND` | 第三方库未收录该注册号，前端应允许用户继续手动填写 |
+| 429 | `RATE_LIMITED` | 超过 60 次/分（按 IP），带 `Retry-After` |
+
+**说明**:
+- 数据源为免费公开库 `adsbdb`（无需 Key）；服务层已抽象 provider 链，后续可接入付费源而不改接口契约。
+- 查询结果写入服务端缓存表 `aircraft_cache`（TTL 90 天），重复查询不再回源；缓存仅保留成功结果，失败下次可重试。
+- 上游超时（5 秒）或异常时按「未收录」处理，接口不返回 5xx（除本服务自身异常）。
+- 本接口只做查询回显，**不写入照片**；落库发生在上传接口（`POST /api/photos/upload` 与 `/upload/complete`），由服务端按 `registration_number` 自动写入 `aircraft_type` / `airline`。
 
 ---
 

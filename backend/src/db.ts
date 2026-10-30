@@ -529,6 +529,25 @@ const initSchema = async () => {
   try {
     await db.run('CREATE INDEX IF NOT EXISTS idx_photos_registration_number ON photos(registration_number)');
   } catch {}
+  // V4.6.0：航空器自动识别结果（机型标签/所属航司），上传时由服务端查询第三方库并落库，
+  // 供详情页展示与关键词检索；查询失败时保持 NULL，不影响上传
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN aircraft_type TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN airline TEXT');
+  } catch {}
+  // V4.6.0：注册号 → 机型/航司 的查询缓存，避免重复请求上游被限流（TTL 由服务层控制）
+  await db.run(`CREATE TABLE IF NOT EXISTS aircraft_cache (
+    registration TEXT PRIMARY KEY,
+    aircraft_type TEXT,
+    icao_type TEXT,
+    manufacturer TEXT,
+    airline TEXT,
+    country TEXT,
+    source TEXT,
+    fetched_at TEXT NOT NULL
+  )`);
   // V4.4.1：画廊/公开主页/管理端列表热点查询索引（纯读取优化，不改变任何查询结果）
   //  - status + created_at：画廊列表 WHERE status='approved' ORDER BY created_at DESC、
   //    管理端待审 ORDER BY created_at ASC 的覆盖式扫描
