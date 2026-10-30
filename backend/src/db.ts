@@ -563,6 +563,22 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN structured_tags TEXT');
   } catch {}
+  // V4.6.1：注册号仅由 photos.registration_number 承载，清理 structured_tags 中历史遗留的「注册号」键，
+  // 避免同一数据两处留存；必须在上面的建列迁移之后执行，幂等且无匹配行时零开销
+  const legacyRegTagRows = (await db.all(
+    `SELECT id, structured_tags FROM photos WHERE structured_tags LIKE '%"注册号"%'`
+  )) as Array<{ id: string; structured_tags: string }>;
+  for (const row of legacyRegTagRows) {
+    try {
+      const parsed = JSON.parse(row.structured_tags);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && '注册号' in parsed) {
+        delete parsed['注册号'];
+        await db.run('UPDATE photos SET structured_tags = ? WHERE id = ?', JSON.stringify(parsed), row.id);
+      }
+    } catch {
+      // 非 JSON 的历史脏数据保持原样，不阻断启动
+    }
+  }
 
   // ==========================================================================
   // V4.0.0 迭代：通知与审核纠错系统

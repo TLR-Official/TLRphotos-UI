@@ -32,7 +32,7 @@ interface TagObject {
   description: string;
 }
 
-/** 标签属性实体（归属于某对象，定义可填写字段，如"机型"、"注册号"） */
+/** 标签属性实体（归属于某对象，定义可填写字段，如"机型"、"机型类型"） */
 interface TagAttribute {
   id: string;
   object_id: string;
@@ -155,7 +155,6 @@ const seedTags = async () => {
   const aviationAttributes: TagAttribute[] = [
     { id: 'av_flight_model', object_id: 'av_flight', key: '机型', key_en: 'model', label: '机型', type: 'text' },
     { id: 'av_flight_type', object_id: 'av_flight', key: '机型类型', key_en: 'type', label: '机型类型', type: 'select', options: JSON.stringify(['窄体机', '宽体机', '支线客机', '货机', '公务机', '螺旋桨客机', '直升机', '通用航空']) },
-    { id: 'av_flight_reg', object_id: 'av_flight', key: '注册号', key_en: 'registration', label: '注册号', type: 'text' },
     { id: 'av_airport_name', object_id: 'av_airport', key: '机场名称', key_en: 'airport_name', label: '机场名称', type: 'text' },
     { id: 'av_airport_iata', object_id: 'av_airport', key: 'IATA代码', key_en: 'iata_code', label: 'IATA代码', type: 'text' },
     { id: 'av_airport_facility', object_id: 'av_airport', key: '设施类型', key_en: 'facility_type', label: '设施类型', type: 'select', options: JSON.stringify(['航站楼', '塔台', '跑道', '滑行道', '停机坪', '廊桥', '行李转盘']) },
@@ -197,7 +196,16 @@ const seedTags = async () => {
 };
 
 /**
- * 初始化标签数据库：打开连接 -> 启用 WAL 与外键 -> 建表 -> 写入种子数据
+ * 存量清理（V4.6.1）：移除「飞行器」下的「注册号」属性。
+ * 注册号已由上传页独立字段采集并落库 photos.registration_number，
+ * 标签属性里再存一份属于重复数据，故此处幂等删除（每次启动执行，无则跳过）。
+ */
+const cleanupDeprecatedAttributes = async () => {
+  await tagsDb.run("DELETE FROM tag_attributes WHERE id = 'av_flight_reg'");
+};
+
+/**
+ * 初始化标签数据库：打开连接 -> 启用 WAL 与外键 -> 建表 -> 写入种子数据 -> 存量属性清理
  * 应在应用启动时调用一次
  */
 export const initTagsDb = async () => {
@@ -212,4 +220,5 @@ export const initTagsDb = async () => {
 
   await initSchema();
   await seedTags();
+  await cleanupDeprecatedAttributes();
 };
