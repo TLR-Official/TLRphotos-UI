@@ -25,6 +25,9 @@ import { memoryManager } from '../services/memoryManager';
 import { requireAuth } from '../middleware/requireAuth';
 import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { createConcurrencyGate } from '../middleware/loadGuard';
+import { createUploadTimeout } from '../middleware/uploadTimeout';
+import { recordOutcome } from '../services/metricsService';
 import { createNotification } from '../services/notificationService';
 import { checkPenaltyCap } from '../services/penaltyService';
 
@@ -32,6 +35,31 @@ const router = express.Router();
 
 // V1.10.1：公开读取（搜索/列表/详情）按 IP 限速 120 次/分，抑制批量枚举
 const photoReadLimiter = createRateLimiter({ max: 120, message: '浏览过于频繁，请稍后再试' });
+
+// V4.9.0：上传入口保护（2 核 / 3.5GB 单机，sharp 处理为 CPU + 内存密集型）
+// - IP 限流：预签名/完成回调/直传三种入口按 IP 10 次/分；
+// - 用户限流：登录用户直传 5 次/分（认证后按 userId 计数）；
+// - 并发闸门：同时在途直传最多 2 个（UPLOAD_MAX_CONCURRENCY 可调），超限 503 不排队；
+// - 动态超时：按 Content-Length 体积放宽，避免大图被固定 120s 误杀。
+const uploadMetaLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 10,
+  message: '上传请求过于频繁，请稍后再试',
+});
+const uploadUserLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 5,
+  keyFn: (req) => `user:${req.authUser?.id ?? 'anonymous'}`,
+  message: '上传次数过多，请稍后再试',
+});
+const uploadGate = createConcurrencyGate({
+  max: Number(process.env.UPLOAD_MAX_CONCURRENCY) || 2,
+  code: 'UPLOAD_BUSY',
+  message: '图片处理繁忙，请稍后重试',
+  retryAfterSeconds: 10,
+  onReject: () => recordOutcome('upload', 503, 0),
+});
+const uploadTimeout = createUploadTimeout();
 
 // JWT 密钥：用于校验上传/删除接口的 Bearer Token
 const JWT_SECRET = process.env.JWT_SECRET || '';
@@ -961,7 +989,7 @@ function sendForbiddenImage(res: any) {
  * @body fileName 目标文件名
  * @returns uploadUrl 预签名上传 URL、key OSS 对象 Key
  */
-router.post('/upload/presigned', requireVerifiedEmail, async (req, res) => {
+router.post('/upload/presigned', uploadMetaLimiter, requireVerifiedEmail, async (req, res) => {
   try {
     // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
     const { user: authUser, error: authErr } = await loadAuthUser(req);
@@ -1014,7 +1042,10 @@ router.post('/upload/presigned', requireVerifiedEmail, async (req, res) => {
  * 前端直传 OSS 成功后调用，服务端确认上传结果并写入照片元数据。
  * 照片 ID 取当前最大数值 ID + 1，并补零至 6 位。
  */
-router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
+router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (req, res) => {
+  // V4.9.0：上传成功率/延迟埋点
+  const metricStart = Date.now();
+  res.once('finish', () => recordOutcome('upload', res.statusCode, Date.now() - metricStart));
   try {
     // V1.7.0：用 loadAuthUser 统一认证，查库检查封禁/禁用状态 + can_upload 权限
     const { user: authUser, error: authErr } = await loadAuthUser(req);
@@ -1214,6 +1245,10 @@ router.post('/upload/complete', requireVerifiedEmail, async (req, res) => {
  */
 router.post(
   '/upload',
+  // V4.9.0：按文件体积设置超时 → IP 限流 → 并发闸门，全部在 multer 解析大文件前拦截
+  uploadTimeout,
+  uploadMetaLimiter,
+  uploadGate,
   // V1.10.1：认证与上传权限必须在 multer 解析前完成，
   // 未认证请求直接 401，不再先进入文件解析/缓冲层
   requireAuth,
@@ -1232,9 +1267,14 @@ router.post(
     }
     next();
   },
+  // V4.9.0：登录用户上传频次限制（按 userId 计数），抑制单账号批量刷图
+  uploadUserLimiter,
   upload.single('image'),
   handleUploadError,
   async (req: express.Request, res: express.Response) => {
+  // V4.9.0：上传成功率/延迟埋点
+  const metricStart = Date.now();
+  res.once('finish', () => recordOutcome('upload', res.statusCode, Date.now() - metricStart));
   let processedImages: Awaited<ReturnType<typeof processImage>> | null = null;
   try {
     const file = req.file;

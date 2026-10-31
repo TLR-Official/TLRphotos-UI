@@ -44,8 +44,10 @@ import {
   detectExposedSuperPassword,
 } from './services/adminService';
 import { memoryManager } from './services/memoryManager';
+import { startMetricsMonitor } from './services/metricsService';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 import { corsWhitelist } from './middleware/corsWhitelist';
+import { degradedModeMiddleware } from './middleware/degradedMode';
 
 const app = express();
 // 信任 nginx 代理写入的 X-Forwarded-For（nginx 已覆写为不可伪造的 CF-Connecting-IP）
@@ -69,6 +71,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// V4.9.0：降级开关（DEGRADED_MODE=on 时拦截非核心模块的写请求，核心链路与读请求放行）
+app.use('/api', degradedModeMiddleware);
 
 // 业务路由挂载：每个路由对应一组 /api/* 接口（含 V1.8.0 人机验证路由）
 app.use('/api/auth', authRouter);
@@ -268,6 +273,8 @@ const startServer = async () => {
     scheduleArchiveJob();
     // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
     memoryManager.start();
+    // V4.9.0：启动核心链路的成功率/CPU/内存指标采样与多级告警
+    startMetricsMonitor();
     // 仅监听 127.0.0.1：外部访问统一经由 Nginx 反向代理（HTTPS），
     // 避免后端 API 直接暴露在公网，绕过管理后台的访问控制
     app.listen(PORT, '127.0.0.1', () => {

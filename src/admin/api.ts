@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload, CoreMetrics } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -579,6 +579,17 @@ export async function getStats(): Promise<{ success: boolean; data?: SystemStats
  */
 export async function getDashboardHealth(): Promise<{ success: boolean; data?: import('./types').DashboardHealth }> {
   const response = await fetch(`${API_BASE}/dashboard/health`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 核心链路实时指标（V4.9.0）：注册/上传成功率与延迟分位、CPU/RSS、告警与降级状态
+ * @returns ApiResponse<CoreMetrics>
+ */
+export async function getCoreMetrics(): Promise<{ success: boolean; data?: CoreMetrics; message?: string }> {
+  const response = await fetch(`${API_BASE}/metrics`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.json();

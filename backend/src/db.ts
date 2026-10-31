@@ -1319,6 +1319,12 @@ export const initDb = async () => {
 
   // WAL 模式：读写不互斥，提升并发性能；外键约束：保证级联删除生效
   await db.run('PRAGMA journal_mode = WAL');
+  // V4.9.0：峰值期并发写锁等待上限，避免瞬时注册/上传写入直接抛 SQLITE_BUSY
+  await db.run('PRAGMA busy_timeout = 5000');
+  // WAL 下 synchronous=NORMAL 兼顾吞吐与安全（仅极端断电可能丢失最后一个已提交事务）
+  await db.run('PRAGMA synchronous = NORMAL');
+  // 单连接页缓存 32MB（服务器内存 3.5GB，避免与图片处理争抢内存）
+  await db.run('PRAGMA cache_size = -32000');
   await db.run('PRAGMA foreign_keys = ON');
 
   await initSchema();

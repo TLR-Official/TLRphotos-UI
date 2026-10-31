@@ -218,6 +218,39 @@ export interface ForumThreadItem {
   last_reply_at: string | null;
 }
 
+/** V4.9.0：单通道指标（注册/上传） */
+export interface MetricChannelStats {
+  attempts: number;
+  success: number;
+  client_error: number;
+  failure: number;
+  /** 成功率（失败/(成功+失败)）；样本不足时为 null */
+  success_rate: number | null;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+}
+
+/** V4.9.0：核心链路实时指标（GET /api/admin/metrics） */
+export interface CoreMetrics {
+  window_ms: number;
+  sampled_at: string;
+  register: MetricChannelStats;
+  upload: MetricChannelStats;
+  resources: {
+    cpu_percent: number;
+    cpu_count: number;
+    load1: number;
+    rss_bytes: number;
+    rss_pct: number;
+    heap_used_bytes: number;
+    system_total_bytes: number;
+    system_free_bytes: number;
+  };
+  alerts: { key: string; level: 'warn' | 'critical'; message: string }[];
+  degraded_mode: boolean;
+}
+
 /** V4.7.0：邀请码（管理端 GET /api/admin/invites） */
 export interface InviteCode {
   id: string;

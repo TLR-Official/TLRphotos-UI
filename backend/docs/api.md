@@ -466,6 +466,11 @@ Content-Type: multipart/form-data
 - 新照片状态固定为 `pending`，需管理员审核后才会在前台展示
 - 标题、描述、标签、结构化标签会进行敏感词校验，包含敏感词时返回 400
 - 缺少 `category` 字段时返回 400 `{ success: false, message: "请选择照片分区" }`
+- **V4.9.0 峰值保护**：
+  - 限流：IP 10 次/分 + 登录用户 5 次/分（同一口径也作用于 `/upload/presigned` 与 `/upload/complete` 的 IP 限流）。
+  - 并发闸门：同时在途直传最多 2 个（`UPLOAD_MAX_CONCURRENCY` 可调），超限返回 `503 { code: "UPLOAD_BUSY" }`，响应带 `Retry-After`，客户端应退避重试；请求在 multer 解析大文件前即被拒绝。
+  - 动态超时：按 `Content-Length` 计算 `60s + 3s/MB`（下限 60s、上限 300s），超时返回 `408 { code: "UPLOAD_TIMEOUT" }`；nginx 对应 location 代理超时为 300s。
+  - 成功率/延迟指标：`register` 与 `upload` 两个通道的 5 分钟窗口数据见「核心链路指标（管理端）」。
 - **水印底部信息条（V4.5.0 起）**：提供 `watermarkText` 时，水印图在完成文字水印合成后，会在画面下方**额外扩展**一块等宽纯黑（RGB 0,0,0 / alpha 1）信息条，不覆盖、不裁切画面本体；条内居中两行白字，第一行为固定站名 `TLRphotos`，第二行为 `© {年份} {上传者用户名}`（用户名取自当前登录用户，缺失时回落 `TLRphotos 用户`）。信息条为水印图的一部分，下载水印图时随图一并获得。布局比例：条高 = 短边 × 11%（下限 48px，上限图高 40%），文字可用宽度 = 图宽 × 92%，两行字号 = 条高 × 30% / 26%（下限 10px，仍超宽则截断补 `…`），行中心位于条内 36% / 74%。接口入参无新增字段，无需客户端额外分步操作。
 
 ---
@@ -997,6 +1002,7 @@ Content-Type: multipart/form-data
 | 403/503 | HUMAN_VERIFICATION_REQUIRED | Turnstile 校验未通过或服务不可用 |
 | 409 | ALREADY_REGISTERED | 邮箱已被注册 |
 | 429 | RATE_LIMITED | 触发限速（10 次/分/IP） |
+| 503 | REGISTER_BUSY | V4.9.0：注册并发闸门已满（默认 4，`REGISTER_MAX_CONCURRENCY` 可调），响应带 `Retry-After`，客户端应退避重试 |
 | 500 | REGISTER_FAILED | 注册失败 |
 
 ### 用户登录 · 第一步：密码校验（V2.0.0 两段式 / V3.2.0 周期化）
@@ -2954,6 +2960,67 @@ episode（情节记忆）与 atomic_facts（原子事实），自动去重与矛
 **DELETE** `/api/admin/invites/:id`
 
 仅 `used_count=0` 的邀请码允许删除；已被使用的码返回 `409 { code: "INVITE_CODE_IN_USE", message: "该邀请码已被使用，无法删除，请改为停用" }`（保留审计链路，改用停用）。删除成功返回 `{ "success": true }`。
+
+---
+
+## 核心链路指标与降级（管理端，V4.9.0）
+
+### 获取实时指标
+
+**GET** `/api/admin/metrics`
+
+**鉴权**：管理员 JWT，仅 `super` / `zone_master` 可访问（其余 403）。
+
+**响应**（5 分钟滑动窗口，30s 采样一次）：
+```json
+{
+  "success": true,
+  "data": {
+    "window_ms": 300000,
+    "sampled_at": "2026-10-31T13:30:00.000Z",
+    "register": {
+      "attempts": 12, "success": 12, "client_error": 0, "failure": 0,
+      "success_rate": 1, "p50_ms": 95, "p95_ms": 180, "p99_ms": 210
+    },
+    "upload": {
+      "attempts": 5, "success": 5, "client_error": 0, "failure": 0,
+      "success_rate": 1, "p50_ms": 620, "p95_ms": 980, "p99_ms": 1200
+    },
+    "resources": {
+      "cpu_percent": 12.3, "cpu_count": 2, "load1": 0.4,
+      "rss_bytes": 107000000, "rss_pct": 3.1,
+      "heap_used_bytes": 45000000,
+      "system_total_bytes": 3660000000, "system_free_bytes": 780000000
+    },
+    "alerts": [],
+    "degraded_mode": false
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `attempts` | 窗口内进入处理的请求数（成功 + 4xx + 5xx/超时） |
+| `success` / `client_error` / `failure` | 2xx-3xx / 4xx / 5xx·408·闸门 503 |
+| `success_rate` | `success / (success + failure)`；样本不足 20 或零失败时为 `null`（避免小样本误报） |
+| `p50_ms` / `p95_ms` / `p99_ms` | 成功请求的延迟分位（毫秒） |
+| `resources` | 进程 CPU（相对全部核心）、1 分钟负载、RSS 占用率与系统内存 |
+| `alerts` | 当前触发的多级告警（`key` / `level=warn\|critical` / `message`） |
+| `degraded_mode` | 是否处于降级模式 |
+
+**告警阈值**：注册成功率 <99.9% warn / <99% critical（样本 ≥20）；上传成功率 <99.5% warn / <98% critical（样本 ≥20）；CPU ≥70% warn / ≥90% critical；RSS ≥75% warn / ≥90% critical。
+
+**告警推送**：配置 `ALERT_WEBHOOK_URL`（兼容飞书/企业微信 `{"text": "..."}`）后，每 30s 评估，同指标 10 分钟内去抖，恢复时推送 `[recovered]`；未配置时仅写服务日志。
+
+### 降级模式
+
+环境变量 `DEGRADED_MODE=on`（重启后生效）：非核心模块（`/comments`、`/forum`、`/everos`、`/news`、`/announcements`、`/my-appeals`、`/notifications`）的**写请求**返回：
+
+```json
+{ "success": false, "code": "DEGRADED_MODE", "message": "系统当前处于降级模式，该功能暂不可用，请稍后再试" }
+```
+
+核心链路（`/auth` 注册登录、`/photos` 列表·详情·上传·图片代理、`/admin`）与所有 GET 读请求不受影响。
 
 ---
 

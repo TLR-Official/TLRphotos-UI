@@ -10,8 +10,8 @@
  */
 import { useState, useEffect } from 'react';
 import { Image, Users, Clock, TrendingUp, AlertTriangle } from 'lucide-react';
-import { getStats, getPhotoStats, getDashboardHealth } from './api';
-import type { SystemStats, AuditStats } from './types';
+import { getStats, getPhotoStats, getDashboardHealth, getCoreMetrics } from './api';
+import type { SystemStats, AuditStats, CoreMetrics } from './types';
 
 export function DashboardPage() {
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -21,6 +21,8 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   // V1.5.0：健康检查告警（30s 轮询）
   const [healthIssues, setHealthIssues] = useState<string[]>([]);
+  // V4.9.0：核心链路实时指标（注册/上传成功率、CPU/内存，30s 轮询）
+  const [metrics, setMetrics] = useState<CoreMetrics | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -67,6 +69,36 @@ export function DashboardPage() {
     const id = setInterval(checkHealth, 30000); // 30s
     return () => clearInterval(id);
   }, []);
+
+  // V4.9.0：30s 轮询核心链路指标（失败静默，不打断主数据展示）
+  useEffect(() => {
+    const loadMetrics = async () => {
+      try {
+        const result = await getCoreMetrics();
+        if (result.success && result.data) setMetrics(result.data);
+      } catch {
+        // 指标接口失败时保留上一次数据
+      }
+    };
+    loadMetrics();
+    const id = setInterval(loadMetrics, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  /** 成功率着色：≥99.9 正常 / ≥99 警告 / 其余严重 */
+  const rateColor = (rate: number | null) => {
+    if (rate === null) return 'text-gray-400';
+    if (rate >= 0.999) return 'text-green-600';
+    if (rate >= 0.99) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+  /** 资源使用率着色：≤70/75 正常 / 以下阈值见代码 */
+  const usageColor = (percent: number, warn: number, critical: number) => {
+    if (percent >= critical) return 'text-red-600';
+    if (percent >= warn) return 'text-yellow-600';
+    return 'text-green-600';
+  };
+  const formatRate = (rate: number | null) => (rate === null ? '—' : `${(rate * 100).toFixed(2)}%`);
 
   // 顶部统计卡片配置：图标 / 标签 / 取值字段 / 主题色
   const cards = [
@@ -146,6 +178,61 @@ export function DashboardPage() {
           <div className="text-center p-4 bg-red-50 rounded-lg">
             <p className="text-2xl font-bold text-red-600">{photoStats?.rejected ?? 0}</p>
             <p className="text-sm text-gray-500">已拒绝</p>
+          </div>
+        </div>
+      </div>
+
+      {/* V4.9.0：核心链路实时指标（注册/上传成功率、CPU/内存，30s 刷新） */}
+      <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm mt-6">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">核心链路（近 5 分钟）</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              {metrics ? `采样于 ${new Date(metrics.sampled_at).toLocaleTimeString('zh-CN')}` : '等待指标采样…'}
+            </p>
+          </div>
+          {metrics?.degraded_mode && (
+            <span className="px-2 py-0.5 rounded border border-yellow-300 bg-yellow-50 text-xs font-medium text-yellow-700">
+              降级模式已开启
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-500">注册成功率</p>
+            <p className={`text-2xl font-bold mt-1 ${rateColor(metrics?.register.success_rate ?? null)}`}>
+              {formatRate(metrics?.register.success_rate ?? null)}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              样本 {metrics?.register.attempts ?? 0} · P95 {metrics?.register.p95_ms ?? '—'}ms
+            </p>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-500">图片上传成功率</p>
+            <p className={`text-2xl font-bold mt-1 ${rateColor(metrics?.upload.success_rate ?? null)}`}>
+              {formatRate(metrics?.upload.success_rate ?? null)}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              样本 {metrics?.upload.attempts ?? 0} · P95 {metrics?.upload.p95_ms ?? '—'}ms
+            </p>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-500">服务 CPU</p>
+            <p className={`text-2xl font-bold mt-1 ${usageColor(metrics?.resources.cpu_percent ?? 0, 70, 90)}`}>
+              {metrics ? `${metrics.resources.cpu_percent}%` : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              负载 {metrics?.resources.load1 ?? '—'} · {metrics?.resources.cpu_count ?? 0} 核
+            </p>
+          </div>
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-500">服务内存</p>
+            <p className={`text-2xl font-bold mt-1 ${usageColor(metrics?.resources.rss_pct ?? 0, 75, 90)}`}>
+              {metrics ? `${metrics.resources.rss_pct}%` : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              RSS {metrics ? `${(metrics.resources.rss_bytes / 1024 / 1024).toFixed(0)} MB` : '—'}
+            </p>
           </div>
         </div>
       </div>

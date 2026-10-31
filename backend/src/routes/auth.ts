@@ -48,9 +48,21 @@ import path from 'path';
 import fs from 'fs';
 import { getProxyUrl } from '../utils/url';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { createConcurrencyGate } from '../middleware/loadGuard';
+import { recordOutcome } from '../services/metricsService';
 
 // V1.10.1：认证口限速，按 IP 每窗口 10 次，抑制凭据爆破与类型探测
 const authLimiter = createRateLimiter({ max: 10, message: '尝试过于频繁，请稍后再试' });
+
+// V4.9.0：注册并发闸门。bcrypt 为 CPU 密集型，2 核服务器同时超过 4 个注册会显著拉长响应；
+// 超限直接 503 + Retry-After，避免请求排队堆积占内存。
+const registerGate = createConcurrencyGate({
+  max: Number(process.env.REGISTER_MAX_CONCURRENCY) || 4,
+  code: 'REGISTER_BUSY',
+  message: '注册请求过多，请稍后重试',
+  retryAfterSeconds: 10,
+  onReject: () => recordOutcome('register', 503, 0),
+});
 
 // 邮箱验证码发送口三层限速 —— 每邮箱 60s 1 次（冷却）、每邮箱每小时 5 次、每 IP 每小时 20 次
 // 三层独立限速器实例叠加，任一超限即 429；测试环境（NODE_ENV=test）限速器默认放行
@@ -350,7 +362,10 @@ router.post('/email/code/send', otpCooldownLimiter, otpTargetHourLimiter, otpIpH
  * 注册成功即邮箱已确权（email_verified=1），直接签发 JWT 并创建会话（remember=true），
  * 返回结构与登录一致。
  */
-router.post('/register', authLimiter, async (req, res) => {
+router.post('/register', authLimiter, registerGate, async (req, res) => {
+  // V4.9.0：注册成功率/延迟埋点（4xx 记为客户端错误，不计入成功率）
+  const metricStart = Date.now();
+  res.once('finish', () => recordOutcome('register', res.statusCode, Date.now() - metricStart));
   try {
     const { email, password, username, code, turnstile_token, tokens, invite_code } = req.body ?? {};
 

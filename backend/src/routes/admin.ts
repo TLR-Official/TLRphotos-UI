@@ -31,6 +31,7 @@ import { formatLocalDateTime } from '../utils/datetime';
 import { deleteUserSessions } from '../services/cookieService';
 import { createNotification } from '../services/notificationService';
 import { PENALTY_CAPS } from '../services/penaltyService';
+import { evaluateAlerts, takeMetricsSnapshot } from '../services/metricsService';
 import {
   verifyTurnstileToken,
   saveVerification,
@@ -2027,6 +2028,10 @@ router.get('/dashboard/health', adminAuthMiddleware, requireRole(['super', 'zone
   if (anonArtLikes > 0) issues.push(`anonymous 文章点赞: ${anonArtLikes}`);
   if (badStatus > 0) issues.push(`异常状态照片: ${badStatus}`);
   if (recentAlerts > 0) issues.push(`近 1h 告警: ${recentAlerts}`);
+  // V4.9.0：注册/上传成功率与 CPU/内存多级告警合入健康检查，管理端告警条直接展示
+  for (const alert of evaluateAlerts()) {
+    issues.push(`${alert.level === 'critical' ? '严重' : '警告'}：${alert.message}`);
+  }
   checks.forEach((r, i) => {
     if (r.status === 'rejected') issues.push(`检查项 ${i} 查询失败: ${r.reason instanceof Error ? r.reason.message : 'unknown'}`);
   });
@@ -2039,6 +2044,15 @@ router.get('/dashboard/health', adminAuthMiddleware, requireRole(['super', 'zone
       checked_at: new Date().toISOString(),
     },
   });
+});
+
+/**
+ * 核心链路实时指标（V4.9.0）。
+ * 返回注册/上传 5 分钟窗口的成功率与延迟分位、CPU/RSS、告警评估与降级状态。
+ * 仅 super / zone_master 可访问。
+ */
+router.get('/metrics', adminAuthMiddleware, requireRole(['super', 'zone_master']), async (_req, res) => {
+  res.json({ success: true, data: takeMetricsSnapshot() });
 });
 
 // ── 仪表盘健康监控定时任务（V1.5.0 新增） ─────────────────────────────────
