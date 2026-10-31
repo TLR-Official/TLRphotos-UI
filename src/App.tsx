@@ -6,7 +6,7 @@
  *   1. 嵌套 ThemeProvider / UserProvider / PhotosProvider，向全组件树注入全局上下文。
  *   2. 通过 React Router 配置各页面路由。
  *   3. 在 /admin 路径下隐藏 Header / Footer，避免与管理后台布局冲突。
- *   4. 首页组合 PhotoCarousel、ColumnList 与精选作品网格。
+ *   4. 首页组合 PhotoCarousel、RecentNewsCard（最近新闻）与精选作品网格。
  */
 
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -17,8 +17,8 @@ import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { GalleryPage } from './features/gallery/GalleryPage';
 import { RecommendPage } from './features/gallery/RecommendPage';
-import { ColumnList } from './features/column/ColumnList';
 import { ArticleDetailPage } from './features/column/ArticleDetailPage';
+import { RecentNewsCard } from './features/news/RecentNewsCard';
 import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { MyWorksPage } from './features/profile/MyWorksPage';
@@ -277,7 +277,7 @@ const CATEGORY_ENTRIES = [
 
 /**
  * 首页内容组件
- * @description 组合轮播图、专栏列表与精选作品网格；精选作品取照片列表第 6~9 张；
+ * @description 组合轮播图、最近新闻卡片与精选作品网格；精选作品取照片列表第 6~9 张；
  *  移动端额外提供下拉刷新与三大分区快捷入口。
  */
 function HomePageContent() {
@@ -307,7 +307,7 @@ function HomePageContent() {
 
           <div className="lg:col-span-4">
             <div className="h-full min-h-[500px]">
-              <ColumnList />
+              <RecentNewsCard />
             </div>
           </div>
         </div>

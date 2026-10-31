@@ -1,30 +1,21 @@
 /**
  * @file 文章 API
  * @description
- *  封装文章（Article）与专栏（Column）相关的后端接口。
+ *  封装文章（Article）相关的后端接口。
  *  核心功能：
- *   1. 文章列表 / 详情 / 内容获取。
- *   2. 专栏信息获取。
- *   3. 文章点赞 / 取消点赞 / 浏览数自增。
+ *   1. 文章详情 / 内容获取（新闻正文复用内容端点）。
+ *   2. 文章点赞 / 取消点赞 / 浏览数自增。
  *  评论自 V3.0.0 起迁移至通用评论模块（src/api/comments.ts）。
- *  Article / Column 类型从 features/column/types 复用，本文件仅做导出别名。
+ *  V4.8.0 起首页专栏入口改为「最近新闻」，文章列表与专栏信息接口不再由前端调用。
+ *  Article 类型从 features/column/types 复用，本文件仅做导出别名。
  */
 
 import { request } from './client';
 import type { ApiResponse } from './client';
-import type { Article as ArticleType, Column as ColumnType } from '../features/column/types';
+import type { Article as ArticleType } from '../features/column/types';
 
 // 复用 features 层类型，统一对外导出
 export type Article = ArticleType;
-export type Column = ColumnType;
-
-/**
- * 获取文章列表
- * @returns ApiResponse<Article[]>
- */
-export async function getArticles(): Promise<ApiResponse<Article[]>> {
-  return request<Article[]>('/articles');
-}
 
 /**
  * 根据 ID 获取文章详情
@@ -42,14 +33,6 @@ export async function getArticleById(id: string): Promise<ApiResponse<Article>> 
  */
 export async function getArticleContent(articleId: string): Promise<ApiResponse<string>> {
   return request<string>(`/articles/${articleId}/content`);
-}
-
-/**
- * 获取专栏信息
- * @returns ApiResponse<Column>
- */
-export async function getColumn(): Promise<ApiResponse<Column>> {
-  return request<Column>('/column');
 }
 
 /**

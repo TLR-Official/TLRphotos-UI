@@ -1228,110 +1228,19 @@ const seedMockData = async () => {
     await db.run("UPDATE photos SET status = 'approved' WHERE id IN ('000001','000002','000003','000004','000005','000006','000007','000008','000009','000010')");
   }
 
-  // 文章表为空时插入 5 篇演示文章
-  const articleCount = await db.get('SELECT COUNT(*) as count FROM articles');
-  if (articleCount.count === 0) {
-    const articles = [
-      {
-        id: 'article_001',
-        title: 'Markdown 和 LaTeX 测试文章',
-        excerpt: '本文包含了 Markdown 的所有主要语法和 LaTeX 的常用数学公式，用于验证渲染效果的完整性和正确性。',
-        content_path: '/articles/test-markdown-latex.md',
-        cover_image: 'https://picsum.photos/seed/article1/400/300',
-        author: 'TLR工作室',
-        published_at: '2024-07-01T10:00:00Z',
-        read_count: 1234,
-        like_count: 89,
-        comment_count: 23,
-        tags: JSON.stringify(['技术', 'Markdown', 'LaTeX']),
-      },
-      {
-        id: 'article_002',
-        title: '航拍摄影技巧入门',
-        excerpt: '从设备选择到拍摄技巧，全面介绍航拍摄影的基础知识，帮助你拍出专业级的航拍作品。',
-        content_path: '/articles/test-markdown-latex.md',
-        cover_image: 'https://picsum.photos/seed/article2/400/300',
-        author: 'TLR工作室',
-        published_at: '2024-06-25T14:30:00Z',
-        read_count: 2345,
-        like_count: 156,
-        comment_count: 45,
-        tags: JSON.stringify(['摄影', '航拍', '技巧']),
-      },
-      {
-        id: 'article_003',
-        title: '无人机飞行安全指南',
-        excerpt: '详细介绍无人机飞行的安全注意事项和法律法规，确保你的飞行既安全又合法。',
-        content_path: '/articles/test-markdown-latex.md',
-        cover_image: 'https://picsum.photos/seed/article3/400/300',
-        author: 'TLR工作室',
-        published_at: '2024-06-20T09:15:00Z',
-        read_count: 1876,
-        like_count: 123,
-        comment_count: 32,
-        tags: JSON.stringify(['安全', '无人机', '法规']),
-      },
-      {
-        id: 'article_004',
-        title: '后期修图技巧分享',
-        excerpt: '掌握航拍照片的后期处理技巧，让你的作品更加出色，展现独特的视觉效果。',
-        content_path: '/articles/test-markdown-latex.md',
-        cover_image: 'https://picsum.photos/seed/article4/400/300',
-        author: 'TLR工作室',
-        published_at: '2024-06-15T16:45:00Z',
-        read_count: 3456,
-        like_count: 234,
-        comment_count: 67,
-        tags: JSON.stringify(['后期', '修图', '技巧']),
-      },
-      {
-        id: 'article_005',
-        title: '优秀航拍作品赏析',
-        excerpt: '精选国内外优秀航拍作品，分析其构图、光线和色彩运用，提升你的审美水平。',
-        content_path: '/articles/test-markdown-latex.md',
-        cover_image: 'https://picsum.photos/seed/article5/400/300',
-        author: 'TLR工作室',
-        published_at: '2024-06-10T11:20:00Z',
-        read_count: 4567,
-        like_count: 345,
-        comment_count: 89,
-        tags: JSON.stringify(['赏析', '作品', '灵感']),
-      },
-    ];
-
-    for (const article of articles) {
-      await db.run(
-        'INSERT INTO articles (id, title, excerpt, content_path, cover_image, author, published_at, read_count, like_count, comment_count, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        article.id,
-        article.title,
-        article.excerpt,
-        article.content_path,
-        article.cover_image,
-        article.author,
-        article.published_at,
-        article.read_count,
-        article.like_count,
-        article.comment_count,
-        article.tags
-      );
-    }
-  }
+  // V4.8.0：不再插入演示文章（过往测试文章已删除，首页专栏入口改为「最近新闻」）
 
   // 评论表为空时插入演示评论（V3.0.0：通用三级结构），时间偏移模拟递减发布
   const commentCount = await db.get('SELECT COUNT(*) as count FROM comments');
   if (commentCount.count === 0) {
     const retainDays = Number(process.env.COMMENT_RETAIN_DAYS) || 10;
-    // 演示数据：文章 L1 评论 + 照片 000001 的三级嵌套线程（含 L3 互回平铺）
+    // 演示数据：照片 000001 的三级嵌套线程（含 L3 互回平铺）；V4.8.0 移除文章演示评论
     const seedComments: Array<{
       id: string; subject_type: string; subject_id: string; root_id: string;
       parent_id: string | null; depth: number; user_id: string | null; author: string;
       reply_to_user_id?: string; reply_to_user_name?: string;
       content: string; created_at: Date;
     }> = [
-      { id: 'comment_001', subject_type: 'article', subject_id: 'article_001', root_id: 'comment_001', parent_id: null, depth: 1, user_id: null, author: '摄影爱好者', content: '这篇文章太棒了！', created_at: new Date(Date.now() - 3600000) },
-      { id: 'comment_002', subject_type: 'article', subject_id: 'article_001', root_id: 'comment_002', parent_id: null, depth: 1, user_id: null, author: '技术达人', content: '公式渲染特别清晰！', created_at: new Date(Date.now() - 7200000) },
-      { id: 'comment_003', subject_type: 'article', subject_id: 'article_002', root_id: 'comment_003', parent_id: null, depth: 1, user_id: null, author: '新手玩家', content: '学到了很多技巧！', created_at: new Date(Date.now() - 1800000) },
-      { id: 'comment_004', subject_type: 'article', subject_id: 'article_002', root_id: 'comment_004', parent_id: null, depth: 1, user_id: null, author: '资深飞手', content: '补充一点，飞行前一定要检查电池！', created_at: new Date(Date.now() - 5400000) },
       // 照片三级嵌套演示：L1 → L2 → L3 → 对 L3 再回复（仍 depth=3，平铺）
       { id: 'pcomment_001', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: null, depth: 1, user_id: null, author: '路过的机长', content: '这张光影抓得太准了！', created_at: new Date(Date.now() - 900000) },
       { id: 'pcomment_002', subject_type: 'photo', subject_id: '000001', root_id: 'pcomment_001', parent_id: 'pcomment_001', depth: 2, user_id: null, author: '摄影博主', content: '同意，逆光还能压住高光不容易。', created_at: new Date(Date.now() - 800000) },
