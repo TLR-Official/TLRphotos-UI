@@ -38,6 +38,7 @@ import type { AdminPhotoDetail, AdminUser } from './types';
 import { CachedImage } from '../components/CachedImage';
 import { AuditToolkit } from './audit-tools';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 
 /**
  * 照片审核详情页组件
@@ -358,6 +359,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               <div>
                 <p className="font-medium text-gray-800">
                   {photo.uploader_name || '匿名用户'}
+                  <UserTitleBadge title={photo.uploader_title} />
                 </p>
                 <p className="text-xs text-gray-500">
                   {new Date(photo.created_at).toLocaleString('zh-CN')}

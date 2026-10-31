@@ -52,6 +52,8 @@ export interface AdminPhoto {
   user_id?: string;
   uploader_name?: string;
   uploader_avatar?: string;
+  /** V4.7.0：上传者称号（邀请码授予，未获称号为 null） */
+  uploader_title?: string | null;
   created_at: string;
   /** 飞机注册号（旧数据可能为 null） */
   registration_number?: string | null;
@@ -92,6 +94,8 @@ export interface AdminPhotoDetail {
   user_id?: string;
   uploader_name?: string;
   uploader_avatar?: string;
+  /** V4.7.0：上传者称号（邀请码授予，未获称号为 null） */
+  uploader_title?: string | null;
   likes: number;
   views: number;
   created_at: string;
@@ -128,6 +132,8 @@ export interface Appeal {
   photo_status?: string | null;
   /** 联表字段：申诉人用户名 */
   appellant_name?: string | null;
+  /** V4.7.0：申诉人称号（邀请码授予，未获称号为 null） */
+  appellant_title?: string | null;
   /** 联表字段：原审核员管理员 ID（照片 reviewed_by） */
   original_reviewer_id?: string | null;
   /** 联表字段：原审核员用户名 */
@@ -199,6 +205,8 @@ export interface ForumThreadItem {
   title: string;
   author_id: string;
   author_name: string;
+  /** V4.7.0：作者称号快照（未获称号为 null） */
+  author_title?: string | null;
   /** 1=置顶 */
   is_pinned: number;
   view_count: number;

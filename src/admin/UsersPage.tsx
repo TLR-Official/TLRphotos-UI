@@ -289,6 +289,7 @@ export function UsersPage() {
             <div className="px-6 py-4">
               <p className="text-sm text-gray-600 mb-4">
                 用户：<span className="font-medium text-gray-800">{permUser.username || permUser.email}</span>
+                <UserTitleBadge title={permUser.user_title} />
               </p>
               <div className="space-y-3">
                 {PERMISSION_FIELDS.map(({ key, label, desc }) => {

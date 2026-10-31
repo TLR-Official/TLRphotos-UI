@@ -10,6 +10,7 @@ import { getPendingPhotos, getAdminToken } from './api';
 import type { AdminPhoto } from './types';
 import { CachedImage } from '../components/CachedImage';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 
 /**
  * 照片审核列表页组件
@@ -117,7 +118,10 @@ export function PhotosPage() {
                 </div>
                 <div className="p-4">
                   <h3 className="text-gray-800 font-medium truncate">{photo.title}</h3>
-                  <p className="text-gray-500 text-sm mt-1">{photo.uploader_name || '匿名用户'}</p>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {photo.uploader_name || '匿名用户'}
+                    <UserTitleBadge title={photo.uploader_title} />
+                  </p>
                   {photo.registration_number && (
                     <p className="text-gray-600 text-xs mt-1 font-mono">注册号: {photo.registration_number}</p>
                   )}

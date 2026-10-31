@@ -19,6 +19,7 @@ import {
   submitAdminVerification,
 } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 import type { AdminUser, ForumBoard, ForumThreadItem } from './types';
 
 /** 三大基础板块（与后端 CANONICAL_FORUM_BOARDS 一致，用于「补齐基础板块」按钮） */
@@ -408,7 +409,9 @@ export function ForumPage({ currentAdmin }: { currentAdmin?: AdminUser | null })
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                      {t.author_name} · {boardNameMap.get(t.board_id) || t.board_id}
+                      {t.author_name}
+                      <UserTitleBadge title={t.author_title} />
+                      {' '}· {boardNameMap.get(t.board_id) || t.board_id}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
                       {t.reply_count} 回复 · {t.like_count} 点赞 · {t.view_count} 浏览 · 发布于 {formatTime(t.created_at)}

@@ -579,7 +579,7 @@ router.get('/photos/pending', adminAuthMiddleware, async (req, res) => {
   const offset = (page - 1) * pageSize;
 
   // LEFT JOIN users 携带上传者信息，便于审核时核对来源
-  let query = 'SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar FROM photos p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = "pending"';
+  let query = 'SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar, u.user_title as uploader_title FROM photos p LEFT JOIN users u ON p.user_id = u.id WHERE p.status = "pending"';
   const params: (string | number)[] = [];
 
   // 分区审核员与分区总审核仅可见本分区照片
@@ -715,7 +715,7 @@ router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
 
   // 查询完整照片记录 + 上传者信息
   const photo = await db.get(`
-    SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar
+    SELECT p.*, u.username as uploader_name, u.avatar_url as uploader_avatar, u.user_title as uploader_title
     FROM photos p
     LEFT JOIN users u ON p.user_id = u.id
     WHERE p.id = ?
@@ -1699,7 +1699,7 @@ router.get('/appeals', adminAuthMiddleware, async (req, res) => {
 
   const appeals = await db.all(
     `SELECT a.*, p.title AS photo_title, p.status AS photo_status, p.reviewed_by AS original_reviewer_id,
-            r.username AS reviewer_name, u.username AS appellant_name
+            r.username AS reviewer_name, u.username AS appellant_name, u.user_title AS appellant_title
      FROM appeals a
      LEFT JOIN photos p ON a.photo_id = p.id
      LEFT JOIN users u ON a.user_id = u.id

@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Gavel } from 'lucide-react';
 import { getAppeals, decideAppeal, getAdminWarnings } from './api';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 import type { Appeal, AppealStatus, AdminWarning } from './types';
 import { formatDateTime } from '../shared/utils';
 
@@ -228,6 +229,7 @@ export function AppealsPage() {
                   </span>
                   <span className="text-sm text-gray-800">
                     申诉人：<span className="font-medium">{appeal.appellant_name || '未知用户'}</span>
+                    <UserTitleBadge title={appeal.appellant_title} />
                   </span>
                   <span className="text-sm text-gray-500">
                     作品：

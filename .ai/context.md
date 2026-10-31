@@ -188,6 +188,8 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-10-31 21:00 | [release] 版本号升级至 V4.7.2-beta — 管理端称号展示补全 | 全项目 |
+| 2026-10-31 21:00 | [fix] 管理端用户名补齐称号标签 (V4.7.2-beta) — 此前仅覆盖管理端用户列表与封禁页，照片审核详情「上传者信息」、待审列表上传者、权限弹窗所属用户、处罚确认摘要、论坛治理帖子作者、申诉裁决申诉人仍无称号：`backend/src/routes/admin.ts` 为 `/api/admin/photos/pending`、`/api/admin/photos/:id` 联表新增 `uploader_title`，`/api/admin/appeals` 联表新增 `appellant_title`；`src/admin/types.ts` 同步字段；`PhotoDetailPage`、`PhotosPage`、`UsersPage`、`BansPage`、`ForumPage`、`AppealsPage` 接入 `UserTitleBadge`（管理端管理员姓名与新闻作者按既定决策不加称号）；`backend/docs/api.md` 补字段说明；后端 tsc 0 error、29 套件 486 用例全绿，前端 oxlint 0 error、build index-DGX88qLV.js，服务已重启健康 200 | backend/src/routes/admin.ts、backend/docs/api.md、src/admin/types.ts、src/admin/PhotoDetailPage.tsx、src/admin/PhotosPage.tsx、src/admin/UsersPage.tsx、src/admin/BansPage.tsx、src/admin/ForumPage.tsx、src/admin/AppealsPage.tsx、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-31 20:52 | [release] 版本号升级至 V4.7.1-beta — 称号标签字号放大 | 全项目 |
 | 2026-10-31 20:52 | [fix] 称号标签字号放大 (V4.7.1-beta) — `src/shared/UserTitleBadge.tsx` 字号由 `text-[10px]` 调整为 `text-xs`（12px），左右内边距 `px-1.5` → `px-2`、与用户名间距 `ml-1` → `ml-1.5`，边框与配色（blue-200/blue-50/blue-700）保持不变；组件为全站唯一称号渲染入口，Header、照片详情上传者、公开主页（新旧两版）、个人中心（两处）、评论作者与被回复者、论坛列表与帖子详情、管理端用户与封禁页同步生效；零接口与后端变更，前端 build index-nPrlGgQf.js | src/shared/UserTitleBadge.tsx、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-10-31 20:39 | [release] 版本号升级至 V4.7.0-beta — 邀请码与用户称号关联机制 | 全项目 |

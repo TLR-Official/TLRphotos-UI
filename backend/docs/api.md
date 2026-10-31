@@ -2169,6 +2169,7 @@ Authorization: Bearer <admin_token>
 
 - 排序：`created_at ASC`（上传时间正序，最早待审优先）
 - 响应新增 `next_photo_id`：当前分区队首待审照片 ID（无待审为 `null`），前端据此标注「下一张」**软约束提示**，不阻断审核员选择其他照片
+- V4.7.0：列表项联表返回 `uploader_name` / `uploader_avatar` / `uploader_title`（上传者称号，未获称号为 `null`）；管理端照片详情 `GET /api/admin/photos/:id` 同样返回 `uploader_title`，前端在用户名后渲染统一小标签
 
 **响应**:
 ```json
@@ -2467,6 +2468,7 @@ Authorization: Bearer <admin_token>
 
 **鉴权**：管理员 JWT。联照片标题/状态与申诉人用户名；`pending` 优先置顶，其余按创建时间倒序。
 V4.1.2-beta.3 起联表返回原审核员：`original_reviewer_id`（照片 `reviewed_by`）与 `reviewer_name`（审核员用户名），以及裁决后的 `reviewer_fault` / `reviewer_admin_id`。
+V4.7.0 起联表返回申诉人称号 `appellant_title`（未获称号为 `null`）。
 
 **查询参数**:
 | 参数 | 类型 | 说明 |
@@ -2492,7 +2494,8 @@ V4.1.2-beta.3 起联表返回原审核员：`original_reviewer_id`（照片 `rev
       "created_at": "2026-10-17T08:00:00.000Z",
       "photo_title": "城市天际线",
       "photo_status": "rejected",
-      "appellant_name": "飞友甲"
+      "appellant_name": "飞友甲",
+      "appellant_title": "航空摄影师"
     }
   ],
   "pagination": { "page": 1, "pageSize": 20, "total": 1 }

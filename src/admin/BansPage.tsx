@@ -545,7 +545,7 @@ export function BansPage({ currentAdmin }: { currentAdmin?: AdminUser | null }) 
               </button>
             </div>
             <div className="px-6 py-4 space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">用户</span><span className="font-medium text-gray-800">{selected.username || selected.email || selected.id}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">用户</span><span className="font-medium text-gray-800">{selected.username || selected.email || selected.id}<UserTitleBadge title={selected.user_title} /></span></div>
               <div className="flex justify-between items-center"><span className="text-gray-500">处罚等级</span><span className={`px-2 py-0.5 rounded text-xs font-medium border ${LEVEL_META[level].badge}`}>{level} 级 · {LEVEL_META[level].label}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">内容</span><span className="font-medium text-gray-800 text-right">{confirmSummary}</span></div>
               <div>
