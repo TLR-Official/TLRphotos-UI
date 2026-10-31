@@ -10,6 +10,7 @@ import type { PublicUser } from '../../api/photos';
 import type { PhotoListItem } from '../gallery/types';
 import { formatDate } from '../../shared/utils';
 import { CachedImage } from '../../components/CachedImage';
+import { UserTitleBadge } from '../../shared/UserTitleBadge';
 
 /**
  * 用户公开主页组件
@@ -120,7 +121,10 @@ export function UserProfilePage() {
                 )}
               </div>
               <div className="flex-1 text-center md:text-left">
-                <h1 className={`text-3xl font-bold mb-2 text-gray-900`}>{user.username}</h1>
+                <h1 className={`text-3xl font-bold mb-2 text-gray-900`}>
+                  {user.username}
+                  <UserTitleBadge title={user.title} />
+                </h1>
                 {user.bio && (
                   <p className={`mb-4 text-gray-600`}>{user.bio}</p>
                 )}

@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -764,6 +764,73 @@ export async function toggleAnnouncement(id: string): Promise<{ success: boolean
  */
 export async function deleteAnnouncement(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
   const response = await fetch(`${API_BASE}/announcements/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 邀请码管理（V4.7.0）：仅 super 角色可访问（后端 requireRole 门禁）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 邀请码分页列表
+ * @param page 页码（默认 1）
+ * @param pageSize 每页数量（默认 20，上限 100）
+ * @param keyword 搜索关键字（匹配 code / title / airline）
+ */
+export async function getInviteCodes(
+  page = 1,
+  pageSize = 20,
+  keyword = ''
+): Promise<{ success: boolean; data?: { items: InviteCode[]; total: number; page: number; page_size: number }; message?: string }> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (keyword) params.set('keyword', keyword);
+  const response = await fetch(`${API_BASE}/invites?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 创建邀请码（code 留空由服务端自动生成）
+ * @param data 称号（必填）/ 航司 / 可用次数 / 到期时间 / 备注
+ */
+export async function createInviteCode(
+  data: InviteCodePayload
+): Promise<{ success: boolean; data?: InviteCode; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/**
+ * 更新邀请码（仅传入字段生效；max_uses 不得低于已用次数）
+ * @param id 邀请码 id
+ * @param data 待更新字段
+ */
+export async function updateInviteCode(
+  id: string,
+  data: InviteCodePayload
+): Promise<{ success: boolean; data?: InviteCode; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/invites/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/**
+ * 删除邀请码（仅未被使用的码；已使用返回 409 INVITE_CODE_IN_USE）
+ * @param id 邀请码 id
+ */
+export async function deleteInviteCode(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/invites/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

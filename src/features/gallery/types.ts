@@ -30,6 +30,8 @@ export interface Uploader {
   id: string;
   username: string;
   avatar_url?: string | null;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  title?: string | null;
 }
 
 /** 照片详情（在列表项基础上扩展原图/预览/水印/拍摄参数/统计等完整字段） */

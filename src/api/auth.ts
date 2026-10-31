@@ -33,6 +33,8 @@ export interface User {
   location: string | null;
   custom_fields: Record<string, CustomField> | null;
   created_at?: string;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  title?: string | null;
 }
 
 /** 登录成功返回的业务数据 */
@@ -361,14 +363,29 @@ export async function loginWithManager(email: string, password: string): Promise
  * @param username - 用户名（可选）
  * @param code - 6 位数字验证码（scene=register）
  * @param turnstileToken - Turnstile 人机验证令牌（action=register）
+ * @param inviteCode - 邀请码（选填，有效时授予专属称号）
  * @returns ApiResponse<RegisterData>
  */
-export async function register(email: string, password: string, username: string | undefined, code: string, turnstileToken?: string): Promise<ApiResponse<RegisterData>> {
+export async function register(
+  email: string,
+  password: string,
+  username: string | undefined,
+  code: string,
+  turnstileToken?: string,
+  inviteCode?: string,
+): Promise<ApiResponse<RegisterData>> {
   const key = `register:${email}`;
   return deduplicatedRequest(key, () =>
     request<RegisterData>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, username, code, ...(turnstileToken ? { turnstile_token: turnstileToken } : {}) }),
+      body: JSON.stringify({
+        email,
+        password,
+        username,
+        code,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+        ...(inviteCode ? { invite_code: inviteCode } : {}),
+      }),
     })
   );
 }

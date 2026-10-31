@@ -210,6 +210,39 @@ export interface ForumThreadItem {
   last_reply_at: string | null;
 }
 
+/** V4.7.0：邀请码（管理端 GET /api/admin/invites） */
+export interface InviteCode {
+  id: string;
+  /** 邀请码（大写） */
+  code: string;
+  /** 注册成功后授予的称号文案 */
+  title: string;
+  /** 关联航司（可选） */
+  airline: string | null;
+  /** 可用次数上限 */
+  max_uses: number;
+  /** 已使用次数 */
+  used_count: number;
+  /** 1=启用 / 0=停用 */
+  is_active: number;
+  expires_at: string | null;
+  remark: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 邀请码创建/更新入参 */
+export interface InviteCodePayload {
+  code?: string;
+  title?: string;
+  airline?: string;
+  max_uses?: number;
+  expires_at?: string | null;
+  remark?: string;
+  is_active?: boolean;
+}
+
 /** V4.1.0：站点公告条目（管理端 GET /announcements 全量含已下线） */
 export interface Announcement {
   id: string;
@@ -299,4 +332,6 @@ export interface User {
   can_forum_post?: number;
   /** 封禁管理权限项（仅存储与展示，无普通用户执法点） */
   can_ban_manage?: number;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  user_title?: string | null;
 }

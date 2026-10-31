@@ -31,6 +31,8 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  // V4.7.0：邀请码（注册选填，有效时授予专属称号）
+  const [inviteCode, setInviteCode] = useState('');
   // remember：登录模式下是否保存登录状态（30 天）
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
@@ -388,7 +390,14 @@ export function AuthPage() {
     }
     setIsLoading(true);
     try {
-      await register(email.trim(), password, username.trim() || undefined, regCode, regToken || undefined);
+      await register(
+        email.trim(),
+        password,
+        username.trim() || undefined,
+        regCode,
+        regToken || undefined,
+        inviteCode.trim() || undefined,
+      );
       // 注册成功即登录
       navigate('/');
     } catch (err) {
@@ -673,6 +682,26 @@ export function AuthPage() {
                     className={inputClass}
                   />
                 </div>
+
+                {/* V4.7.0：邀请码（注册选填，有效时授予专属称号） */}
+                {!isLogin && (
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                      maxLength={64}
+                      autoComplete="off"
+                      placeholder="邀请码（选填，可用于获得专属称号）"
+                      className={inputClass}
+                    />
+                  </div>
+                )}
 
                 {/* 注册验证码 + 发送按钮 */}
                 {!isLogin && (

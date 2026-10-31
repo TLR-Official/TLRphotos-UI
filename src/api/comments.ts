@@ -28,8 +28,12 @@ export interface CommentDTO {
   depth: number;
   user_id: string | null;
   author: string;
+  /** V4.7.0：作者称号快照（未获称号为 null） */
+  author_title?: string | null;
   reply_to_user_id: string | null;
   reply_to_user_name: string | null;
+  /** V4.7.0：被回复者称号快照（L3 互回展示） */
+  reply_to_user_title?: string | null;
   content: string;
   like_count: number;
   created_at: string;

@@ -198,6 +198,7 @@
 - `registration_number` / `aircraft_type` / `airline`（V4.6.0-beta）：注册号及服务端自动识别的机型与所属航司；非航空分区或未识别时为 `null` / `""`，前端应做空态处理，不可视为错误
 - `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复计数只计 1 次）
 - `reviewer`（V4.1.2-beta.3）：仅 `status=rejected` 时非空，形如 `{ "name": "审核员用户名", "reviewed_at": "2026-10-23T12:00:00Z" }`；不暴露管理员内部 ID
+- `uploader.title`（V4.7.0）：上传者称号（邀请码授予），未获称号为 `null`；前端在用户名后渲染统一小标签
 
 ### 获取已确认热门照片（V4.1.2-beta.3）
 
@@ -696,8 +697,10 @@ Content-Type: multipart/form-data
         "depth": 1,
         "user_id": "u1",
         "author": "alice",
+        "author_title": "航空摄影师",
         "reply_to_user_id": null,
         "reply_to_user_name": null,
+        "reply_to_user_title": null,
         "content": "拍得真好",
         "like_count": 5,
         "created_at": "2026-10-01T10:00:00Z",
@@ -745,6 +748,8 @@ Content-Type: multipart/form-data
 ```
 
 说明：每个 L1 仅内联首批回复（按楼总回复数取至上限），超出时 `has_more_replies=true`，前端用单楼回复端点续载。已回迁（`rehydrated_at != null`）的索引对应线程已在 `items` 活跃列表，客户端不再展示归档提示。
+
+> V4.7.0：评论行的 `author_title` / `reply_to_user_title` 为写入时固化的称号快照（无称号为 `null`），归档评论（OSS JSON）同样保留，前端在作者名/被回复者名后渲染统一小标签。
 
 ### 发表主评论 / 回复
 
@@ -941,7 +946,8 @@ Content-Type: multipart/form-data
   "password": "password123",
   "username": "用户名",
   "code": "123456",
-  "turnstile_token": "0.zzAAA..."
+  "turnstile_token": "0.zzAAA...",
+  "invite_code": "AIRCRAFT2026"
 }
 ```
 
@@ -953,8 +959,9 @@ Content-Type: multipart/form-data
 | username | string | 否 | 用户名（≤50 字符） |
 | code | string | 是 | 6 位数字验证码（scene=register），须先调用 `/api/auth/email/code/send` 获取 |
 | turnstile_token | string | 是 | Turnstile 挑战令牌（action=register），fail-closed |
+| invite_code | string | 否 | 邀请码（V4.7.0，选填，4-64 位字母/数字/下划线/连字符，大小写不敏感）。填写时须存在、启用、未过期且次数未用尽，否则返回 400 `INVALID_INVITE_CODE`；校验通过后在用户核心数据写入 `invite_code_id` / `user_title` / `title_granted_at` 并消耗一次可用次数 |
 
-**账号写入规则**：验码通过后建号，`email=邮箱`、`email_verified=1`（注册即确权）。
+**账号写入规则**：验码通过后建号，`email=邮箱`、`email_verified=1`（注册即确权）。邀请码的校验与消费与建号在同一 `BEGIN IMMEDIATE` 事务内完成，失败整体回滚，不产生半成品用户。
 
 **响应**（201，注册成功视同完成登录，直接签发双令牌）:
 ```json
@@ -966,7 +973,9 @@ Content-Type: multipart/form-data
       "email": "user@example.com",
       "username": "用户名",
       "avatar_url": null,
-      "email_verified": 1
+      "email_verified": 1,
+      "title": "航空摄影师",
+      "invite_code_id": "inv_1760000000000_1234"
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "session_token": "abc123def456..."
@@ -974,10 +983,13 @@ Content-Type: multipart/form-data
 }
 ```
 
+> `title` 为邀请码授予的专属称号，未使用邀请码或邀请码无效（此时注册被拒绝）时为 `null`；`invite_code_id` 同理。
+
 **错误码**:
 | HTTP | code | 说明 |
 |------|------|------|
 | 400 | INVALID_PARAMS | 参数格式错误 / 邮箱格式不正确 |
+| 400 | INVALID_INVITE_CODE | 邀请码不存在 / 已停用 / 已过期 / 次数用尽 / 注册事务内被并发抢用（V4.7.0） |
 | 400 | OTP_REQUIRED | 验证码缺失或非 6 位数字 |
 | 400 | OTP_EXPIRED | 验证码不存在 / 已使用 / 已过期（提示重新获取） |
 | 400 | OTP_MISMATCH | 验证码错误 |
@@ -1228,10 +1240,13 @@ Authorization: Bearer <token>
     "website": "https://example.com",
     "location": "北京市",
     "custom_fields": {},
+    "title": "航空摄影师",
     "created_at": "2024-07-01T10:00:00Z"
   }
 }
 ```
+
+> `title`（V4.7.0）：邀请码授予的专属称号，未获称号为 `null`。同一字段也随登录、注册、令牌刷新、更新资料等响应的用户对象返回。
 
 ### 更新用户资料
 
@@ -1377,6 +1392,7 @@ V4.1.2-beta.3 起联表返回 `reviewer_name`（原审核员用户名，仅 `sta
     "id": "user_1234567890123",
     "username": "飞友甲",
     "avatar_url": null,
+    "title": "航空摄影师",
     "region": "广东",
     "joined_days": 64,
     "is_self": false,
@@ -1390,6 +1406,7 @@ V4.1.2-beta.3 起联表返回 `reviewer_name`（原审核员用户名，仅 `sta
 ```
 
 **字段说明**：
+- `title`（V4.7.0）：邀请码授予的专属称号，未获称号为 `null`
 - `region`：归属省份（登录/注册成功时经 ip2region 离线解析写入 `users.region`，只存省份、不存明文 IP；解析失败静默跳过不影响登录），无数据时兜底「未知」
 - `joined_days`：加入天数（注册至今取整，最小 0）
 - `public_penalties`：当前活跃处罚公开信息（已撤销/已过期自动过滤），仅映射 `level`/`reason`/`expires_at`/`created_at` 四字段，不含 capabilities 与撤销留痕等内部字段
@@ -2825,6 +2842,115 @@ episode（情节记忆）与 atomic_facts（原子事实），自动去重与矛
 `unprocessed_messages`：当前会话尚未完成异步抽取的最新原始消息（避免刚说完就检索出现空档）。
 
 **典型用法**：Agent 在生成回复前先 `search`，把 `episodes[].episode` 与 `atomic_facts` 作为上下文拼入 prompt；对话轮次通过 `memory` 写入。
+
+---
+
+## 邀请码管理（管理端，V4.7.0）
+
+挂载于 `/api/admin/invites`，**仅 `super` 角色可访问**（`adminAuthMiddleware` + `requireRole(['super'])`，其余角色 403 `权限不足`）。所有写操作记入管理员操作日志（`create_invite_code` / `update_invite_code` / `delete_invite_code`）。
+
+邀请码用于注册时发放用户称号：码本身与称号一一绑定，有效码被注册消费后，用户 `users.invite_code_id` / `user_title` / `title_granted_at` 即固化，未使用邀请码注册的用户无称号。
+
+### 邀请码对象字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | 邀请码内部 ID |
+| code | string | 邀请码（统一大写，注册时大小写不敏感） |
+| title | string | 对应称号（1-20 字符，注册后作为用户称号展示） |
+| airline | string \| null | 关联航司（≤20 字符，可选） |
+| max_uses | number | 可用次数上限（默认 1，范围 1-10000） |
+| used_count | number | 已使用次数 |
+| is_active | number | 1=启用 / 0=停用 |
+| expires_at | string \| null | 到期时间（ISO 字符串，空=永久） |
+| remark | string \| null | 备注（≤200 字符） |
+| created_by | string \| null | 创建管理员 ID |
+| created_at / updated_at | string | 时间戳 |
+
+### 获取邀请码列表
+
+**GET** `/api/admin/invites?page=1&page_size=20&keyword=xxx`
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| page | 否 | 默认 1 |
+| page_size | 否 | 默认 20，上限 100 |
+| keyword | 否 | 模糊匹配 code / title / airline |
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "inv_1760000000000_1234",
+        "code": "AIRCRAFT2026",
+        "title": "航空摄影师",
+        "airline": "中国东方航空",
+        "max_uses": 1,
+        "used_count": 1,
+        "is_active": 1,
+        "expires_at": null,
+        "remark": "首批内测发放",
+        "created_by": "admin_1",
+        "created_at": "2026-10-31T02:00:00.000Z",
+        "updated_at": "2026-10-31T02:30:00.000Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+### 创建邀请码
+
+**POST** `/api/admin/invites`
+
+**请求体**:
+```json
+{
+  "code": "AIRCRAFT2026",
+  "title": "航空摄影师",
+  "airline": "中国东方航空",
+  "max_uses": 1,
+  "expires_at": "2026-12-31T15:59:59.000Z",
+  "remark": "首批内测发放"
+}
+```
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| code | 否 | 4-64 位字母/数字/下划线/连字符；留空自动生成 10 位大写码（排除易混字符 I/O/0/1） |
+| title | 是 | 对应称号，1-20 字符 |
+| airline | 否 | ≤20 字符 |
+| max_uses | 否 | 1-10000 整数，默认 1（一码一人） |
+| expires_at | 否 | ISO 时间字符串，缺省/空=永久 |
+| remark | 否 | ≤200 字符 |
+
+**响应**：`201`，`data` 为创建的邀请码对象。
+
+**错误码**：`400 INVALID_PARAMS`（字段校验失败，message 指出具体原因）/ `400 INVITE_CODE_DUPLICATE`（code 已存在）。
+
+### 更新邀请码
+
+**PUT** `/api/admin/invites/:id`
+
+请求体为创建参数的子集（`title` / `airline` / `max_uses` / `expires_at` / `remark` / `is_active`），仅传入字段生效，`code` 不可修改。
+
+- `max_uses` 不得小于 `used_count`，否则 400；
+- `expires_at` 传 `null` 或空串表示清除到期时间；
+- `is_active` 传 `true/false` 控制启停。
+
+**响应**：`200`，`data` 为更新后的邀请码对象。**错误**：`404` 邀请码不存在（`message: 邀请码不存在`）。
+
+### 删除邀请码
+
+**DELETE** `/api/admin/invites/:id`
+
+仅 `used_count=0` 的邀请码允许删除；已被使用的码返回 `409 { code: "INVITE_CODE_IN_USE", message: "该邀请码已被使用，无法删除，请改为停用" }`（保留审计链路，改用停用）。删除成功返回 `{ "success": true }`。
 
 ---
 

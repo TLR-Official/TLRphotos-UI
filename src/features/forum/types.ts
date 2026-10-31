@@ -16,6 +16,8 @@ export interface Thread {
   content_md: string;
   author_id: string;
   author_name: string;
+  /** V4.7.0：作者称号快照（未获称号为 null） */
+  author_title?: string | null;
   status: string;
   is_pinned: number;
   view_count: number;
@@ -34,6 +36,8 @@ export interface ThreadListItem {
   title: string;
   author_id: string;
   author_name: string;
+  /** V4.7.0：作者称号快照（未获称号为 null） */
+  author_title?: string | null;
   is_pinned: number;
   view_count: number;
   like_count: number;

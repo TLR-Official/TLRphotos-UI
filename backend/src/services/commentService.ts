@@ -40,8 +40,12 @@ export interface CommentRow {
   depth: number;
   user_id: string | null;
   author: string;
+  /** V4.7.0：写入时固化的作者称号快照（无称号为 NULL） */
+  author_title: string | null;
   reply_to_user_id: string | null;
   reply_to_user_name: string | null;
+  /** V4.7.0：被回复者称号快照（L3 互回展示） */
+  reply_to_user_title: string | null;
   content: string;
   like_count: number;
   created_at: string;
@@ -73,6 +77,8 @@ export interface CommentActor {
   userId: string;
   /** 展示名（username），写入 author 文本 */
   author: string;
+  /** V4.7.0：作者称号，写入 author_title 快照（无称号为 null） */
+  authorTitle?: string | null;
 }
 
 /** 删除操作人：管理员标识决定越权删除能力 */
@@ -175,6 +181,7 @@ export async function createComment(
   let depth: number;
   let replyToUserId: string | null = null;
   let replyToUserName: string | null = null;
+  let replyToUserTitle: string | null = null;
 
   if (!params.parentId) {
     // L1：root 为自身
@@ -219,6 +226,8 @@ export async function createComment(
     if (depth === 3) {
       replyToUserId = parent.user_id;
       replyToUserName = parent.author;
+      // V4.7.0：快照被回复者称号（父评论已固化，归档回迁后同样可用）
+      replyToUserTitle = parent.author_title ?? null;
     }
   }
 
@@ -229,8 +238,9 @@ export async function createComment(
     await database.run(
       `INSERT INTO comments
          (id, subject_type, subject_id, root_id, parent_id, depth, user_id, author,
-          reply_to_user_id, reply_to_user_name, content, like_count, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+          author_title, reply_to_user_id, reply_to_user_name, reply_to_user_title,
+          content, like_count, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       [
         newId,
         params.subjectType,
@@ -240,8 +250,10 @@ export async function createComment(
         depth,
         actor.userId,
         actor.author,
+        actor.authorTitle ?? null,
         replyToUserId,
         replyToUserName,
+        replyToUserTitle,
         content,
         createdAtIso,
       ]

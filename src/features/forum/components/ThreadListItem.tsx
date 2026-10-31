@@ -6,6 +6,7 @@
  *  统计区严禁图标/emoji，仅「x 回复 · x 点赞 · x 浏览」灰色文本（V3.2.0 红线）。
  */
 import { Link } from 'react-router-dom';
+import { UserTitleBadge } from '../../../shared/UserTitleBadge';
 import type { ThreadListItem as ThreadListItemData } from '../types';
 
 /** 相对时间格式化：1 分钟内「刚刚」，1 小时内「x 分钟前」，24 小时内「x 小时前」，否则日期 */
@@ -36,9 +37,12 @@ export function ThreadListItem({ thread: t }: ThreadListItemProps) {
             {/* 移动端两行截断（whitespace-normal 解除 truncate 的 nowrap），桌面端保持单行 truncate */}
             <h3 className="font-medium text-black truncate max-md:line-clamp-2 max-md:whitespace-normal">{t.title}</h3>
           </div>
-          <div className="text-xs text-gray-500 mt-1 flex gap-3">
-            <span>{t.author_name}</span>
-            <span>{formatTime(t.last_reply_at || t.created_at)}</span>
+          <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
+            <span className="flex min-w-0 items-center">
+              <span className="truncate">{t.author_name}</span>
+              <UserTitleBadge title={t.author_title} />
+            </span>
+            <span className="flex-shrink-0">{formatTime(t.last_reply_at || t.created_at)}</span>
           </div>
         </div>
         <span className="text-xs text-gray-500 shrink-0">{t.reply_count} 回复 · {t.like_count} 点赞 · {t.view_count} 浏览</span>

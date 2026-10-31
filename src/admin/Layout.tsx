@@ -9,7 +9,7 @@
  *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
 import { useState } from 'react';
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X, Ticket } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 
@@ -36,6 +36,8 @@ const menuItems = [
   { id: 'admins', label: '管理员管理', icon: Users },
   { id: 'users', label: '用户管理', icon: FileText },
   { id: 'bans', label: '用户封禁管理', icon: Gavel },
+  // V4.7.0：邀请码管理（仅 super 可见，称号发放入口）
+  { id: 'invites', label: '邀请码管理', icon: Ticket },
   { id: 'logs', label: '操作日志', icon: Settings },
   { id: 'forum', label: '论坛治理', icon: MessageSquare },
   { id: 'news', label: '新闻管理', icon: Newspaper },

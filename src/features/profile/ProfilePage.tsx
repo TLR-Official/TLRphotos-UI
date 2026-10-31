@@ -13,6 +13,7 @@ import { TurnstileWidget, type TurnstileWidgetHandle } from '../../components/Tu
 import type { User, UserStats, MyPhoto } from '../../api/auth';
 import { getCacheStats, clearCache, formatBytes, type CacheStats } from '../../utils/imageCache';
 import { CachedImage } from '../../components/CachedImage';
+import { UserTitleBadge } from '../../shared/UserTitleBadge';
 import {
   getPreferences,
   updatePreferences as updatePrefs,
@@ -705,6 +706,7 @@ export function ProfilePage() {
                 <div>
                   <h1 className="text-2xl font-bold text-gray-800">
                     {user?.username || '用户'}
+                    <UserTitleBadge title={user?.title} />
                   </h1>
                   <p className="text-sm text-gray-500">
                     {user?.email}
@@ -1493,7 +1495,10 @@ export function ProfilePage() {
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-gray-100">
                       <span className="text-sm text-gray-500">用户名</span>
-                      <span className="text-sm font-medium text-gray-900">{user?.username || '-'}</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {user?.username || '-'}
+                        <UserTitleBadge title={user?.title} />
+                      </span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-gray-100">
                       <span className="text-sm text-gray-500">用户ID</span>

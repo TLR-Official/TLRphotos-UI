@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, User, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, Settings, X, Gavel, MapPin } from 'lucide-react';
 import { getUsers, toggleUser, updateUserPermissions, submitAdminVerification } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 import type { User as AdminUser } from './types';
 
 /** 权限弹窗中七项功能权限的配置（label + 字段 key + 说明） */
@@ -182,6 +183,7 @@ export function UsersPage() {
                             <User className="w-4 h-4" />
                           </div>
                           <span className="text-gray-800">{user.username || user.email}</span>
+                          <UserTitleBadge title={user.user_title} />
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600">{user.email}</td>

@@ -542,15 +542,17 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
     const viewerKey = currentUserId ? `user:${currentUserId}` : `ip:${getClientIp(req)}`;
     await recordViewIfEligible(id, viewerKey);
 
-    // 查询上传者公开信息（仅返回 id、用户名、头像）
+    // 查询上传者公开信息（仅返回 id、用户名、头像、称号）
     let uploader = null;
     if (photo.user_id) {
-      const user = await db.get('SELECT id, username, avatar_url FROM users WHERE id = ?', photo.user_id);
+      const user = await db.get('SELECT id, username, avatar_url, user_title FROM users WHERE id = ?', photo.user_id);
       if (user) {
         uploader = {
           id: user.id,
           username: user.username || '用户',
           avatar_url: user.avatar_url,
+          // V4.7.0：邀请码授予的称号（未授予为 null）
+          title: user.user_title || null,
         };
       }
     }

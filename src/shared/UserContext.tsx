@@ -34,7 +34,7 @@ interface UserContextType {
   isLoading: boolean;                                             // 初始化加载中
   login: (email: string, password: string, turnstileToken?: string) => Promise<LoginFlowResult>;
   verifyLogin: (loginTicket: string, code: string) => Promise<void>;
-  register: (email: string, password: string, username: string | undefined, code: string, turnstileToken?: string) => Promise<void>;
+  register: (email: string, password: string, username: string | undefined, code: string, turnstileToken?: string, inviteCode?: string) => Promise<void>;
   logout: () => void;
   updateUserInfo: (data: Partial<User>) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -180,10 +180,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
    * @param username - 用户名（可选）
    * @param code - 6 位数字验证码
    * @param turnstileToken - Turnstile 人机验证令牌
+   * @param inviteCode - 邀请码（选填，有效时授予专属称号）
    * @throws 注册失败时抛出 Error（携带 code）
    */
-  const handleRegister = useCallback(async (email: string, password: string, username: string | undefined, code: string, turnstileToken?: string) => {
-    const result = await register(email, password, username, code, turnstileToken);
+  const handleRegister = useCallback(async (email: string, password: string, username: string | undefined, code: string, turnstileToken?: string, inviteCode?: string) => {
+    const result = await register(email, password, username, code, turnstileToken, inviteCode);
     if (result.success && result.data) {
       // 注册成功视同登录：直接持久化 token 与会话
       persistAuth(result.data);

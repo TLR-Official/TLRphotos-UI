@@ -18,6 +18,7 @@ import columnRouter from './routes/column';
 import authRouter from './routes/auth';
 import tagsRouter from './routes/tags';
 import adminRouter from './routes/admin';
+import adminInvitesRouter from './routes/adminInvites';
 import commentsRouter from './routes/comments';
 import adminCommentsRouter from './routes/adminComments';
 import forumRouter from './routes/forum';
@@ -83,6 +84,8 @@ app.use('/api/admin/comments', adminCommentsRouter);
 app.use('/api/admin/news', adminNewsRouter);
 // V4.1.0：公告管理端须先于 /api/admin 挂载（更具体路径优先）
 app.use('/api/admin/announcements', adminAnnouncementsRouter);
+// V4.7.0：邀请码管理须先于 /api/admin 挂载（更具体路径优先，仅 super）
+app.use('/api/admin/invites', adminInvitesRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/forum', forumRouter);

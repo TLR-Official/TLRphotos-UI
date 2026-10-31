@@ -11,6 +11,8 @@ import type express from 'express';
 import { db } from '../db';
 import { createSession } from './cookieService';
 import { clearExpiredBan } from './penaltyService';
+import { checkInviteCodeUsable, consumeInviteCode } from './inviteCodeService';
+import type { InviteCode } from './inviteCodeService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
@@ -40,6 +42,10 @@ export interface User {
   banned_until?: string | null;
   region?: string | null;
   can_ban_manage?: number;
+  // V4.7.0 邀请码与称号：注册时由有效邀请码写入，未使用邀请码时为空
+  invite_code_id?: string | null;
+  user_title?: string | null;
+  title_granted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,7 +53,8 @@ export interface User {
 /** 用户查询统一列集（含密码哈希，调用方不得外泄） */
 const USER_COLUMNS = `id, email, password_hash, username, avatar_url, bio, website, location,
   custom_fields, is_active, banned_at, banned_until, can_upload, can_view, can_download, can_like,
-  region, can_ban_manage, email_verified, last_email_verified_at, created_at, updated_at`;
+  region, can_ban_manage, email_verified, last_email_verified_at, created_at, updated_at,
+  invite_code_id, user_title, title_granted_at`;
 
 /**
  * 校验邮箱格式：含 @ 且域名含点，不允许空白。
@@ -65,22 +72,50 @@ export async function findUserByEmail(email: string): Promise<User | null> {
   return user ? (user as User) : null;
 }
 
+/** 登录/注册响应用户体：实体字段 + 展示用称号（V4.7.0，未获称号为 null） */
+export type LoginUser = User & { title: string | null };
+
 /** 登录结果：用户信息 + JWT + 可选的长期会话 token */
 export interface LoginResult {
-  user: User;
+  user: LoginUser;
   token: string;
   session_token?: string;
 }
 
 /**
+ * 注册时可携带的邀请码引用（仅传 id，称号/有效期以库内数据为准，防止客户端伪造）。
+ */
+export interface RegisterInviteRef {
+  id: string;
+}
+
+/** 邀请码在注册事务中失效（并发抢用 / 被停用 / 已过期）时抛出 */
+export class InviteCodeInvalidError extends Error {
+  code = 'INVITE_CODE_INVALID';
+
+  constructor() {
+    super('邀请码无效或已失效');
+    this.name = 'InviteCodeInvalidError';
+  }
+}
+
+/**
  * 用户注册：邮箱唯一性校验通过后写入新用户。
  * V2.0.0：仅支持邮箱注册；注册前邮箱验证码由路由层校验，故建号即置 email_verified=1。
+ * V4.7.0：可选邀请码；在 BEGIN IMMEDIATE 事务内重新校验并消费邀请码，
+ *         并把邀请码 ID 与对应称号写入用户核心数据。
  * @param email 注册邮箱
  * @param password 明文密码
  * @param username 可选用户名
+ * @param invite 可选邀请码引用（仅 id）
  * @returns 新建用户信息（不含密码哈希）
  */
-export async function register(email: string, password: string, username?: string): Promise<User> {
+export async function register(
+  email: string,
+  password: string,
+  username?: string,
+  invite?: RegisterInviteRef,
+): Promise<User> {
   if (!isValidEmail(email)) {
     throw new Error('邮箱格式不正确');
   }
@@ -97,17 +132,51 @@ export async function register(email: string, password: string, username?: strin
 
   // 注册即完成邮箱确权：email_verified=1 且 last_email_verified_at=注册时刻（V3.2.0 周期锚点）
   const now = new Date().toISOString();
-  await db.run(
-    `INSERT INTO users (id, email, password_hash, username, email_verified, last_email_verified_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
-    userId,
-    email,
-    passwordHash,
-    finalUsername,
-    now,
-    now,
-    now
-  );
+
+  await db.exec('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    let inviteId: string | null = null;
+    let userTitle: string | null = null;
+    let titleGrantedAt: string | null = null;
+
+    if (invite) {
+      // 事务内重新读取并校验，避免并发注册超发同一邀请码
+      const row = (await db.get('SELECT * FROM invite_codes WHERE id = ?', invite.id)) as InviteCode | undefined;
+      if (!row) throw new InviteCodeInvalidError();
+      const usable = checkInviteCodeUsable(row);
+      if (!usable.ok) throw new InviteCodeInvalidError();
+      inviteId = usable.invite.id;
+      userTitle = usable.invite.title;
+      titleGrantedAt = now;
+    }
+
+    await db.run(
+      `INSERT INTO users
+        (id, email, password_hash, username, email_verified, last_email_verified_at,
+         invite_code_id, user_title, title_granted_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+      userId,
+      email,
+      passwordHash,
+      finalUsername,
+      now,
+      inviteId,
+      userTitle,
+      titleGrantedAt,
+      now,
+      now,
+    );
+
+    if (inviteId) {
+      const consumed = await consumeInviteCode(inviteId);
+      if (!consumed) throw new InviteCodeInvalidError();
+    }
+
+    await db.exec('COMMIT');
+  } catch (error) {
+    await db.exec('ROLLBACK');
+    throw error;
+  }
 
   const newUser = await getUserById(userId);
   if (!newUser) {
@@ -206,6 +275,9 @@ export async function issueLoginResult(user: User, remember?: boolean, ipAddress
       can_download: user.can_download ?? 1,
       can_like: user.can_like ?? 1,
       email_verified: user.email_verified ?? 0,
+      // V4.7.0：邀请码授予的称号（未授予为 null），登录响应即返回以便前端立即展示
+      title: user.user_title || null,
+      invite_code_id: user.invite_code_id || null,
       created_at: user.created_at,
       updated_at: user.updated_at,
     },

@@ -52,7 +52,7 @@ router.get('/threads', async (req, res) => {
       : 'is_pinned DESC, COALESCE(last_reply_at, created_at) DESC';
 
     const threads = await db.all(
-      `SELECT id, board_id, title, author_id, author_name, is_pinned, view_count, like_count, reply_count, ref_type, ref_id, created_at, last_reply_at
+      `SELECT id, board_id, title, author_id, author_name, author_title, is_pinned, view_count, like_count, reply_count, ref_type, ref_id, created_at, last_reply_at
        FROM forum_threads ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
@@ -153,9 +153,9 @@ router.post('/threads', requireVerifiedEmail, async (req, res) => {
     const id = randomUUID();
     const nowIso = new Date().toISOString();
     await db.run(
-      `INSERT INTO forum_threads (id, board_id, title, content_md, author_id, author_name, status, is_pinned, view_count, like_count, reply_count, ref_type, ref_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'published', 0, 0, 0, 0, ?, ?, ?, ?)`,
-      [id, board_id, title.trim(), content_md, authUser.id, authUser.username || authUser.email, ref_type || null, ref_id || null, nowIso, nowIso]
+      `INSERT INTO forum_threads (id, board_id, title, content_md, author_id, author_name, author_title, status, is_pinned, view_count, like_count, reply_count, ref_type, ref_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'published', 0, 0, 0, 0, ?, ?, ?, ?)`,
+      [id, board_id, title.trim(), content_md, authUser.id, authUser.username || authUser.email, authUser.user_title || null, ref_type || null, ref_id || null, nowIso, nowIso]
     );
     await db.run('UPDATE forum_boards SET thread_count = thread_count + 1 WHERE id = ?', [board_id]);
 

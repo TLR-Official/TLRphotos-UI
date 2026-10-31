@@ -23,7 +23,9 @@ import {
   loadAuthUser,
   markEmailVerified,
   bindUserEmail,
+  InviteCodeInvalidError,
 } from '../services/authService';
+import { validateInviteCode } from '../services/inviteCodeService';
 import { getSession, updateLastActive, deleteSession } from '../services/cookieService';
 import {
   isTestBypass,
@@ -228,6 +230,9 @@ function buildLoginResponseUser(u: any) {
     username: u.username ?? null,
     avatar_url: u.avatar_url ?? null,
     email_verified: u.email_verified ?? 0,
+    // V4.7.0：邀请码授予的称号与关联邀请码 ID（未授予为 null）
+    title: u.title ?? u.user_title ?? null,
+    invite_code_id: u.invite_code_id ?? null,
   };
 }
 
@@ -347,7 +352,7 @@ router.post('/email/code/send', otpCooldownLimiter, otpTargetHourLimiter, otpIpH
  */
 router.post('/register', authLimiter, async (req, res) => {
   try {
-    const { email, password, username, code, turnstile_token, tokens } = req.body ?? {};
+    const { email, password, username, code, turnstile_token, tokens, invite_code } = req.body ?? {};
 
     // 严格入口校验：类型 + 长度上限，拦截类型混淆导致的引擎错误外泄
     if (typeof email !== 'string' || typeof password !== 'string') {
@@ -362,6 +367,12 @@ router.post('/register', authLimiter, async (req, res) => {
     }
     if (username !== undefined && (typeof username !== 'string' || username.length > 50)) {
       return sendError(res, 400, 'INVALID_PARAMS', '请求参数格式不正确');
+    }
+    // V4.7.0：邀请码选填；类型/长度先做入口收敛，有效性在 OTP 通过后校验
+    if (invite_code !== undefined && invite_code !== null && invite_code !== '') {
+      if (typeof invite_code !== 'string' || invite_code.length > 64) {
+        return sendError(res, 400, 'INVALID_PARAMS', '邀请码格式不正确');
+      }
     }
     // 验证码必填：格式收敛为 6 位数字字符串（防注入 + 提前拦截无效请求）
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
@@ -380,7 +391,17 @@ router.post('/register', authLimiter, async (req, res) => {
     const otpResult = await verifyCode(trimmedEmail, code, 'register');
     if (sendOtpError(res, otpResult)) return;
 
-    const user = await register(trimmedEmail, password, username);
+    // V4.7.0：邀请码选填；填写时必须有效，否则拒绝注册（空邀请码正常注册且不授予称号）
+    let inviteRef: { id: string } | undefined;
+    if (typeof invite_code === 'string' && invite_code.trim()) {
+      const inviteVerdict = await validateInviteCode(invite_code);
+      if (!inviteVerdict.ok) {
+        return sendError(res, 400, 'INVITE_CODE_INVALID', '邀请码无效或已失效');
+      }
+      inviteRef = { id: inviteVerdict.invite.id };
+    }
+
+    const user = await register(trimmedEmail, password, username, inviteRef);
 
     // 注册成功即完成登录验证：直接签发 JWT + 创建长期会话（remember 默认 true）
     const ipAddress = getClientIp(req);
@@ -401,6 +422,10 @@ router.post('/register', authLimiter, async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
+    // V4.7.0：事务内邀请码失效（并发抢用/停用/过期）统一归一化为 400
+    if (error instanceof InviteCodeInvalidError || (error as { code?: string })?.code === 'INVITE_CODE_INVALID') {
+      return sendError(res, 400, 'INVITE_CODE_INVALID', '邀请码无效或已失效');
+    }
     const message = error instanceof Error ? error.message : '注册失败';
     // 唯一性冲突（邮箱已注册）归一化为 409
     if (message.includes('已被注册')) {
@@ -765,6 +790,8 @@ router.get('/me', async (req, res) => {
         location: user.location,
         // custom_fields 以 JSON 字符串存储，返回时解析为对象
         custom_fields: user.custom_fields ? JSON.parse(user.custom_fields) : null,
+        // V4.7.0：邀请码授予的称号（未授予为 null）
+        title: user.user_title || null,
         created_at: user.created_at,
       },
     });
@@ -830,6 +857,8 @@ router.put('/me', async (req, res) => {
         website: updatedUser.website,
         location: updatedUser.location,
         custom_fields: updatedUser.custom_fields ? JSON.parse(updatedUser.custom_fields) : null,
+        // V4.7.0：资料更新响应保留称号，避免前端刷新后标签丢失
+        title: updatedUser.user_title || null,
       },
     });
   } catch (error) {
@@ -991,6 +1020,8 @@ router.get('/users/:id', async (req, res) => {
         bio: user.bio,
         website: user.website,
         location: user.location,
+        // V4.7.0：公开档案同样返回称号，供名称旁标签展示
+        title: user.user_title || null,
         created_at: user.created_at,
       },
     });
@@ -1237,6 +1268,8 @@ router.post('/refresh', async (req, res) => {
           email: user.email,
           username: user.username,
           avatar_url: user.avatar_url,
+          // V4.7.0：刷新会话响应同步返回称号
+          title: user.user_title || null,
         },
         token,
       },

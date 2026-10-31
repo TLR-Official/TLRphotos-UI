@@ -581,6 +581,54 @@ const initSchema = async () => {
   }
 
   // ==========================================================================
+  // V4.7.0 迭代：邀请码与用户称号
+  // users 记录邀请码关联、称号文案与授予时间；invite_codes 为管理后台发放的邀请码；
+  // comments / forum_threads 增加称号快照列（作者名旁展示称号，归档评论同样保留）
+  // ==========================================================================
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN invite_code_id TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN user_title TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE users ADD COLUMN title_granted_at TEXT');
+  } catch {}
+  await db.run(`CREATE TABLE IF NOT EXISTS invite_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    airline TEXT,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    expires_at TEXT,
+    remark TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+  try {
+    await db.run('ALTER TABLE comments ADD COLUMN author_title TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE comments ADD COLUMN reply_to_user_title TEXT');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE forum_threads ADD COLUMN author_title TEXT');
+  } catch {}
+  // 历史评论/帖子称号回填：仅在快照为空时按 user_id / author_id 取当前称号，幂等
+  await db.run(`UPDATE comments SET author_title = (
+    SELECT user_title FROM users u WHERE u.id = comments.user_id
+  ) WHERE author_title IS NULL AND user_id IS NOT NULL`);
+  await db.run(`UPDATE comments SET reply_to_user_title = (
+    SELECT user_title FROM users u WHERE u.id = comments.reply_to_user_id
+  ) WHERE reply_to_user_title IS NULL AND reply_to_user_id IS NOT NULL`);
+  await db.run(`UPDATE forum_threads SET author_title = (
+    SELECT user_title FROM users u WHERE u.id = forum_threads.author_id
+  ) WHERE author_title IS NULL AND author_id IS NOT NULL`);
+
+  // ==========================================================================
   // V4.0.0 迭代：通知与审核纠错系统
   // photos 加审核留痕列（reviewed_by/reviewed_at）、热门确认标记（is_hot_confirmed）、
   // 审核分配列（assigned_to）；articles 加类型列；users 加上传禁令解禁时间

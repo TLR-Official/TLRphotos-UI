@@ -25,6 +25,8 @@ export interface UserProfile {
   id: string;
   username: string;
   avatar_url: string | null;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  title?: string | null;
   /** 省份地区（后端「未知」兜底） */
   region: string;
   /** 加入天数（now - created_at 取整） */

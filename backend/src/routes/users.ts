@@ -28,7 +28,7 @@ const profileReadLimiter = createRateLimiter({ max: 120, message: '浏览过于�
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 公开用户档案统一列集：仅公开字段，绝不含 email/IP/banned_until/can_ban_manage */
-const PUBLIC_USER_COLUMNS = 'id, username, avatar_url, region, created_at';
+const PUBLIC_USER_COLUMNS = 'id, username, avatar_url, region, created_at, user_title';
 
 /** 用户不存在统一响应（404 USER_NOT_FOUND） */
 function respondUserNotFound(res: express.Response) {
@@ -47,7 +47,7 @@ router.get('/:id/profile', profileReadLimiter, async (req, res) => {
     if (!targetId) {
       return respondUserNotFound(res);
     }
-    const user = await db.get<{ id: string; username: string | null; avatar_url: string | null; region: string | null; created_at: string }>(
+    const user = await db.get<{ id: string; username: string | null; avatar_url: string | null; region: string | null; created_at: string; user_title: string | null }>(
       `SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE id = ?`,
       targetId
     );
@@ -71,6 +71,8 @@ router.get('/:id/profile', profileReadLimiter, async (req, res) => {
       id: user.id,
       username: user.username || '用户',
       avatar_url: user.avatar_url,
+      // V4.7.0：邀请码授予的称号（未授予为 null）
+      title: user.user_title || null,
       region: user.region || '未知',
       joined_days: Number.isFinite(createdMs) ? Math.max(0, Math.floor((Date.now() - createdMs) / DAY_MS)) : 0,
       is_self: isSelf,

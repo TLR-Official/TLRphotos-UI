@@ -265,7 +265,7 @@ router.post('/', requireVerifiedEmail, async (req, res, next) => {
         rootId,
         content: typeof req.body?.content === 'string' ? req.body.content : '',
       },
-      { userId: user.id, author: user.username || user.email || '已验证用户' },
+      { userId: user.id, author: user.username || user.email || '已验证用户', authorTitle: user.user_title || null },
       { heatConfig: heatConfigFromEnv(), rehydrateGateway }
     );
 

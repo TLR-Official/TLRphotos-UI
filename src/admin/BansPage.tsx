@@ -11,6 +11,7 @@ import { Search, User, X, ShieldAlert, Gavel, Undo2, Ban } from 'lucide-react';
 import { getUsers, getUserPenalties, penalizeUser, revokePenalty, submitAdminVerification } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
+import { UserTitleBadge } from '../shared/UserTitleBadge';
 import type { User as SiteUser, Penalty, AdminUser } from './types';
 
 /** 期限下拉选项（天） */
@@ -39,6 +40,8 @@ interface SelectedTarget {
   avatar_url?: string;
   is_active?: number;
   banned_at?: string | null;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  user_title?: string | null;
 }
 
 /**
@@ -307,7 +310,10 @@ export function BansPage({ currentAdmin }: { currentAdmin?: AdminUser | null }) 
                           <User className="w-4 h-4" />
                         </div>
                       )}
-                      <span className="text-sm text-gray-800 flex-1">{u.username || u.email}</span>
+                      <span className="text-sm text-gray-800 flex-1 flex items-center">
+                        <span className="truncate">{u.username || u.email}</span>
+                        <UserTitleBadge title={u.user_title} />
+                      </span>
                       <span className="text-xs text-gray-400">{u.id.slice(0, 8)}…</span>
                       {renderTargetBadge(u)}
                     </button>
@@ -327,7 +333,10 @@ export function BansPage({ currentAdmin }: { currentAdmin?: AdminUser | null }) 
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">{selected.username || selected.email || '未知用户'}</p>
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {selected.username || selected.email || '未知用户'}
+                    <UserTitleBadge title={selected.user_title} />
+                  </p>
                   <p className="text-xs text-gray-500">ID：{selected.id}</p>
                 </div>
                 {renderTargetBadge(selected)}

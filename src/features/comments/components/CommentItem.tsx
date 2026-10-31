@@ -10,6 +10,7 @@ import type { CommentDTO } from '../../../api/comments';
 import { formatRelativeDate } from '../../../shared/utils';
 import { useIsMobile } from '../../../shared/useIsMobile';
 import { Heart, MoreHorizontal, Reply, Trash2 } from 'lucide-react';
+import { UserTitleBadge } from '../../../shared/UserTitleBadge';
 
 export interface CommentItemProps {
   comment: CommentDTO;
@@ -72,19 +73,22 @@ export function CommentItem({
     <div className="min-w-0">
       <div className="flex items-center gap-2">
         <Avatar author={comment.author} />
-        {/* V4.1.0：作者名可点击跳转公开主页（历史迁移评论 user_id 为空时保持纯文本） */}
-        {comment.user_id ? (
-          <Link
-            to={`/users/${comment.user_id}`}
-            className="truncate text-sm font-medium text-gray-900 transition-colors hover:text-blue-700 hover:underline"
-          >
-            {comment.author}
-          </Link>
-        ) : (
-          <span className="truncate text-sm font-medium text-gray-900">
-            {comment.author}
-          </span>
-        )}
+        <div className="flex min-w-0 items-center">
+          {/* V4.1.0：作者名可点击跳转公开主页（历史迁移评论 user_id 为空时保持纯文本） */}
+          {comment.user_id ? (
+            <Link
+              to={`/users/${comment.user_id}`}
+              className="truncate text-sm font-medium text-gray-900 transition-colors hover:text-blue-700 hover:underline"
+            >
+              {comment.author}
+            </Link>
+          ) : (
+            <span className="truncate text-sm font-medium text-gray-900">
+              {comment.author}
+            </span>
+          )}
+          <UserTitleBadge title={comment.author_title} />
+        </div>
         <span className="flex-shrink-0 text-xs text-gray-400">
           {formatRelativeDate(comment.created_at)}
         </span>
@@ -94,7 +98,8 @@ export function CommentItem({
         {/* L3 平铺互回：前缀"回复 @用户"，永不出现第四级 */}
         {comment.depth === 3 && comment.reply_to_user_name && (
           <span className="mr-1 text-blue-700">
-            回复 @{comment.reply_to_user_name}：
+            回复 @{comment.reply_to_user_name}
+            <UserTitleBadge title={comment.reply_to_user_title} />：
           </span>
         )}
         <span className="whitespace-pre-wrap break-words">{comment.content}</span>

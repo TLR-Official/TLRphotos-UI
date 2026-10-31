@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { getThread, likeThread, unlikeThread, deleteThread } from '../../api/forum';
 import { CommentList } from '../comments/components/CommentList';
 import { useUser } from '../../shared/UserContext';
+import { UserTitleBadge } from '../../shared/UserTitleBadge';
 import type { Thread } from './types';
 
 export function ThreadDetailPage() {
@@ -73,6 +74,7 @@ export function ThreadDetailPage() {
             >
               {thread.author_name}
             </Link>
+            <UserTitleBadge title={thread.author_title} />
             {' '}· {new Date(thread.created_at).toLocaleDateString('zh-CN')}
           </span>
           <div className="flex items-center gap-4">

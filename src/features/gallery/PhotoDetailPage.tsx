@@ -18,6 +18,7 @@ import { useHumanVerification } from '../../shared/useHumanVerification';
 import { useIsMobile, useIsTouch } from '../../shared/useIsMobile';
 import { CommentList } from '../comments/components/CommentList';
 import { MobileZoomableImage } from './MobileZoomableImage';
+import { UserTitleBadge } from '../../shared/UserTitleBadge';
 
 
 /**
@@ -421,7 +422,10 @@ export function PhotoDetailPage() {
                     photo.uploader
                       ? 'text-blue-600 hover:text-blue-500'
                       : 'text-gray-400'
-                  }`}>{photo.uploader?.username || '匿名用户'}</p>
+                  }`}>
+                    {photo.uploader?.username || '匿名用户'}
+                    <UserTitleBadge title={photo.uploader?.title} />
+                  </p>
                 </div>
               </div>
             </div>

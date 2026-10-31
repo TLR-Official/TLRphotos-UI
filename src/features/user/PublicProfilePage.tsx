@@ -19,6 +19,7 @@ import type { TagCategory } from '../../api/tags';
 import { getBoards } from '../../api/forum';
 import { CachedImage } from '../../components/CachedImage';
 import { formatDateOnly } from '../../shared/utils';
+import { UserTitleBadge } from '../../shared/UserTitleBadge';
 
 /** 每页作品条数（后端上限 50） */
 const PHOTOS_PAGE_SIZE = 12;
@@ -201,7 +202,10 @@ export function PublicProfilePage() {
 
             <div className="flex-1 text-center md:text-left min-w-0">
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <h1 className="text-2xl font-bold text-gray-900">{profile.username}</h1>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {profile.username}
+                  <UserTitleBadge title={profile.title} />
+                </h1>
                 {activeLevels.map((level) => {
                   const badge = PENALTY_LEVEL_BADGE[level] ?? PENALTY_FALLBACK_BADGE;
                   return (

@@ -8,6 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { useUser } from './UserContext';
+import { UserTitleBadge } from './UserTitleBadge';
 import { getUnreadCount } from '../api/notifications';
 
 /**
@@ -184,8 +185,11 @@ export function Header() {
                     </svg>
                   )}
                 </div>
-                <span className="theme-text-transition text-sm font-medium text-slate-800 group-hover:text-slate-900">
-                  {user?.username || '用户'}
+                <span className="flex items-center">
+                  <span className="theme-text-transition text-sm font-medium text-slate-800 group-hover:text-slate-900">
+                    {user?.username || '用户'}
+                  </span>
+                  <UserTitleBadge title={user?.title} />
                 </span>
               </button>
 

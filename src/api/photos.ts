@@ -308,6 +308,8 @@ export interface PublicUser {
   website?: string | null;
   location?: string | null;
   created_at?: string;
+  /** V4.7.0：邀请码授予的专属称号（未获称号为 null） */
+  title?: string | null;
 }
 
 /** 用户照片列表响应 */
