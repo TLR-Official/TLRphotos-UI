@@ -15,7 +15,7 @@ export function UserTitleBadge({ title, className = '' }: UserTitleBadgeProps) {
   if (!title) return null;
   return (
     <span
-      className={`ml-1 inline-flex shrink-0 items-center whitespace-nowrap rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 align-middle text-[10px] font-medium leading-none text-blue-700 ${className}`}
+      className={`ml-1.5 inline-flex shrink-0 items-center whitespace-nowrap rounded border border-blue-200 bg-blue-50 px-2 py-0.5 align-middle text-xs font-medium leading-none text-blue-700 ${className}`}
     >
       {title}
     </span>
