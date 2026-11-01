@@ -312,12 +312,34 @@ export async function updateAdminUser(id: string, data: Partial<Pick<AdminUser, 
 }
 
 /**
- * 软删除管理员：仅置 is_active=0，保留数据用于审计
+ * 软删除管理员：置 is_active=0 保留审计行，同时释放用户名与邮箱唯一键。
+ * 用户名追加 `#deleted#<id 前 8 位>` 墓碑后缀，邮箱置空，
+ * 使同一用户名/邮箱可重新创建账号；重复调用幂等，不会二次追加后缀。
  * @param id 管理员主键
- * @returns 始终返回 true
+ * @returns 目标账号不存在时返回 false
  */
 export async function deleteAdminUser(id: string): Promise<boolean> {
-  await db.run('UPDATE admin_users SET is_active = 0 WHERE id = ?', [id]);
+  const row = await db.get<{ username: string; is_active: number }>(
+    'SELECT username, is_active FROM admin_users WHERE id = ?',
+    [id]
+  );
+  if (!row) return false;
+
+  // 已带墓碑后缀说明此前已释放过唯一键，仅确保状态与邮箱一致
+  if (row.username.includes('#deleted#')) {
+    await db.run('UPDATE admin_users SET is_active = 0, email = NULL, updated_at = ? WHERE id = ?', [
+      new Date().toISOString(),
+      id,
+    ]);
+    return true;
+  }
+
+  const suffix = `#deleted#${id.slice(0, 8)}`;
+  const tombstone = row.username.slice(0, Math.max(1, 64 - suffix.length)) + suffix;
+  await db.run(
+    'UPDATE admin_users SET is_active = 0, username = ?, email = NULL, updated_at = ? WHERE id = ?',
+    [tombstone, new Date().toISOString(), id]
+  );
   return true;
 }
 

@@ -212,6 +212,51 @@ describe('GET /api/admin/users 权限控制', () => {
   });
 });
 
+describe('DELETE /api/admin/users/:id 释放唯一键', () => {
+  it('删除后应可用相同用户名与邮箱重新创建账号', async () => {
+    const dbModule = await import('../../src/db');
+    const bcrypt = (await import('bcrypt')).default;
+    const targetId = 'test-delete-admin';
+    const hash = await bcrypt.hash('Delete123456', 10);
+
+    await dbModule.db.run(
+      `INSERT OR REPLACE INTO admin_users (id, username, password_hash, email, name, role, zone, is_active, must_change_password, token_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'zone_auditor', 'landscape', 1, 0, 0, datetime('now'), datetime('now'))`,
+      targetId, 'reusable_admin', hash, 'reusable@example.com', '可复用测试员'
+    );
+
+    const del = await request(app)
+      .delete(`/api/admin/users/${targetId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`);
+
+    expect(del.status).toBe(200);
+    expect(del.body.success).toBe(true);
+
+    // 审计行保留，但用户名追加墓碑后缀、邮箱置空
+    const tomb = await dbModule.db.get<{ username: string; email: string | null; is_active: number }>(
+      'SELECT username, email, is_active FROM admin_users WHERE id = ?',
+      [targetId]
+    );
+    expect(tomb?.username).toContain('#deleted#');
+    expect(tomb?.email).toBeNull();
+    expect(tomb?.is_active).toBe(0);
+
+    const create = await request(app)
+      .post('/api/admin/users')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        username: 'reusable_admin',
+        password: 'Reuse123456',
+        email: 'reusable@example.com',
+        role: 'zone_auditor',
+        zone: 'landscape',
+      });
+
+    expect(create.status).toBe(201);
+    expect(create.body.success).toBe(true);
+  });
+});
+
 describe('GET /api/admin/logs', () => {
   it('超级管理员应能查看操作日志', async () => {
     const res = await request(app)
