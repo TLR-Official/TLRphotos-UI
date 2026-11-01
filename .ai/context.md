@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-01 15:14 | [chore] 彻底清理已软删除的审核账号 Air (V4.9.1-beta) — 后台「删除管理员」为软删除（`deleteAdminUser` 仅置 `is_active=0`），该行仍占用 `admin_users.username/email` 唯一键，导致重建同名账号返回「用户名或邮箱已存在」；已备份 `data/backups/manual-purge-admin-Air-20261101-151427.db` 后事务删除 `admin_users` 记录 `2fe26dd5-6449-4b73-a230-2aed25594ad4`（`Air` / `15108549@qq.com`，zone=aviation）及其 5 条 `admin_logs`（均为登录失败记录），`PRAGMA integrity_check=ok`，启用管理员 12 人不变，该用户名与邮箱现已可重新创建 | backend/data/database.db |
 | 2026-11-01 12:09 | [release] 版本号升级至 V4.9.1-beta — 新增用户删除运维脚本并清理指定账号 | 全项目 |
 | 2026-11-01 12:09 | [chore] 删除指定用户并释放邮箱注册占用 (V4.9.1-beta) — 新增 `backend/scripts/delete-user.ts`（按 `--email`/`--username` 删除普通用户，支持 `--dry-run`、幂等）：先 `VACUUM INTO` 备份主库至 `data/backups/manual-delete-user-<id>-<时间戳>.db`，事务内清理 `cookie` 会话、`user_verifications`、同邮箱 `verification_codes`（解除 60 秒冷却与每小时次数占用）、点赞/通知/`photo_views`/`thread_views` 后删除 `users` 行；用户名下仍有照片/评论/帖子时拒绝执行；实测删除 `user_1793497548254`（`hjj.aviation.SIN` / `eric.huang.33@nexus.edu.sg`）：会话 3 条、人机验证 1 条、验证码 3 条一并清理，`PRAGMA integrity_check=ok`，总用户数 35→34，该邮箱已可重新注册 | backend/scripts/delete-user.ts、backend/data/database.db |
 | 2026-10-31 21:45 | [release] 版本号升级至 V4.9.0-beta — 高并发峰值准备与监控告警 | 全项目 |
