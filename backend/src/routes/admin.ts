@@ -779,6 +779,153 @@ router.get('/photos/:id', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
+ * V4.10.0：审核端可维护的照片信息白名单校验规则。
+ * 注册号沿用上传侧格式（2-20 位大写字母/数字/连字符），另允许固定值 N/A 表示「确认无注册号」。
+ */
+const META_REGISTRATION_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
+const META_REGISTRATION_NA = 'N/A';
+/** 拍摄地点文本上限（与前端输入框 maxLength 一致） */
+const META_LOCATION_MAX_LENGTH = 200;
+
+/**
+ * 更新照片审核信息（V4.10.0）。
+ * 仅维护审核辅助字段：注册号、拍摄地点文本与经纬度；未传入的字段保持不变。
+ * 权限与分区规则与审核动作一致；注册号改为「无注册号」时同步清空自动识别的机型/航司。
+ * @param id 照片 ID
+ * @body registration_number 注册号（可空；N/A 表示确认无注册号）
+ * @body location 拍摄地点文本（≤200 字符）
+ * @body latitude / longitude 经纬度（必须成对提交，传 null 表示清空）
+ */
+router.patch('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const photo = await db.get<{
+    id: string;
+    category: string | null;
+    registration_number: string | null;
+    location: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }>(
+    'SELECT id, category, registration_number, location, latitude, longitude FROM photos WHERE id = ?',
+    [req.params.id]
+  );
+
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+
+  // 分区权限校验：分区审核员与分区总审核仅能修改本分区照片
+  if ((req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') && photo.category !== req.admin.zone) {
+    return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
+  }
+
+  const body = req.body ?? {};
+  const setClauses: string[] = [];
+  const params: (string | number | null)[] = [];
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+
+  // 注册号：空串/null → NULL；n/a（任意大小写）→ 归一为 N/A；其余必须匹配上传侧格式
+  if ('registration_number' in body) {
+    const raw = body.registration_number;
+    if (raw !== null && raw !== undefined && typeof raw !== 'string') {
+      return res.status(400).json({ success: false, code: 'INVALID_REGISTRATION', message: '注册号格式不正确' });
+    }
+
+    let next: string | null = null;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        next = null;
+      } else if (trimmed.toUpperCase() === META_REGISTRATION_NA) {
+        next = META_REGISTRATION_NA;
+      } else {
+        const upper = trimmed.toUpperCase();
+        if (!META_REGISTRATION_PATTERN.test(upper)) {
+          return res.status(400).json({ success: false, code: 'INVALID_REGISTRATION', message: '注册号格式不正确' });
+        }
+        next = upper;
+      }
+    }
+
+    changes.registration_number = { from: photo.registration_number, to: next };
+    setClauses.push('registration_number = ?');
+    params.push(next);
+
+    // 无注册号时，自动识别的机型/航司已失去依据，同一条 UPDATE 内清空避免数据不一致
+    if (next === null || next === META_REGISTRATION_NA) {
+      setClauses.push('aircraft_type = NULL', 'airline = NULL');
+    }
+  }
+
+  // 拍摄地点文本：trim 后存入，空串归一为 NULL
+  if ('location' in body) {
+    const raw = body.location;
+    if (raw !== null && raw !== undefined && typeof raw !== 'string') {
+      return res.status(400).json({ success: false, code: 'INVALID_LOCATION', message: '拍摄地点格式不正确' });
+    }
+    const next = typeof raw === 'string' ? raw.trim() : null;
+    if (next && next.length > META_LOCATION_MAX_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_LOCATION',
+        message: `拍摄地点不能超过 ${META_LOCATION_MAX_LENGTH} 个字符`,
+      });
+    }
+    changes.location = { from: photo.location, to: next || null };
+    setClauses.push('location = ?');
+    params.push(next || null);
+  }
+
+  // 经纬度：必须成对提交；同时为 null 视为清空坐标
+  const hasLatitude = 'latitude' in body;
+  const hasLongitude = 'longitude' in body;
+  if (hasLatitude !== hasLongitude) {
+    return res.status(400).json({ success: false, code: 'INVALID_COORDINATES', message: '经纬度必须成对提交' });
+  }
+  if (hasLatitude) {
+    const lat = body.latitude;
+    const lng = body.longitude;
+    const cleared = (lat === null || lat === undefined) && (lng === null || lng === undefined);
+
+    if (cleared) {
+      changes.latitude = { from: photo.latitude, to: null };
+      changes.longitude = { from: photo.longitude, to: null };
+      setClauses.push('latitude = NULL', 'longitude = NULL');
+    } else {
+      const validNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
+      if (
+        !validNumber(lat) ||
+        !validNumber(lng) ||
+        (lat as number) < -90 ||
+        (lat as number) > 90 ||
+        (lng as number) < -180 ||
+        (lng as number) > 180
+      ) {
+        return res.status(400).json({ success: false, code: 'INVALID_COORDINATES', message: '经纬度超出有效范围' });
+      }
+      changes.latitude = { from: photo.latitude, to: lat };
+      changes.longitude = { from: photo.longitude, to: lng };
+      setClauses.push('latitude = ?', 'longitude = ?');
+      params.push(lat as number, lng as number);
+    }
+  }
+
+  if (setClauses.length === 0) {
+    return res.status(400).json({ success: false, message: '没有需要更新的字段' });
+  }
+
+  params.push(req.params.id);
+  await db.run(`UPDATE photos SET ${setClauses.join(', ')} WHERE id = ?`, params);
+  await logAdminAction(req.admin, 'update_photo_meta', 'photo', req.params.id, { changes });
+
+  const updated = await db.get('SELECT * FROM photos WHERE id = ?', [req.params.id]);
+  res.json({ success: true, data: updated, message: '照片信息已更新' });
+});
+
+/**
  * 审核通过照片。
  * 仅对 pending 状态的照片生效，更新为 approved 并清除驳回理由，记录审计日志。
  * V4.0.0：角色白名单锁定为原有三角色（forum_moderator/news_editor 不得审核照片）。

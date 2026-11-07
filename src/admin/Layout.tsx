@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X, Ticket } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
+import { PerfOverlay } from './PerfOverlay';
 
 /** Layout 组件 props */
 interface LayoutProps {
@@ -156,6 +157,9 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
           {children}
         </main>
       </div>
+
+      {/* V4.10.0：性能自检浮层（默认收起，展开状态记忆在 localStorage） */}
+      <PerfOverlay />
 
       {/* 移动端全屏菜单抽屉（仅 ≤768px）：遮罩 + 菜单列表，点项或遮罩关闭 */}
       {mobileMenuOpen && (

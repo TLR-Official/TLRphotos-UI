@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { getCachedImage } from '../../../utils/imageCache';
+import { getAuthImage } from '../../../utils/authImageCache';
 
 /** 降采样最大长边 */
 const MAX_SAMPLE_DIM = 800;
@@ -34,21 +34,27 @@ export interface UseImagePixelsResult {
 
 /**
  * 获取图片像素数据（降采样后的 ImageData）
+ * V4.10.0：新增 enabled 开关，仅当像素类工具被激活时才下载/解码，
+ * 避免每次打开审核详情页都做一次无用的主线程计算。
  * @param src 图片 URL
  * @param authToken 管理员 token，与 CachedImage 一致
+ * @param enabled 是否启用（默认 true）
  */
-export function useImagePixels(src: string, authToken?: string): UseImagePixelsResult {
+export function useImagePixels(src: string, authToken?: string, enabled = true): UseImagePixelsResult {
   const [state, setState] = useState<UseImagePixelsResult>({
     imageData: null,
     naturalWidth: 0,
     naturalHeight: 0,
     sampledWidth: 0,
     sampledHeight: 0,
-    loading: true,
+    loading: false,
     error: null,
   });
 
   useEffect(() => {
+    // 未启用：不发起请求、不建画布；已加载的数据保留供再次激活时复用
+    if (!enabled) return;
+
     if (!src) {
       setState((s) => ({ ...s, loading: false, error: 'No image source' }));
       return;
@@ -59,9 +65,8 @@ export function useImagePixels(src: string, authToken?: string): UseImagePixelsR
 
     (async () => {
       try {
-        // 与 CachedImage 相同的鉴权路径：携带 authToken 时通过 fetch + Authorization 头获取
-        const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-        const blobUrl = await getCachedImage(src, headers);
+        // 与 CachedImage 共用同一份鉴权图片内存缓存，避免重复下载
+        const blobUrl = await getAuthImage(src, authToken);
 
         // 加载图片到 Image 对象
         const img = new Image();
@@ -120,7 +125,7 @@ export function useImagePixels(src: string, authToken?: string): UseImagePixelsR
     return () => {
       cancelled = true;
     };
-  }, [src, authToken]);
+  }, [src, authToken, enabled]);
 
   return state;
 }

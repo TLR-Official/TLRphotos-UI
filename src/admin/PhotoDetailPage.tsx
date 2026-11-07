@@ -4,7 +4,7 @@
  * 并在底部提供通过/拒绝审核的操作按钮。
  * V4.0.0：approved 状态增加「召回」（窗口内静默 / 超窗需原因）、「确认热门」与「分配/转移」操作。
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -33,12 +33,16 @@ import {
   recallPhoto,
   confirmPhotoHot,
   assignPhoto,
+  updatePhotoMeta,
 } from './api';
 import type { AdminPhotoDetail, AdminUser } from './types';
 import { CachedImage } from '../components/CachedImage';
 import { AuditToolkit } from './audit-tools';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import { UserTitleBadge } from '../shared/UserTitleBadge';
+import { RegistrationField } from './audit-form/RegistrationField';
+import { isRegistrationDraftValid } from './audit-form/registration';
+import { LocationField, type LocationDraft } from './audit-form/LocationField';
 
 /**
  * 照片审核详情页组件
@@ -71,6 +75,18 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
   const [assigneeId, setAssigneeId] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
 
+  // V4.10.0：审核信息草稿（注册号 / 拍摄地点 / 经纬度）
+  const [metaDraft, setMetaDraft] = useState({
+    registration_number: '',
+    location: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
+  });
+  const [metaDirty, setMetaDirty] = useState(false);
+  const [metaSaving, setMetaSaving] = useState(false);
+  // 详情请求序号：快速切换照片时丢弃过期响应
+  const detailRequestId = useRef(0);
+
   // 是否可展示分配下拉：分配对象列表接口（GET /admin/users）仅 super/zone_master 可访问
   const canAssign = !currentAdmin || currentAdmin.role === 'super' || currentAdmin.role === 'zone_master';
 
@@ -98,9 +114,28 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
     setError('');
     setNotice('');
     if (!id) return;
+
+    // V4.10.0：请求序号守卫，快速切换照片时只接受最新一次响应
+    const requestId = ++detailRequestId.current;
     const result = await getPhotoDetail(id);
+    if (requestId !== detailRequestId.current) return;
+
     if (result.success && result.data) {
       setPhoto(result.data);
+      // 详情加载完成埋点（供性能浮层读取）
+      try {
+        performance.mark('photo-detail:detail-loaded');
+      } catch {
+        // 部分浏览器不支持 performance.mark，忽略
+      }
+      // 同步审核信息草稿（保存/召回后刷新也走这里）
+      setMetaDraft({
+        registration_number: result.data.registration_number || '',
+        location: result.data.location || '',
+        latitude: result.data.latitude ?? null,
+        longitude: result.data.longitude ?? null,
+      });
+      setMetaDirty(false);
     } else if (!result.success && result.message && result.message.includes('分区')) {
       // 后端返回 403：当前管理员无权访问该照片所属分区
       setError('forbidden_zone');
@@ -119,10 +154,69 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
     setTimeout(() => setNotice(''), 3000);
   };
 
+  /** V4.10.0：注册号草稿是否可提交（空、N/A 或合法格式） */
+  const metaValid = isRegistrationDraftValid(metaDraft.registration_number);
+
+  /**
+   * 保存审核信息草稿（无改动时直接放行）。
+   * 通过/拒绝前会先调用，避免「改了没保存就被审核」。
+   * @returns 是否可继续执行审核动作
+   */
+  const saveMeta = async (): Promise<boolean> => {
+    if (!id || !metaDirty) return true;
+    if (!metaValid) {
+      setError('注册号格式不合法，请修正后再保存');
+      return false;
+    }
+
+    setMetaSaving(true);
+    const registration = metaDraft.registration_number.trim();
+    const location = metaDraft.location.trim();
+    const registrationValue = registration === '' ? null : registration;
+    const locationValue = location === '' ? null : location;
+
+    const result = await updatePhotoMeta(id, {
+      registration_number: registrationValue,
+      location: locationValue,
+      latitude: metaDraft.latitude,
+      longitude: metaDraft.longitude,
+    });
+    setMetaSaving(false);
+
+    if (!result.success) {
+      setError(result.message || '信息保存失败');
+      return false;
+    }
+
+    // 本地同步后端归一结果（N/A 时后端会清空自动识别的机型/航司）
+    setPhoto((prev) =>
+      prev
+        ? {
+            ...prev,
+            registration_number: registrationValue,
+            location: locationValue,
+            latitude: metaDraft.latitude,
+            longitude: metaDraft.longitude,
+            ...(registrationValue === null || registrationValue === 'N/A'
+              ? { aircraft_type: null, airline: null }
+              : {}),
+          }
+        : prev
+    );
+    setMetaDirty(false);
+    showNotice('信息已保存');
+    return true;
+  };
+
   /** 通过审核 */
   const handleApprove = async () => {
     if (!id) return;
     setActionLoading(true);
+    // 先落盘审核信息，失败则中止审核
+    if (!(await saveMeta())) {
+      setActionLoading(false);
+      return;
+    }
     const result = await approvePhoto(id);
     if (result.success) {
       navigate('/admin/photos');
@@ -136,6 +230,11 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
   const handleReject = async () => {
     if (!id || !rejectReason.trim()) return;
     setActionLoading(true);
+    // 先落盘审核信息，失败则中止审核
+    if (!(await saveMeta())) {
+      setActionLoading(false);
+      return;
+    }
     const result = await rejectPhoto(id, rejectReason.trim());
     if (result.success) {
       navigate('/admin/photos');
@@ -276,6 +375,14 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
             alt={photo.title}
             authToken={adminToken || undefined}
             imageClassName="w-full max-h-[600px] object-contain bg-gray-50"
+            onImageLoad={() => {
+              // 开图完成埋点（供性能浮层读取）
+              try {
+                performance.mark('photo-detail:image-loaded');
+              } catch {
+                // 忽略不支持 performance.mark 的环境
+              }
+            }}
             footer={
               <>
                 <div className="flex items-center gap-4">
@@ -378,17 +485,32 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
             )}
           </InfoCard>
 
-          {/* 用户填写信息 */}
+          {/* 用户填写信息（V4.10.0：注册号与拍摄地点可编辑，审核前自动保存） */}
           <InfoCard title="用户填写信息" icon={<Hash className="w-5 h-5" />}>
             <div className="space-y-3 text-sm">
               <InfoRow label="标题" value={photo.title} />
-              <InfoRow
-                label="飞机注册号"
-                value={photo.registration_number || '（未填写）'}
+              <RegistrationField
+                value={metaDraft.registration_number}
+                disabled={actionLoading || metaSaving}
+                onChange={(value) => {
+                  setMetaDraft((prev) => ({ ...prev, registration_number: value }));
+                  setMetaDirty(true);
+                }}
               />
               {photo.is_hot === 1 && (
                 <p className="text-sm text-gray-600">用户热门意愿: 是</p>
               )}
+              <LocationField
+                value={metaDraft as LocationDraft}
+                onChange={(next) => {
+                  // 仅更新地点三项，保留注册号草稿
+                  setMetaDraft((prev) => ({ ...prev, ...next }));
+                  setMetaDirty(true);
+                }}
+                originalUrl={photo.original_url}
+                authToken={adminToken || undefined}
+                disabled={actionLoading || metaSaving}
+              />
               <InfoRow
                 label="描述"
                 value={photo.description || '（未填写）'}
@@ -412,6 +534,21 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               {photo.category && (
                 <InfoRow label="分类" value={photo.category} />
               )}
+
+              {/* 保存行：仅在有未保存修改时可点击；通过/拒绝会先自动保存 */}
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                <span className="text-xs text-gray-400">
+                  {metaDirty ? '有未保存的修改' : '通过/拒绝时会自动保存此处修改'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void saveMeta()}
+                  disabled={!metaDirty || metaSaving || actionLoading || !metaValid}
+                  className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white text-xs font-medium transition-colors"
+                >
+                  {metaSaving ? '保存中…' : '保存信息'}
+                </button>
+              </div>
             </div>
           </InfoCard>
 
@@ -450,7 +587,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               />
               <InfoRow
                 label="位置"
-                value={photo.location || '-'}
+                value={metaDraft.location || '-'}
                 icon={<MapPin className="w-3 h-3" />}
               />
             </div>
@@ -571,7 +708,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
             <div className="flex gap-3">
               <button
                 onClick={() => setShowRejectModal(true)}
-                disabled={actionLoading}
+                disabled={actionLoading || !metaValid}
                 className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
               >
                 <X className="w-4 h-4" />
@@ -579,7 +716,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               </button>
               <button
                 onClick={handleApprove}
-                disabled={actionLoading}
+                disabled={actionLoading || !metaValid}
                 className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
               >
                 <Check className="w-4 h-4" />
@@ -622,7 +759,7 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
               </button>
               <button
                 onClick={handleReject}
-                disabled={!rejectReason.trim() || actionLoading}
+                disabled={!rejectReason.trim() || actionLoading || !metaValid}
                 className="flex-1 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
               >
                 {actionLoading ? '提交中...' : '确认拒绝'}

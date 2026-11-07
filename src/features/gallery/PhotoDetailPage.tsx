@@ -528,7 +528,9 @@ export function PhotoDetailPage() {
                 {photo.registration_number && (
                   <div className="flex justify-between items-center">
                     <span className={`text-sm text-gray-500`}>注册号</span>
-                    <span className={`font-medium text-sm font-mono text-gray-900`}>{photo.registration_number}</span>
+                    <span className={`font-medium text-sm font-mono text-gray-900`}>
+                      {photo.registration_number === 'N/A' ? '无注册号' : photo.registration_number}
+                    </span>
                   </div>
                 )}
                 {photo.aircraft_type && <DetailRow label="机型" value={photo.aircraft_type} />}

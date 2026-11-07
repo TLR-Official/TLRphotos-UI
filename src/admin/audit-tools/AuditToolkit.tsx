@@ -55,7 +55,12 @@ interface AuditToolkitProps {
   imageClassName?: string;
   /** 图片操作栏（底部信息条，由调用方提供） */
   footer?: ReactNode;
+  /** 图片加载完成回调（V4.10.0：供性能浮层记录开图耗时） */
+  onImageLoad?: () => void;
 }
+
+/** 需要像素数据的工具：仅在这些工具激活时才下载解码图片 */
+const PIXEL_TOOL_IDS: ToolId[] = ['histogram', 'blemish', 'contrast', 'saturation', 'sharpness', 'colorTemp', 'clipping'];
 
 /** 面板与图片之间的水平间距（px） */
 const PANEL_GAP = 16;
@@ -95,7 +100,7 @@ const SHORTCUT_GROUPS: { label: string; items: { name: string; key: string }[] }
   },
 ];
 
-export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer }: AuditToolkitProps) {
+export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer, onImageLoad }: AuditToolkitProps) {
   const [activeTools, setActiveTools] = useState<Set<ToolId>>(new Set());
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
@@ -114,8 +119,10 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
     y: PANEL_TOP_OFFSET,
   });
 
-  // 像素数据获取（降采样 800px）
-  const pixels = useImagePixels(src, authToken);
+  // 像素数据获取（降采样 800px）：仅当像素类工具激活时才加载，
+  // 避免每次打开审核详情页都重复下载 + 解码 + getImageData（V4.10.0）
+  const needsPixels = Array.from(activeTools).some((id) => PIXEL_TOOL_IDS.includes(id));
+  const pixels = useImagePixels(src, authToken, needsPixels);
 
   // 监听图片容器尺寸变化，用于 Canvas overlay 坐标映射
   useEffect(() => {
@@ -296,6 +303,7 @@ export function AuditToolkit({ src, authToken, alt, imageClassName = '', footer 
                 className={`${imageClassName}`}
                 draggable={false}
                 style={{ maxHeight: '600px' }}
+                onLoad={onImageLoad}
               />
               {/* 叠加层：位于图片上方第二层（z-10），随图片同步移动 */}
               <CanvasOverlay>

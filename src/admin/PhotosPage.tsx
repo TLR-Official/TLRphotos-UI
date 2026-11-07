@@ -93,7 +93,7 @@ export function PhotosPage() {
               <div
                 key={photo.id}
                 onClick={() => handlePhotoClick(photo.id)}
-                className={`bg-white rounded-lg overflow-hidden border cursor-pointer hover:border-blue-300 hover:shadow-md transition-all ${
+                className={`bg-white rounded-lg overflow-hidden border cursor-pointer hover:border-blue-300 hover:shadow-md transition-colors ${
                   photo.id === nextPhotoId ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'
                 }`}
               >
@@ -103,6 +103,7 @@ export function PhotosPage() {
                     alt={photo.title}
                     authToken={adminToken || undefined}
                     cacheEnabled={false}
+                    loading="lazy"
                     className="w-full h-48 object-cover"
                   />
                   {photo.id === nextPhotoId && (
@@ -123,7 +124,9 @@ export function PhotosPage() {
                     <UserTitleBadge title={photo.uploader_title} />
                   </p>
                   {photo.registration_number && (
-                    <p className="text-gray-600 text-xs mt-1 font-mono">注册号: {photo.registration_number}</p>
+                    <p className="text-gray-600 text-xs mt-1 font-mono">
+                      注册号: {photo.registration_number === 'N/A' ? '无' : photo.registration_number}
+                    </p>
                   )}
                   {photo.is_hot === 1 && (
                     <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded border border-blue-200 bg-blue-50 text-blue-700">热门意愿</span>

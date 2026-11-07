@@ -17,7 +17,6 @@ import { PhotoCarousel } from './features/gallery/PhotoCarousel';
 import { PhotoDetailPage } from './features/gallery/PhotoDetailPage';
 import { GalleryPage } from './features/gallery/GalleryPage';
 import { RecommendPage } from './features/gallery/RecommendPage';
-import { ArticleDetailPage } from './features/column/ArticleDetailPage';
 import { RecentNewsCard } from './features/news/RecentNewsCard';
 import { AuthPage } from './features/auth/AuthPage';
 import { ProfilePage } from './features/profile/ProfilePage';
@@ -25,14 +24,10 @@ import { MyWorksPage } from './features/profile/MyWorksPage';
 import { MyAppealsPage } from './features/profile/MyAppealsPage';
 import { PublicProfilePage } from './features/user/PublicProfilePage';
 import { UploadPage } from './features/upload/UploadPage';
-import { AdminApp } from './admin/AdminApp';
 import { ForumHomePage } from './features/forum/ForumHomePage';
 import { BoardPage } from './features/forum/BoardPage';
-import { ThreadDetailPage } from './features/forum/ThreadDetailPage';
-import { NewThreadPage } from './features/forum/NewThreadPage';
 import { AboutPage } from './features/about/AboutPage';
 import { NewsListPage } from './features/news/NewsListPage';
-import { NewsDetailPage } from './features/news/NewsDetailPage';
 import { NotificationPage } from './features/notifications/NotificationPage';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
@@ -51,6 +46,33 @@ import type { PhotoListItem } from './features/gallery/types';
 /** 移动端上传页（独立分包，仅 /m/upload 命中时加载） */
 const MobileUploadPage = lazy(() =>
   import('./features/upload/mobile/MobileUploadPage').then((m) => ({ default: m.MobileUploadPage })),
+);
+
+/**
+ * 管理后台（V4.10.0：独立分包）
+ * 管理端包含审核工具集等较重代码，普通访客无需下载；
+ * 仅访问 /admin/* 时才按需加载。
+ */
+const AdminApp = lazy(() =>
+  import('./admin/AdminApp').then((m) => ({ default: m.AdminApp })),
+);
+
+/**
+ * 长文渲染页（V4.10.0：独立分包）
+ * react-markdown / KaTeX 体积较大，仅在进入文章、新闻、帖子详情时加载，
+ * 避免普通访客为首屏承担解析成本。
+ */
+const ArticleDetailPage = lazy(() =>
+  import('./features/column/ArticleDetailPage').then((m) => ({ default: m.ArticleDetailPage })),
+);
+const NewsDetailPage = lazy(() =>
+  import('./features/news/NewsDetailPage').then((m) => ({ default: m.NewsDetailPage })),
+);
+const ThreadDetailPage = lazy(() =>
+  import('./features/forum/ThreadDetailPage').then((m) => ({ default: m.ThreadDetailPage })),
+);
+const NewThreadPage = lazy(() =>
+  import('./features/forum/NewThreadPage').then((m) => ({ default: m.NewThreadPage })),
 );
 
 /**
@@ -111,6 +133,13 @@ function AppRouterContent() {
 
       {/* 移动端主内容区底部预留 TabBar 空间（56px + 底部安全区），桌面端不受影响 */}
       <main className="flex-1 pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0">
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center py-24 text-sm text-gray-500">
+              页面加载中…
+            </div>
+          }
+        >
         <Routes>
           <Route path="/" element={<HomePageContent />} />
           <Route path="/photos/:id" element={<PhotoDetailPage />} />
@@ -145,8 +174,22 @@ function AppRouterContent() {
           <Route path="/news" element={<NewsListPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/notifications" element={<NotificationPage />} />
-          <Route path="/admin/*" element={<AdminApp />} />
+          <Route
+            path="/admin/*"
+            element={
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center py-24 text-sm text-gray-500">
+                    管理后台加载中…
+                  </div>
+                }
+              >
+                <AdminApp />
+              </Suspense>
+            }
+          />
         </Routes>
+        </Suspense>
       </main>
 
       {!isAdminPage && <Footer />}

@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload, CoreMetrics } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload, CoreMetrics, UpdatePhotoMetaPayload } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -206,6 +206,24 @@ export async function approvePhoto(id: string): Promise<{ success: boolean; mess
   const response = await fetch(`${API_BASE}/photos/${id}/approve`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/**
+ * 更新照片审核信息（V4.10.0）
+ * 仅提交需要修改的字段：注册号、拍摄地点文本、经纬度（成对）。
+ * @param id 照片 id
+ * @param payload 待更新字段
+ */
+export async function updatePhotoMeta(
+  id: string,
+  payload: UpdatePhotoMetaPayload
+): Promise<{ success: boolean; data?: AdminPhotoDetail; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/photos/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
   return response.json();
 }

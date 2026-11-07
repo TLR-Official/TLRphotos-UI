@@ -8,27 +8,40 @@
  * V4.1.0：新增 /admin/bans（用户封禁管理）与 /admin/announcements（公告管理）。
  * V4.3.0：/admin/forum 落地为论坛治理页（板块管理 + 帖子管理），占位页移除。
  */
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
 import { ForceChangePassword } from './ForceChangePassword';
 import { Layout } from './Layout';
 import { DashboardPage } from './DashboardPage';
 import { PhotosPage } from './PhotosPage';
-import { PhotoDetailPage } from './PhotoDetailPage';
 import { AdminsPage } from './AdminsPage';
 import { UsersPage } from './UsersPage';
 import { LogsPage } from './LogsPage';
 import { MyAuditsPage } from './MyAuditsPage';
 import { AppealsPage } from './AppealsPage';
 import { NewsPage } from './NewsPage';
-import { NewsEditorPage } from './NewsEditorPage';
-import { BansPage } from './BansPage';
 import { AnnouncementsPage } from './AnnouncementsPage';
 import { ForumPage } from './ForumPage';
 import { InvitesPage } from './InvitesPage';
 import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
 import type { AdminUser } from './types';
+
+/**
+ * V4.10.0：三个体积最大的页面改为按需加载
+ * - PhotoDetailPage 会带入整个 audit-tools（9 个工具 + 像素分析算法）
+ * - NewsEditorPage 带入 Markdown/KaTeX 渲染链
+ * - BansPage 带入处罚表单与历史列表
+ */
+const PhotoDetailPage = lazy(() =>
+  import('./PhotoDetailPage').then((m) => ({ default: m.PhotoDetailPage })),
+);
+const NewsEditorPage = lazy(() =>
+  import('./NewsEditorPage').then((m) => ({ default: m.NewsEditorPage })),
+);
+const BansPage = lazy(() =>
+  import('./BansPage').then((m) => ({ default: m.BansPage })),
+);
 
 /**
  * 从 URL 路径解析照片 ID
@@ -240,7 +253,15 @@ export function AdminApp() {
       onNavigate={handleNavigate}
       onLogout={handleLogout}
     >
-      {renderPage()}
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center py-20 text-sm text-gray-500">
+            页面加载中…
+          </div>
+        }
+      >
+        {renderPage()}
+      </Suspense>
     </Layout>
   );
 }

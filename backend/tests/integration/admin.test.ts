@@ -3,7 +3,7 @@
  * @description 测试管理员认证、权限控制、照片审核工作流等核心管理功能
  */
 
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import path from 'path';
@@ -254,6 +254,120 @@ describe('DELETE /api/admin/users/:id 释放唯一键', () => {
 
     expect(create.status).toBe(201);
     expect(create.body.success).toBe(true);
+  });
+});
+
+describe('PATCH /api/admin/photos/:id 审核信息更新', () => {
+  const photoId = 'test-meta-photo';
+
+  beforeEach(async () => {
+    const dbModule = await import('../../src/db');
+    await dbModule.db.run(
+      `INSERT OR REPLACE INTO photos
+        (id, title, thumbnail_path, original_url, category, status, registration_number, aircraft_type, airline, location)
+       VALUES (?, ?, ?, ?, 'aviation', 'pending', 'B-1234', 'Boeing 777-300ER', 'Air China', '上海市浦东新区')`,
+      photoId, '测试审核信息', 'https://example.com/t.webp', 'https://example.com/o.jpg'
+    );
+  });
+
+  it('应在无 token 时返回 401', async () => {
+    const res = await request(app).patch(`/api/admin/photos/${photoId}`).send({ location: '北京' });
+    expect(res.status).toBe(401);
+  });
+
+  it('应将注册号写为 N/A 并清空自动识别的机型与航司', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ registration_number: 'n/a' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const dbModule = await import('../../src/db');
+    const row = await dbModule.db.get<{ registration_number: string; aircraft_type: string | null; airline: string | null }>(
+      'SELECT registration_number, aircraft_type, airline FROM photos WHERE id = ?',
+      [photoId]
+    );
+    expect(row?.registration_number).toBe('N/A');
+    expect(row?.aircraft_type).toBeNull();
+    expect(row?.airline).toBeNull();
+  });
+
+  it('应接受合法注册号并转大写', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ registration_number: 'b-5678' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.registration_number).toBe('B-5678');
+  });
+
+  it('应拒绝非法注册号', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ registration_number: 'AB/' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_REGISTRATION');
+  });
+
+  it('应拒绝超过 200 字符的拍摄地点', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ location: '地'.repeat(201) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_LOCATION');
+  });
+
+  it('应写入地点与经纬度', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ location: '上海市浦东新区', latitude: 31.230416, longitude: 121.473701 });
+
+    expect(res.status).toBe(200);
+    const dbModule = await import('../../src/db');
+    const row = await dbModule.db.get<{ location: string; latitude: number; longitude: number }>(
+      'SELECT location, latitude, longitude FROM photos WHERE id = ?',
+      [photoId]
+    );
+    expect(row?.location).toBe('上海市浦东新区');
+    expect(row?.latitude).toBeCloseTo(31.230416, 6);
+    expect(row?.longitude).toBeCloseTo(121.473701, 6);
+  });
+
+  it('应拒绝越界经纬度', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ latitude: 91, longitude: 121 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_COORDINATES');
+  });
+
+  it('应拒绝经纬度缺一', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ latitude: 31.2 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_COORDINATES');
+  });
+
+  it('分区审核员不得修改其他分区照片', async () => {
+    const res = await request(app)
+      .patch(`/api/admin/photos/${photoId}`)
+      .set('Authorization', `Bearer ${zoneAuditorToken}`)
+      .send({ location: '杭州' });
+
+    expect(res.status).toBe(403);
   });
 });
 

@@ -42,10 +42,17 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
   const [showIndicator, setShowIndicator] = useState(false);
+  // 拖拽中：用 state（而非 ref）驱动 transition，保证拖拽期间真正禁用过渡
+  const [dragging, setDragging] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // 变换层：拖拽时直接写 style.transform，避免每帧 React 重渲染
+  const transformRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const dragLastDelta = useRef({ dx: 0, dy: 0 });
+  const dragRafRef = useRef<number | null>(null);
+  const pointerRef = useRef({ x: 0, y: 0 });
 
   // rAF 批处理状态
   const wheelDeltaAccRef = useRef(0); // 累积 delta
@@ -82,7 +89,9 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
   }, []);
 
   // ── 原生 wheel 监听器（passive: false 确保 preventDefault 跨浏览器生效）──
+  // V4.10.0：仅在缩放工具激活时绑定，未激活时页面保持正常滚动
   useEffect(() => {
+    if (!active) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -138,7 +147,7 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
       }
       if (indicatorTimerRef.current) clearTimeout(indicatorTimerRef.current);
     };
-  }, [zoomBy, flashIndicator]);
+  }, [active, zoomBy, flashIndicator]);
 
   // ── 外部快捷键事件（键盘 +/-/0）──
   useEffect(() => {
@@ -157,26 +166,59 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
   }, [zoomBy, resetZoom, flashIndicator]);
 
   // ── 拖拽平移（仅在缩放工具激活且已放大时）──
+  // V4.10.0：拖拽帧内直接写 transform，不逐帧 setState；松手后才同步一次位置状态
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!active || scale === 1) return;
       e.preventDefault();
       isDragging.current = true;
+      setDragging(true);
       dragStart.current = { x: e.clientX, y: e.clientY, tx, ty };
+      dragLastDelta.current = { dx: 0, dy: 0 };
+      pointerRef.current = { x: e.clientX, y: e.clientY };
     },
     [active, scale, tx, ty]
   );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging.current) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    setTx(dragStart.current.tx + dx);
-    setTy(dragStart.current.ty + dy);
-  }, []);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDragging.current) return;
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+      // 同一帧内多次 mousemove 合并为一次样式写入
+      if (dragRafRef.current !== null) return;
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        if (!isDragging.current || !transformRef.current) return;
+        const dx = pointerRef.current.x - dragStart.current.x;
+        const dy = pointerRef.current.y - dragStart.current.y;
+        dragLastDelta.current = { dx, dy };
+        transformRef.current.style.transform = `translate(${dragStart.current.tx + dx}px, ${dragStart.current.ty + dy}px) scale(${scale})`;
+      });
+    },
+    [scale]
+  );
 
   const handleMouseUp = useCallback(() => {
+    if (!isDragging.current) return;
     isDragging.current = false;
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    // 提交最终位置：React 重渲染后由 state 接管样式
+    setTx(dragStart.current.tx + dragLastDelta.current.dx);
+    setTy(dragStart.current.ty + dragLastDelta.current.dy);
+    setDragging(false);
+  }, []);
+
+  // 卸载时清理拖拽 rAF
+  useEffect(() => {
+    return () => {
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
+    };
   }, []);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -199,11 +241,13 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
     >
       {/* 变换层：图片 + 叠加层同层，拖拽/缩放时同步移动 */}
       <div
+        ref={transformRef}
         className="relative"
         style={{
           transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           transformOrigin: 'center center',
-          transition: isDragging.current ? 'none' : 'transform 0.08s ease-out',
+          // 拖拽期间禁用过渡，避免指针跟随发飘；松手/滚轮时保留轻微缓动
+          transition: dragging ? 'none' : 'transform 0.06s ease-out',
           willChange: 'transform',
         }}
       >

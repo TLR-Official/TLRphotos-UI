@@ -61,6 +61,14 @@ export interface AdminPhoto {
   is_hot?: number;
 }
 
+/** V4.10.0：审核端照片信息更新载荷（仅传需要修改的字段） */
+export interface UpdatePhotoMetaPayload {
+  registration_number?: string | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
 /** 管理员照片详情（包含完整元数据） */
 export interface AdminPhotoDetail {
   id: string;
@@ -83,7 +91,8 @@ export interface AdminPhotoDetail {
   description: string;
   camera_model: string;
   vehicle: string;
-  location: string;
+  /** 拍摄地点（V4.10.0 起可由审核端补充，数据库允许 NULL） */
+  location?: string | null;
   focal_length: string;
   iso: number;
   shutter_speed: string;
@@ -101,6 +110,12 @@ export interface AdminPhotoDetail {
   created_at: string;
   /** 飞机注册号（旧数据可能为 null） */
   registration_number?: string | null;
+  /** V4.10.0：审核端补充的拍摄地点精确坐标（仅管理端返回） */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** V4.6.0：服务端自动识别的机型与所属航司（无注册号时被清空） */
+  aircraft_type?: string | null;
+  airline?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
   /** V4.0.0：管理员确认热门标记，1=已确认热门（确认后禁止召回） */

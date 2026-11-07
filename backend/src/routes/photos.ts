@@ -613,6 +613,9 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
     delete photo.reviewed_by;
 
     delete photo.altitude;
+    // V4.10.0：经纬度为审核辅助信息，仅管理端详情返回，公开接口一律剔除
+    delete photo.latitude;
+    delete photo.longitude;
     res.json({
       success: true,
       data: {

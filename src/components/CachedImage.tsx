@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { getCachedImage } from '../utils/imageCache';
+import { getAuthImage } from '../utils/authImageCache';
 
 /**
  * CachedImage 组件 Props
@@ -69,24 +70,28 @@ export function CachedImage({
     let cancelled = false;
 
     (async () => {
-      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-      const cachedUrl = await getCachedImage(src, headers);
+      // V4.10.0：携带 authToken 的鉴权图片走内存 LRU（同一 URL 只下载一次，
+      // 与像素分析共用 ObjectURL）；无 token 时仍走 IndexedDB 公共缓存
+      const loadedUrl = authToken
+        ? await getAuthImage(src, authToken)
+        : await getCachedImage(src);
 
       if (cancelled) {
-        // 组件已卸载或 src 已变更，立即释放本次返回的 ObjectURL 避免内存泄漏
-        if (cachedUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(cachedUrl);
+        // 公共缓存路径返回的 ObjectURL 由本组件负责释放；
+        // 鉴权路径的 ObjectURL 由内存 LRU 统一管理，不可在此 revoke
+        if (!authToken && loadedUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(loadedUrl);
         }
         return;
       }
 
-      // 释放上一个 ObjectURL，避免内存泄漏
+      // 释放上一个由本组件持有的 ObjectURL，避免内存泄漏
       if (objectUrlRef.current && objectUrlRef.current.startsWith('blob:')) {
         URL.revokeObjectURL(objectUrlRef.current);
       }
 
-      objectUrlRef.current = cachedUrl;
-      setDisplaySrc(cachedUrl);
+      objectUrlRef.current = authToken ? null : loadedUrl;
+      setDisplaySrc(loadedUrl);
     })();
 
     return () => {

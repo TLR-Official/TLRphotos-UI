@@ -43,6 +43,8 @@ export function UsersPage() {
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState('');
+  // V4.10.0：搜索关键词防抖值，避免每敲一个字符就发一次请求
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [loading, setLoading] = useState(true);
   // 当前操作中的用户 id，用于禁用对应行按钮，避免重复点击
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -50,15 +52,21 @@ export function UsersPage() {
   const [permUser, setPermUser] = useState<AdminUser | null>(null);
   const [permLoading, setPermLoading] = useState(false);
 
-  // page 或 keyword 变化时重新拉取用户列表（注意：keyword 即时触发，未做防抖）
+  // 关键词防抖 300ms：输入停止后才触发检索
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
+  // page 或防抖后的 keyword 变化时重新拉取用户列表
   useEffect(() => {
     fetchUsers();
-  }, [page, keyword]);
+  }, [page, debouncedKeyword]);
 
   /** 按当前页码与关键字拉取用户列表 */
   const fetchUsers = async () => {
     setLoading(true);
-    const result = await getUsers(page, pageSize, keyword);
+    const result = await getUsers(page, pageSize, debouncedKeyword);
     if (result.success && result.data) {
       setUsers(result.data);
       setTotal(result.pagination?.total || 0);

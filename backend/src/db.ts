@@ -537,6 +537,13 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN airline TEXT');
   } catch {}
+  // V4.10.0：审核端补充的拍摄地点精确坐标（仅管理端读取，公开接口不返回）
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN latitude REAL');
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN longitude REAL');
+  } catch {}
   // V4.6.0：注册号 → 机型/航司 的查询缓存，避免重复请求上游被限流（TTL 由服务层控制）
   await db.run(`CREATE TABLE IF NOT EXISTS aircraft_cache (
     registration TEXT PRIMARY KEY,

@@ -761,3 +761,16 @@ describe('V2.0.0 邮箱确权门（requireVerifiedEmail）', () => {
     await db.run('UPDATE users SET email = ?, email_verified = 1 WHERE id = ?', 'a@test.local', TEST_USER_A);
   });
 });
+
+describe('V4.10.0 公开详情不暴露经纬度', () => {
+  it('GET /api/photos/:id 响应中不应包含 latitude / longitude', async () => {
+    await db.run('UPDATE photos SET latitude = 31.230416, longitude = 121.473701 WHERE id = ?', testPhotoId);
+
+    const res = await request(app).get(`/api/photos/${testPhotoId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).not.toHaveProperty('latitude');
+    expect(res.body.data).not.toHaveProperty('longitude');
+  });
+});

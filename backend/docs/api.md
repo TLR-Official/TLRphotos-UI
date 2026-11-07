@@ -2187,6 +2187,46 @@ Authorization: Bearer <admin_token>
 }
 ```
 
+### 更新照片审核信息（V4.10.0）
+
+**PATCH** `/api/admin/photos/:id`
+
+**鉴权**：`PHOTO_AUDIT_ROLES`（super / zone_master / zone_auditor）；后两者仅可修改本分区照片，跨区返回 403「该图片不是你所负责的分区」。
+
+**请求体**（全部字段可选，仅更新传入项；白名单外字段忽略）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| registration_number | string \| null | 飞机注册号。空串或 `null` → 落库 `NULL`（表示未填）；`n/a`（任意大小写）→ 归一为 `N/A`（表示审核确认无注册号）；其余值 trim + 转大写后必须匹配 `^[A-Z0-9][A-Z0-9-]{1,19}$` |
+| location | string \| null | 拍摄地点文本，trim 后 ≤200 字符；空串 → `NULL` |
+| latitude | number \| null | 纬度，`[-90, 90]`；必须与 `longitude` 成对提交 |
+| longitude | number \| null | 经度，`[-180, 180]`；与 `latitude` 同时传 `null` 表示清空坐标 |
+
+**联动规则**：`registration_number` 被写成 `N/A` 或 `null` 时，同一条 UPDATE 内清空 `aircraft_type` / `airline`（自动识别的机型与航司失去依据）。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": { "id": "000013", "registration_number": "N/A", "location": "31.230416, 121.473701", "latitude": 31.230416, "longitude": 121.473701 },
+  "message": "照片信息已更新"
+}
+```
+
+**错误码**:
+
+| HTTP | code | 触发条件 |
+|------|------|----------|
+| 400 | `INVALID_REGISTRATION` | 注册号类型非法或格式不匹配 |
+| 400 | `INVALID_LOCATION` | 地点非字符串或超过 200 字符 |
+| 400 | `INVALID_COORDINATES` | 经纬度未成对提交，或超出有效范围 |
+| 403 | — | 非本分区照片 |
+| 404 | — | 照片不存在 |
+
+**审计**：写入 `admin_logs`，`action=update_photo_meta`，`details.changes` 记录每个字段的 from→to。
+
+> 管理端照片详情 `GET /api/admin/photos/:id` 返回 `latitude` / `longitude`；公开详情 `GET /api/photos/:id` **不返回**这两个字段。
+
 ### 审核通过 / 驳回（V4.0.0 补记 reviewed_by / reviewed_at）
 
 **PUT** `/api/admin/photos/:id/approve`
