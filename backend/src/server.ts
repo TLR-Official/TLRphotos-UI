@@ -31,6 +31,8 @@ import aboutRouter from './routes/about';
 import newsRouter, { adminNewsRouter } from './routes/news';
 import usersRouter from './routes/users';
 import announcementsRouter, { adminAnnouncementsRouter } from './routes/announcements';
+// V4.10.1：公开配置（高德地图 Key 运行时下发，仅返回客户端公开凭证）
+import publicConfigRouter from './routes/publicConfig';
 import { commentArchiveService } from './services/commentArchiveService';
 import { initDb, db } from './db';
 import { initTagsDb } from './db/tagsDb';
@@ -105,6 +107,8 @@ app.use('/api/news', newsRouter);
 // V4.1.0：公开用户主页 / 公告横幅
 app.use('/api/users', usersRouter);
 app.use('/api/announcements', announcementsRouter);
+// V4.10.1：公开配置（地图 Key 等客户端公开凭证，未配置时返回 null）
+app.use('/api/config', publicConfigRouter);
 
 // 静态资源：文章 Markdown 原文与上传文件目录
 app.use('/articles', express.static(path.join(__dirname, '../../articles')));

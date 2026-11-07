@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapPin, RefreshCw } from 'lucide-react';
-import { isAmapConfigured, loadAmap } from './amapLoader';
+import { loadAmap } from './amapLoader';
 import { formatCoordinates, readExifLocation } from './exifLocation';
 
 /** 拍摄地点草稿（受控） */
@@ -101,10 +101,6 @@ export function LocationField({ value, onChange, originalUrl, authToken, disable
   // 地图初始化与销毁：仅在展开时加载脚本，收起即销毁实例
   useEffect(() => {
     if (!mapOpen) return;
-    if (!isAmapConfigured()) {
-      setMapError('未配置高德地图 Key（VITE_AMAP_KEY），可继续使用手动输入或 EXIF 读取');
-      return;
-    }
 
     let disposed = false;
     setMapLoading(true);
@@ -160,8 +156,8 @@ export function LocationField({ value, onChange, originalUrl, authToken, disable
         setMapLoading(false);
         setMapError(
           err.message === 'AMAP_NOT_CONFIGURED'
-            ? '未配置高德地图 Key（VITE_AMAP_KEY），可继续使用手动输入或 EXIF 读取'
-            : '地图加载失败，请检查网络后重试'
+            ? '未配置高德地图 Key（后端 AMAP_JS_KEY），可继续使用手动输入或 EXIF 读取'
+            : '地图加载失败，请检查网络或域名白名单后重试'
         );
       });
 

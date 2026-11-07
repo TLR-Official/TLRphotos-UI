@@ -3064,6 +3064,35 @@ episode（情节记忆）与 atomic_facts（原子事实），自动去重与矛
 
 ---
 
+## 公开配置（V4.10.1）
+
+**GET** `/api/config/public`
+
+**鉴权**：无（仅下发客户端公开凭证）。
+
+用于管理端「拍摄地点」地图选点：高德 JS API 的 Web 端 Key 与安全密钥属客户端公开凭证，由后端环境变量下发，避免固化在前端构建产物中。修改 Key 只需重启后端，无需重新构建前端。
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "amap_js_key": "your-amap-js-key",
+    "amap_security_code": "your-amap-security-code"
+  }
+}
+```
+
+**字段说明**:
+- `amap_js_key`：高德 Web 端 Key；未配置时为 `null`
+- `amap_security_code`：JS API 2.0 安全密钥（逆地理编码插件必需）；未配置时为 `null`
+
+**缓存**：`Cache-Control: public, max-age=300`（最长 5 分钟生效延迟，重启后端立即生效）。
+
+**安全说明**：接口不返回任何其他环境变量；Key 的实际调用边界由高德控制台的域名白名单保证，部署时需为 `tlrphotos.com` / `www.tlrphotos.com` / `admin.tlrphotos.com` 配置白名单。
+
+---
+
 ## 健康检查
 
 **GET** `/api/health`
