@@ -406,12 +406,25 @@ export function startPhotoProcessWorker(db: Database): () => void {
 }
 
 /**
- * 清理超期的预签名上传凭证（每日作业调用）
+ * 清理超期的预签名上传凭证（每日作业调用）。
+ * 对「已过期且未消费」的凭证，同时删除已直传到 OSS 但未完成落库的孤儿原图，
+ * 避免用户中途放弃/完成回调失败导致对象长期占用存储。
  * @param db 主业务库
- * @returns 清理数量
+ * @returns 清理的凭证数量
  */
 export async function cleanupExpiredUploadIntents(db: Database): Promise<number> {
   const now = new Date().toISOString();
+  const orphans = await db.all<{ oss_key: string }[]>(
+    'SELECT oss_key FROM photo_upload_intents WHERE expires_at < ? AND consumed_at IS NULL',
+    [now],
+  );
+  for (const orphan of orphans) {
+    try {
+      await deleteFromOSS(orphan.oss_key);
+    } catch (error) {
+      console.warn(`[PhotoProcess] 清理孤儿原图失败 key=${orphan.oss_key}:`, error);
+    }
+  }
   const result = await db.run('DELETE FROM photo_upload_intents WHERE expires_at < ?', [now]);
   return result.changes || 0;
 }
