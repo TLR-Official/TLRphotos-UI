@@ -319,6 +319,24 @@ describe('V3.2.0 注册号与热门标记', () => {
     expect(attrIds).not.toContain('tag-filter-wide');
   });
 
+  it('tag 筛选兼容 structured_tags 字符串值（首页定稿标签分组口径）', async () => {
+    await db.run(
+      `INSERT OR REPLACE INTO photos (id, title, thumbnail_path, original_url, tags, structured_tags, category, status, user_id, created_at)
+       VALUES ('tag-filter-structured', '结构化宽体机', 't', 'o', '["飞行器"]', '{"机型类型":"宽体机"}', 'aviation', 'approved', ?, '2026-01-03T00:00:00.000Z')`,
+      [TEST_USER_A]
+    );
+
+    // 列表接口：tags 不含「宽体机」，但 structured_tags 的值命中
+    const list = await request(app).get('/api/photos').query({ tag: '宽体机' });
+    expect(list.status).toBe(200);
+    expect(list.body.data.map((p: any) => p.id)).toContain('tag-filter-structured');
+
+    // 搜索接口：同一口径
+    const search = await request(app).get('/api/photos/search').query({ tag: '宽体机' });
+    expect(search.status).toBe(200);
+    expect(search.body.data.map((p: any) => p.id)).toContain('tag-filter-structured');
+  });
+
   it('非航空分区 upload/complete 缺少注册号不得返回 REGISTRATION_REQUIRED', async () => {
     const res = await request(app)
       .post('/api/photos/upload/complete')

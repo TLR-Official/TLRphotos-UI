@@ -337,12 +337,14 @@ router.get('/search', photoReadLimiter, async (req, res) => {
     }
 
     // 标签匹配：tags 字段以 JSON 数组字符串存储，支持逗号分隔多个标签（AND 关系）。
-    // 第二层标签浏览即通过该参数按标签对象名筛选。
+    // V4.13.0：同时匹配 structured_tags 的字符串值（如 {"机型类型":"宽体机"}），
+    // 保证首页按定稿标签分组（含存量结构化标签）与筛选页结果一致。
     if (tag) {
       const tagList = String(tag).split(',').map((t) => t.trim()).filter(Boolean);
       for (const tagName of tagList) {
-        conditions.push('tags LIKE ?');
-        params.push(`%"${escapeLikePattern(tagName)}"%`);
+        conditions.push('(tags LIKE ? OR structured_tags LIKE ?)');
+        const pattern = `%"${escapeLikePattern(tagName)}"%`;
+        params.push(pattern, pattern);
       }
     }
 
@@ -461,11 +463,13 @@ router.get('/', photoReadLimiter, async (req, res) => {
       params.push(String(category));
     }
     // 第二层标签浏览：支持逗号分隔多标签（AND），按标签对象名精确匹配 JSON 数组元素
+    // V4.13.0：同时匹配 structured_tags 字符串值，与首页定稿标签分组口径保持一致
     if (tag) {
       const tagList = String(tag).split(',').map((t) => t.trim()).filter(Boolean);
       for (const tagName of tagList) {
-        baseQuery += ' AND tags LIKE ?';
-        params.push(`%"${escapeLikePattern(tagName)}"%`);
+        baseQuery += ' AND (tags LIKE ? OR structured_tags LIKE ?)';
+        const pattern = `%"${escapeLikePattern(tagName)}"%`;
+        params.push(pattern, pattern);
       }
     }
     // 第三层标签浏览：按属性键值匹配结构化标签 JSON

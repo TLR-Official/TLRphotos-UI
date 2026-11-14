@@ -86,7 +86,7 @@
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | keyword | string | 关键词（匹配标题、描述、**飞机注册号（V3.2.0，归一化大写模糊匹配）**） |
-| tag | string | 标签筛选；**V4.1.2-beta.3 起支持逗号分隔多标签（AND 关系）**，如 `tag=飞行器,宽体机` 表示同时含两者 |
+| tag | string | 标签筛选；**V4.1.2-beta.3 起支持逗号分隔多标签（AND 关系）**，如 `tag=飞行器,宽体机` 表示同时含两者；**V4.13.0 起同时匹配 `structured_tags` 的字符串值**（如 `{"机型类型":"宽体机"}` 可被 `tag=宽体机` 命中） |
 | tag_key | string | 第三层细分标签属性键（V4.1.2-beta.3）：配合 `tag_value` 使用，匹配 `structured_tags` 中的属性键值对 |
 | tag_value | string | 第三层细分标签属性值（V4.1.2-beta.3）：与 `tag_key` 成对出现，缺一不生效 |
 | registration | string | 飞机注册号检索（V3.2.0）：大小写不敏感，按归一化大写值 LIKE 模糊匹配（如 `b-1234` 命中 `B-1234`） |
@@ -121,6 +121,7 @@
 > V4.13.0-beta 起 `GET /api/photos` 与 `GET /api/photos/search` 的列表项新增 `category`（`aviation` / `railway` / `automobile`），供首页按「分区 + 标签」分组展示（同一标签在不同分区各成一组，避免风格图等重复归属）。
 > V4.6.0-beta 起列表项新增 `aircraft_type`（机型，如 `Boeing 777-300ER`）与 `airline`（所属航司，如 `Air China`），未识别时为 `""`；`keyword` 关键词同时匹配 `title` / `description` / `registration_number` / `aircraft_type` / `airline`。
 > V4.1.2-beta.3 起 `GET /api/photos` 与 `GET /api/photos/search` 共用标签筛选能力：`tag`（逗号分隔多标签 AND）、`tag_key` + `tag_value`（第三层属性）均生效。
+> V4.13.0 起 `tag` 同时匹配 `structured_tags` 的字符串值，保证首页定稿标签分组（兼容存量结构化标签）与筛选页结果一致。
 > V4.11 起列表与搜索的排序均以 `id` 作为同秒并列的兜底键（如 `created_at DESC, id DESC`），刷新与翻页顺序稳定；`/api/auth/me/photos` 与公开用户作品列表同步。
 
 ### 获取所有标签
