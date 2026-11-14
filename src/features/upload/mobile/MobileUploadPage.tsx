@@ -22,6 +22,7 @@ import { AircraftInfoCard } from '../../../shared/AircraftInfoCard';
 import type { AircraftLookupResult } from '../../../api/aircraft';
 import { useTip } from '../../../shared/useTip';
 import { TagPicker } from '../TagPicker';
+import { AirportLookupCard } from '../AirportLookupCard';
 import {
   EMPTY_CATEGORY_FIELDS,
   TAG_CATALOG,
@@ -913,6 +914,10 @@ export function MobileUploadPage() {
                           onChange={(e) => updateCategoryField('location', e.target.value)}
                           placeholder="如 深圳宝安国际机场（SZX）；未知请填 N/A"
                           className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                        <AirportLookupCard
+                          value={categoryFields.location}
+                          onConfirm={(location) => updateCategoryField('location', location)}
                         />
                       </div>
                     </>

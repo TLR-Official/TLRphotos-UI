@@ -37,11 +37,10 @@ import { OnboardingCard } from './shared/OnboardingCard';
 import { useIsMobile } from './shared/useIsMobile';
 import { MouseFollowBackground } from './shared/MouseFollowBackground';
 import { ThemeProvider } from './shared/ThemeContext';
-import { CachedImage } from './components/CachedImage';
+import { TagSectionBoard } from './features/home/TagSectionBoard';
 import { PhotosProvider, usePhotos } from './shared/PhotosContext';
 import { UserProvider } from './shared/UserContext';
 import { useNavigate } from 'react-router-dom';
-import type { PhotoListItem } from './features/gallery/types';
 
 /** 移动端上传页（独立分包，仅 /m/upload 命中时加载） */
 const MobileUploadPage = lazy(() =>
@@ -326,16 +325,6 @@ const CATEGORY_ENTRIES = [
 function HomePageContent() {
   const navigate = useNavigate();
   const { photos, refreshPhotos } = usePhotos();
-  // 取第 6~9 张作为首页精选作品（前 5 张用于轮播）
-  const bottomPhotos = photos.slice(5, 9);
-
-  /**
-   * 点击精选照片跳转详情页
-   * @param photoId - 照片 ID
-   */
-  const handlePhotoClick = (photoId: string) => {
-    navigate(`/photos/${photoId}`);
-  };
 
   return (
     <PullToRefresh onRefresh={refreshPhotos}>
@@ -369,42 +358,8 @@ function HomePageContent() {
           ))}
         </nav>
 
-        <section className="mt-16">
-          <h2 className="text-xl font-semibold mb-8 text-black">精选作品</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-8">
-            {bottomPhotos.map((photo: PhotoListItem) => (
-              <div
-                key={photo.id}
-                onClick={() => handlePhotoClick(photo.id)}
-                className="group cursor-pointer rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl bg-white"
-              >
-                {/* 固定 4:3 容器 + object-contain：按原比例完整展示作品，不裁切构图 */}
-                <div className="aspect-[4/3] overflow-hidden bg-gray-50">
-                  <CachedImage
-                    src={photo.thumbnail_path}
-                    alt={photo.title}
-                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
-                  />
-                </div>
-                <div className="p-4">
-                  <h3 className="text-sm font-medium mb-2 truncate text-gray-900">
-                    {photo.title}
-                  </h3>
-                  <div className="flex flex-wrap gap-1">
-                    {photo.tags.slice(0, 2).map((tag: string) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* V4.12.0（PRD 第六节）：精选作品单栏改为按定稿标签分组的 3×3 板块墙 */}
+        <TagSectionBoard photos={photos} />
       </div>
     </main>
     </PullToRefresh>

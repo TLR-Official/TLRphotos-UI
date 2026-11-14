@@ -4,7 +4,7 @@
  * 左侧侧边栏提供关键词搜索与当前筛选摘要，右侧为照片瀑布流网格与排序栏。点击单张照片跳转至详情页。
  */
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useNavigationType } from 'react-router-dom';
+import { useNavigate, useNavigationType, useSearchParams } from 'react-router-dom';
 import { ImageOff } from 'lucide-react';
 import { searchPhotos, getTagsWithCounts } from '../../api/photos';
 import { getTagCategories, getCategoryTags } from '../../api/tags';
@@ -78,6 +78,10 @@ const ArrowUpDownIcon = ({ className }: { className: string }) => (
  */
 export function GalleryPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // V4.12.0：支持首页板块组标题跳转 /gallery?category=...&tag=...
+  const queryCategory = searchParams.get('category');
+  const queryTag = searchParams.get('tag');
   const [photos, setPhotos] = useState<PhotoListItem[]>([]);
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -91,7 +95,7 @@ export function GalleryPage() {
   const [isLoading, setIsLoading] = useState(true);
   // 热门标签 chips 行
   const [hotTags, setHotTags] = useState<{ name: string; count: number }[]>([]);
-  const [hotTag, setHotTag] = useState<string | null>(null);
+  const [hotTag, setHotTag] = useState<string | null>(() => queryTag);
   // 移动端：完整热门标签列表（Bottom Sheet 展示全部，chips 行仅展示前 12 个）
   const [allHotTags, setAllHotTags] = useState<{ name: string; count: number }[]>([]);
   // 移动端：标签 Bottom Sheet 开关与下拉拖拽位移
@@ -112,7 +116,10 @@ export function GalleryPage() {
       if (res.success && res.data && res.data.length > 0) {
         setCategories(res.data);
         const pending = pendingRestoreRef.current;
-        if (pending?.category && res.data.some((c) => c.id === pending.category)) {
+        // V4.12.0：URL 指定分区优先（首页板块组标题跳转）
+        if (queryCategory && res.data.some((c) => c.id === queryCategory)) {
+          setSelectedCategory(queryCategory);
+        } else if (pending?.category && res.data.some((c) => c.id === pending.category)) {
           setSelectedCategory(pending.category);
         } else {
           setSelectedCategory(res.data[0].id);
@@ -121,7 +128,7 @@ export function GalleryPage() {
         }
       }
     });
-  }, []);
+  }, [queryCategory]);
 
   /** 分区切换时重置下钻层级，并拉取该分区下的第二层标签对象（移动端按快照还原对象/属性） */
   useEffect(() => {
@@ -170,11 +177,11 @@ export function GalleryPage() {
     try {
       const snapshot = JSON.parse(raw) as MobileGalleryState;
       pendingRestoreRef.current = snapshot;
-      if (snapshot.hotTag) setHotTag(snapshot.hotTag);
+      if (!queryTag && snapshot.hotTag) setHotTag(snapshot.hotTag);
     } catch {
       // 快照损坏时忽略
     }
-  }, [isMobile, navigationType]);
+  }, [isMobile, navigationType, queryTag]);
 
   /** 移动端位置记忆：照片列表加载完成后还原滚动位置（一次性） */
   useEffect(() => {

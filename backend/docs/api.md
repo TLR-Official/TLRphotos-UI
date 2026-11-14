@@ -110,6 +110,7 @@
       "views": 8932,
       "registration_number": "B-1234",
       "is_hot": 0,
+      "category": "aviation",
       "created_at": "2024-05-15T18:30:00Z"
     }
   ]
@@ -117,6 +118,7 @@
 ```
 
 > V3.2.0 起列表项新增 `registration_number`（飞机注册号，存量数据可能为 `null`）与 `is_hot`（0/1）字段。
+> V4.13.0-beta 起 `GET /api/photos` 与 `GET /api/photos/search` 的列表项新增 `category`（`aviation` / `railway` / `automobile`），供首页按「分区 + 标签」分组展示（同一标签在不同分区各成一组，避免风格图等重复归属）。
 > V4.6.0-beta 起列表项新增 `aircraft_type`（机型，如 `Boeing 777-300ER`）与 `airline`（所属航司，如 `Air China`），未识别时为 `""`；`keyword` 关键词同时匹配 `title` / `description` / `registration_number` / `aircraft_type` / `airline`。
 > V4.1.2-beta.3 起 `GET /api/photos` 与 `GET /api/photos/search` 共用标签筛选能力：`tag`（逗号分隔多标签 AND）、`tag_key` + `tag_value`（第三层属性）均生效。
 > V4.11 起列表与搜索的排序均以 `id` 作为同秒并列的兜底键（如 `created_at DESC, id DESC`），刷新与翻页顺序稳定；`/api/auth/me/photos` 与公开用户作品列表同步。

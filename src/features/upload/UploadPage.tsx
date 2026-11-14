@@ -29,6 +29,7 @@ import {
   normalizeRegistrationInput,
 } from '../../shared/registration';
 import { TagPicker } from './TagPicker';
+import { AirportLookupCard } from './AirportLookupCard';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
@@ -659,6 +660,11 @@ export function UploadPage() {
                           disabled={step === 'uploading'}
                           placeholder="如 深圳宝安国际机场（SZX）；未知请填 N/A"
                           className={`${inputCls} mt-1`}
+                        />
+                        <AirportLookupCard
+                          value={categoryFields.location}
+                          enabled={step !== 'uploading'}
+                          onConfirm={(location) => updateCategoryField('location', location)}
                         />
                       </div>
                     </>

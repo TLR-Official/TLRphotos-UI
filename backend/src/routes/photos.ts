@@ -299,7 +299,7 @@ router.get('/search', photoReadLimiter, async (req, res) => {
   try {
     const { keyword, registration, tag, tag_key, tag_value, category, is_hot, sortBy = 'created_at', sortOrder = 'desc' } = req.query;
 
-    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, aircraft_type, airline, is_hot, created_at FROM photos WHERE status = "approved"';
+    let query = 'SELECT id, title, thumbnail_path, tags, width, height, likes, views, registration_number, aircraft_type, airline, is_hot, category, created_at FROM photos WHERE status = "approved"';
     const params: any[] = [];
     const conditions: string[] = [];
 
@@ -450,7 +450,7 @@ router.get('/', photoReadLimiter, async (req, res) => {
     // 解析分区过滤参数：存在时使用参数化查询精确匹配，避免 SQL 注入
     const { category, tag, tag_key, tag_value } = req.query;
     const params: any[] = [];
-    let baseQuery = 'SELECT id, title, thumbnail_path, tags, structured_tags, width, height, created_at FROM photos WHERE status = "approved"';
+    let baseQuery = 'SELECT id, title, thumbnail_path, tags, structured_tags, width, height, category, created_at FROM photos WHERE status = "approved"';
     if (category) {
       baseQuery += ' AND category = ?';
       params.push(String(category));
