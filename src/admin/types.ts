@@ -57,6 +57,8 @@ export interface AdminPhoto {
   created_at: string;
   /** 飞机注册号（旧数据可能为 null） */
   registration_number?: string | null;
+  /** 分区（aviation / railway / automobile），用于按分区展示字段名（B1） */
+  category?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
 }

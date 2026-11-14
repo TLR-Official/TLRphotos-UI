@@ -1062,7 +1062,7 @@ router.get('/users/:id/photos', async (req, res) => {
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
 
     const photos = await db.all(
-      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE user_id = ? AND status = "approved" ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      'SELECT id, title, thumbnail_path, tags, width, height, created_at FROM photos WHERE user_id = ? AND status = "approved" ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
       id,
       parseInt(pageSize as string),
       offset
@@ -1188,7 +1188,7 @@ router.get('/me/photos', async (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
 
     const photos = await db.all(query, params);

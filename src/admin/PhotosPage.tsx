@@ -125,7 +125,8 @@ export function PhotosPage() {
                   </p>
                   {photo.registration_number && (
                     <p className="text-gray-600 text-xs mt-1 font-mono">
-                      注册号: {photo.registration_number === 'N/A' ? '无' : photo.registration_number}
+                      {photo.category === 'railway' ? '机车信息' : photo.category === 'automobile' ? '车辆信息' : '注册号'}:{' '}
+                      {photo.registration_number === 'N/A' ? '无' : photo.registration_number}
                     </p>
                   )}
                   {photo.is_hot === 1 && (

@@ -134,7 +134,7 @@ router.get('/:id/photos', profileReadLimiter, async (req, res) => {
 
     const items = await db.all(
       `SELECT id, title, thumbnail_path, preview_url, tags, width, height, category, likes, views, created_at
-       FROM photos ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+       FROM photos ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     const totalRow = await db.get<{ c: number }>(`SELECT COUNT(*) AS c FROM photos ${where}`, params);

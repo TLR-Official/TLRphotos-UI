@@ -34,6 +34,8 @@ export interface PhotoUploadMeta {
   title?: string;
   tags?: string[] | string;
   description?: string;
+  category?: string;         // 分区 ID（aviation/railway/automobile）
+  structured_tags?: string;  // 分区动态字段 JSON（拍摄时间/机型/车号/车型/线路/局段/车辆编号）
   camera_model?: string;     // 相机型号
   vehicle?: string;          // 拍摄车辆
   location?: string;         // 拍摄地点
@@ -48,7 +50,7 @@ export interface PhotoUploadMeta {
   watermarkY?: number;       // 水印 Y 坐标
   watermarkOpacity?: number; // 水印透明度
   watermarkSize?: number;    // 水印字号
-  registration_number?: string; // 飞机注册号（仅 aviation 分区必填，2-20 位字母/数字/连字符，后端统一存大写）
+  registration_number?: string; // 飞机注册号（仅 aviation 分区必填，2-20 位字母/数字/连字符或 N/A，后端统一存大写）
   is_hot?: number;           // 热门意愿：1=愿意推荐为热门，0=否
 }
 

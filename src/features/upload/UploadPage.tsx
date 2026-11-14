@@ -1,26 +1,38 @@
 /**
- * 上传页面
- * 引导用户完成单张照片上传：选择文件 → 填写信息（分类/标题/描述/标签/水印/EXIF）→ 提交。
- * 支持自动解析 EXIF、可拖动水印预览、安全声明校验，并通过进度条反馈上传过程。
+ * 上传页面（V4.11 重构）
+ * 分区驱动动态表单：选择分区后展开该分区专属字段与标签多选，消除「分区 + 机型」信息重复。
+ * 流程：选择文件 → 填写信息 → 上传中 → 完成（上传成功页，不自动跳转详情）。
+ * 标签清单由 src/shared/tagCatalog.ts 统一维护，桌面端为复选框、移动端为大按钮。
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { CheckCircle2 } from 'lucide-react';
 import { useUser } from '../../shared/UserContext';
 import { directUpload } from '../../api/photos';
 import { useHumanVerification } from '../../shared/useHumanVerification';
-import { getTagCategories } from '../../api/tags';
-import type { TagCategory } from '../../api/tags';
-import { TagSelector } from '../../components/TagSelector';
-import type { SelectedTag } from '../../components/TagSelector';
 import { computeBandPreviewLayout } from '../../shared/watermarkBand';
 import { AircraftInfoCard } from '../../shared/AircraftInfoCard';
 import type { AircraftLookupResult } from '../../api/aircraft';
+import {
+  EMPTY_CATEGORY_FIELDS,
+  TAG_CATALOG,
+  UPLOAD_CATEGORIES,
+  buildCategoryStructuredTags,
+  isCategoryFormValid,
+  toDateTimeLocal,
+} from '../../shared/tagCatalog';
+import type { CategoryFormFields, PhotoCategory } from '../../shared/tagCatalog';
+import {
+  REGISTRATION_NA,
+  isRegistrationDraftValid,
+  isRegistrationFilledValid,
+  normalizeRegistrationInput,
+} from '../../shared/registration';
+import { TagPicker } from './TagPicker';
 import exifr from 'exifr';
 
 /** 上传流程步骤：选择文件 → 填写信息 → 上传中 → 完成 */
 type Step = 'select' | 'fill' | 'uploading' | 'done';
-/** 照片分类：航空 / 铁路 / 汽车 */
-type Category = 'aviation' | 'railway' | 'automobile';
 
 /** 从 EXIF 解析得到的拍摄参数集合 */
 interface ExifData {
@@ -58,16 +70,21 @@ export function UploadPage() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<Category | null>(null);
-  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([]);
+  const [category, setCategory] = useState<PhotoCategory | null>(null);
+  // V4.11：标签为定稿清单中的名称数组
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // V4.11：分区动态字段（拍摄时间 / 机型 / 车号 / 车型 / 线路 / 局段 / 车辆编号 / 拍摄地点）
+  const [categoryFields, setCategoryFields] = useState<CategoryFormFields>(EMPTY_CATEGORY_FIELDS);
   const [exif, setExif] = useState<ExifData>({});
-  const [categories, setCategories] = useState<TagCategory[]>([]);
   const [safetyAgreement, setSafetyAgreement] = useState(false);
   // 版权协议同意（必选）：勾选后方可提交，作品入库后按 CC BY 4.0 公开展出
   const [licenseAgreement, setLicenseAgreement] = useState(false);
-  // 飞机注册号（仅航空分区必填，输入时自动转大写）与热门意愿（可选，默认不勾选）
+  // 飞机注册号（仅航空分区必填，输入时自动转大写，支持 N/A）
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [isHot, setIsHot] = useState(false);
+
+  // 用户是否手动机型：识别结果不得覆盖用户输入（B4）
+  const aircraftModelTouchedRef = useRef(false);
 
   const watermarkText = 'TLRphotos';
   // 水印位置/透明度/字号，初始居中
@@ -87,22 +104,6 @@ export function UploadPage() {
   // 原图原始尺寸，用于还原后端预览图坐标（底部信息条比例换算的基准）
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const previewImgRef = useRef<HTMLImageElement>(null);
-
-  // 首次挂载拉取标签分类列表（航空/铁路/汽车）
-  useEffect(() => {
-    getTagCategories().then((res) => {
-      if (res.success && res.data) {
-        setCategories(res.data);
-      }
-    });
-  }, []);
-
-  // 切换分类时清空已选标签，标签对象列表由 TagSelector 组件自行加载
-  useEffect(() => {
-    if (category) {
-      setSelectedTags([]);
-    }
-  }, [category]);
 
   // 组件卸载或 preview 变更时释放上一个 ObjectURL，避免内存泄漏
   useEffect(() => {
@@ -172,6 +173,25 @@ export function UploadPage() {
 
   const labelCls = `block text-sm font-medium mb-1 text-gray-700`;
 
+  /** 更新分区动态字段 */
+  const updateCategoryField = (key: keyof CategoryFormFields, value: string) => {
+    setCategoryFields((prev) => ({ ...prev, [key]: value }));
+  };
+
+  /** 切换分区：清空标签与分区专属字段，保留 EXIF 已解析的拍摄时间/地点 */
+  const handleCategoryChange = (next: PhotoCategory) => {
+    if (next === category) return;
+    setCategory(next);
+    setSelectedTags([]);
+    setCategoryFields((prev) => ({
+      ...EMPTY_CATEGORY_FIELDS,
+      shootTime: prev.shootTime,
+      location: prev.location,
+    }));
+    setRegistrationNumber('');
+    aircraftModelTouchedRef.current = false;
+  };
+
   /**
    * 处理文件选择
    * 校验类型与大小后生成预览，并尝试解析 EXIF 自动回填拍摄参数。
@@ -230,6 +250,14 @@ export function UploadPage() {
         if (exifData.ImageWidth) newExif.width = exifData.ImageWidth;
         if (exifData.ImageHeight) newExif.height = exifData.ImageHeight;
         setExif(newExif);
+
+        // V4.11：拍摄时间 / 地点预填（不覆盖用户已输入的值）
+        const shotDate = exifData.DateTimeOriginal instanceof Date ? exifData.DateTimeOriginal : null;
+        setCategoryFields((prev) => ({
+          ...prev,
+          shootTime: prev.shootTime || (shotDate ? toDateTimeLocal(shotDate) : ''),
+          location: prev.location || newExif.location || '',
+        }));
       }
     } catch {
     }
@@ -244,41 +272,70 @@ export function UploadPage() {
     setDescription('');
     setCategory(null);
     setSelectedTags([]);
+    setCategoryFields(EMPTY_CATEGORY_FIELDS);
     setExif({});
     setWatermarkX(50);
     setWatermarkY(50);
     setWatermarkOpacity(60);
     setWatermarkSize(32);
     setSafetyAgreement(false);
+    setLicenseAgreement(false);
     setRegistrationNumber('');
     setIsHot(false);
+    aircraftModelTouchedRef.current = false;
     setStep('select');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 飞机注册号校验：2-20 位字母/数字/连字符（首位不允许连字符），与后端规则一致。
-  // 业务规则：仅「航空」分区必填，铁路/汽车分区为选填，不得阻断表单提交。
+  // 飞机注册号校验：2-20 位字母/数字/连字符（首位不允许连字符）或 N/A。
+  // 业务规则：仅「航空」分区必填，铁路/汽车分区不出现该字段。
   const isRegistrationRequired = category === 'aviation';
-  const trimmedRegistration = registrationNumber.trim();
-  const isRegistrationFormatValid = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(trimmedRegistration);
-  // 航空分区须填写且格式合法；其他分区留空即通过，非法输入不阻断提交（后端会置空不落库）
-  const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
+  const normalizedRegistration = normalizeRegistrationInput(registrationNumber);
+  const isRegistrationNa = normalizedRegistration === REGISTRATION_NA;
+  const isRegistrationValid = !isRegistrationRequired || isRegistrationFilledValid(registrationNumber);
 
-  // V4.6.2：注册号识别命中后，自动回填「飞行器」标签的「机型」「航司」属性（仅当用户未填写时）
+  // V4.11：注册号识别命中后仅回填空白的「机型」，不覆盖用户手填值（B4）
   const handleAircraftHit = useCallback((info: AircraftLookupResult) => {
-    setSelectedTags((prev) =>
-      prev.map((tag) => {
-        if (tag.objectId !== 'av_flight') return tag;
-        const attrs = { ...tag.attributes };
-        if (info.aircraft_type && !attrs['机型']) attrs['机型'] = info.aircraft_type;
-        if (info.airline && !attrs['航司']) attrs['航司'] = info.airline;
-        return { ...tag, attributes: attrs };
-      }),
+    if (aircraftModelTouchedRef.current || !info.aircraft_type) return;
+    setCategoryFields((prev) =>
+      prev.aircraftModel.trim() ? prev : { ...prev, aircraftModel: info.aircraft_type || '' },
     );
   }, []);
 
-  // 提交前置条件：标题非空、注册号满足当前分区规则、已选分类、至少一个第二层标签、已勾选安全声明与作品版权协议
-  const canSubmit = title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement && licenseAgreement;
+  // 分区字段是否满足必填
+  const isCategoryFieldsValid = category ? isCategoryFormValid(category, categoryFields) : false;
+
+  // 提交前置条件：标题、注册号、分区字段、标签、安全声明与版权协议
+  const canSubmit = Boolean(
+    title.trim() &&
+      isRegistrationValid &&
+      isCategoryFieldsValid &&
+      category &&
+      selectedTags.length > 0 &&
+      safetyAgreement &&
+      licenseAgreement,
+  );
+
+  /** 提交按钮禁用时的首个未满足条件提示 */
+  const missingHint = (() => {
+    if (!title.trim()) return '请填写标题';
+    if (isRegistrationRequired && !isRegistrationValid) return '请填写有效的飞机注册号或选择「无注册号」';
+    if (!category) return '请选择分区';
+    if (category && !categoryFields.shootTime.trim()) return '请填写拍摄时间';
+    if (category === 'aviation' && !categoryFields.aircraftModel.trim()) return '请填写机型（无机型可填 N/A）';
+    if (category === 'aviation' && !categoryFields.location.trim()) return '请填写拍摄地点（未知可填 N/A）';
+    if (category === 'railway' && !categoryFields.trainNumber.trim()) return '请填写车号';
+    if (category === 'railway' && !categoryFields.trainModel.trim()) return '请填写车型';
+    if (category === 'railway' && !categoryFields.trainLine.trim()) return '请填写拍摄线路';
+    if (category === 'railway' && !categoryFields.trainBureau.trim()) return '请填写所属局段';
+    if (category === 'automobile' && !categoryFields.vehicleNumber.trim()) return '请填写车辆编号';
+    if (category === 'automobile' && !categoryFields.vehicleModel.trim()) return '请填写车型';
+    if (category === 'automobile' && !categoryFields.location.trim()) return '请填写拍摄地点（未知可填 N/A）';
+    if (selectedTags.length === 0) return '请至少选择一个标签';
+    if (!safetyAgreement) return '请勾选安全声明';
+    if (!licenseAgreement) return '请阅读并同意作品版权协议';
+    return '';
+  })();
 
   /** 水印拖动开始：阻止默认行为并进入拖动状态 */
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -316,22 +373,16 @@ export function UploadPage() {
 
   /**
    * 提交上传
-   * 组装标题/描述/标签/结构化属性/EXIF/水印等元数据后调用直传接口；
-   * 成功后延迟跳转到新照片详情页，失败回退到填写步骤并显示错误。
+   * 组装标题/描述/标签/分区字段/EXIF/水印等元数据后调用直传接口；
+   * 成功后停留在上传成功页，不自动跳转详情。
    */
   const handleSubmit = async () => {
-    if (!file) return;
-    // 防御性校验：第二层标签必填（至少选择一个标签对象）
+    if (!file || !category) return;
     if (selectedTags.length === 0) {
       setError('请至少选择一个标签');
       return;
     }
     if (!canSubmit) return;
-    // 防御性校验：航空分区注册号不合法时阻止提交并提示（按钮禁用时不会走到这里）
-    if (isRegistrationRequired && !isRegistrationFormatValid) {
-      setError('请填写有效的飞机注册号（2-20 位字母/数字/连字符）');
-      return;
-    }
 
     setStep('uploading');
     setProgress(10);
@@ -341,27 +392,19 @@ export function UploadPage() {
       setProgress(30);
       setUploadMsg('正在生成缩略图和水印...');
 
-      // 标签对象名列表，作为简单标签集合提交
-      const tagsList = selectedTags.map((t) => t.objectName);
-
-      // 将所有已选标签的属性扁平化为单一对象（同 key 后写覆盖前写）
-      const structuredTags: Record<string, any> = {};
-      selectedTags.forEach((tag) => {
-        Object.entries(tag.attributes).forEach(([key, value]) => {
-          if (value) {
-            structuredTags[key] = value;
-          }
-        });
-      });
+      const structuredTags = buildCategoryStructuredTags(category, categoryFields);
 
       const uploadMeta: any = {
         title: title.trim(),
         description: description.trim(),
-        tags: tagsList,
-        category: category,
+        tags: selectedTags,
+        category,
         structured_tags: JSON.stringify(structuredTags),
-        // 注册号仅航空分区提交，避免切换分类后残留旧值
-        registration_number: isRegistrationRequired ? trimmedRegistration : '',
+        // 注册号仅航空分区提交（支持 N/A），避免切换分类后残留旧值
+        registration_number: isRegistrationRequired ? normalizedRegistration : '',
+        // 拍摄地点：航空 / 汽车取分区字段；铁路沿用 EXIF 坐标（若有）
+        location:
+          category === 'railway' ? exif.location || '' : categoryFields.location.trim(),
         is_hot: isHot ? 1 : 0,
         ...exif,
       };
@@ -385,10 +428,8 @@ export function UploadPage() {
 
       setProgress(100);
       setUploadMsg('上传成功！');
-      // 延迟 1 秒跳转，让用户看到完成态
-      setTimeout(() => {
-        navigate(`/photos/${result.data!.photoId}`);
-      }, 1000);
+      // V4.11：硬性要求提交成功后停留在成功页，不自动跳转照片详情
+      setStep('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传失败');
       setStep('fill');
@@ -399,7 +440,7 @@ export function UploadPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className={`p-8 rounded-2xl bg-white shadow-xl`}>
-          <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">请先登录</h2>
+          <h2 className="text-xl font-semibold mb-4 text-gray-800">请先登录</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">上传图片需要登录账户</p>
           <button
             onClick={() => navigate('/auth')}
@@ -427,6 +468,34 @@ export function UploadPage() {
           <div className="mb-6 px-4 py-3 bg-red-100 text-red-600 rounded-lg text-sm">{error}</div>
         )}
 
+        {step === 'done' && (
+          <div className={`p-10 rounded-2xl bg-white shadow-xl text-center`}>
+            <CheckCircle2 className="w-14 h-14 mx-auto text-green-600" />
+            <h2 className="mt-4 text-2xl font-bold text-gray-900">上传成功！</h2>
+            <p className="mt-2 text-sm text-gray-500">作品已提交，等待审核通过后公开展示</p>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => navigate('/')}
+                className="px-6 py-2.5 rounded-lg bg-blue-700 text-white font-medium hover:bg-blue-800 transition-colors"
+              >
+                返回首页
+              </button>
+              <button
+                onClick={() => navigate('/my-works')}
+                className="px-6 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:border-blue-300 hover:text-blue-700 transition-colors"
+              >
+                我的作品
+              </button>
+              <button
+                onClick={handleReSelect}
+                className="px-6 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:border-blue-300 hover:text-blue-700 transition-colors"
+              >
+                继续上传
+              </button>
+            </div>
+          </div>
+        )}
+
         {step === 'select' && (
           <div className={`p-6 rounded-2xl bg-white shadow-xl`}>
             <input
@@ -437,19 +506,19 @@ export function UploadPage() {
               className="hidden"
             />
             <div
-              className="border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-300 border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:border-blue-400"
+              className="border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-300 border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50"
               onClick={() => fileInputRef.current?.click()}
             >
               <div className="space-y-4">
-                <div className="w-20 h-20 mx-auto rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                <div className="w-20 h-20 mx-auto rounded-lg bg-gray-200 flex items-center justify-center">
                   <svg className="w-10 h-10 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="17 8 12 3 7 8" />
                     <line x1="12" y1="3" x2="12" y2="15" />
                   </svg>
                 </div>
-                <p className="font-medium text-gray-600 dark:text-gray-300">点击选择图片</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">支持 JPG、PNG、WebP、HEIC，最大 50MB，每次仅上传一张</p>
+                <p className="font-medium text-gray-600">点击选择图片</p>
+                <p className="text-xs text-gray-500">支持 JPG、PNG、WebP、HEIC，最大 50MB，每次仅上传一张</p>
               </div>
             </div>
           </div>
@@ -470,7 +539,7 @@ export function UploadPage() {
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate text-gray-700 dark:text-gray-200">{file.name}</p>
+                <p className="text-sm font-medium truncate text-gray-700">{file.name}</p>
                 <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                 {step === 'uploading' && (
                   <p className="text-xs text-blue-500 mt-1">{uploadMsg}</p>
@@ -479,28 +548,27 @@ export function UploadPage() {
             </div>
 
             {step === 'uploading' && (
-              <div className="w-full bg-gray-200 rounded-full h-2 mb-6 dark:bg-gray-700">
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
                 <div className="bg-blue-700 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
               </div>
             )}
 
             <div className="space-y-4">
               <div>
-                <label className={labelCls}>选择分类 <span className="text-red-500">*</span></label>
-                <div className="flex gap-3 mt-2">
-                  {categories.map((cat) => (
+                <label className={labelCls}>选择分区 <span className="text-red-500">*</span></label>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {UPLOAD_CATEGORIES.map((cat) => (
                     <button
                       key={cat.id}
-                      onClick={() => setCategory(cat.id as Category)}
+                      onClick={() => handleCategoryChange(cat.id)}
                       disabled={step === 'uploading'}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                      className={`min-h-[44px] px-6 rounded-lg font-medium transition-all ${
                         category === cat.id
                           ? 'bg-blue-700 text-white shadow-lg'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      <span>{cat.icon}</span>
-                      <span>{cat.name}</span>
+                      {cat.name}
                     </button>
                   ))}
                 </div>
@@ -511,29 +579,188 @@ export function UploadPage() {
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片标题" className={inputCls} />
               </div>
 
-              {/* 飞机注册号：仅航空分区展示并要求填写，其余分区完全不出现 */}
-              {isRegistrationRequired && (
-                <div>
-                  <label className={labelCls}>飞机注册号 <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={registrationNumber}
-                    onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
-                    disabled={step === 'uploading'}
-                    placeholder="如 B-1234"
-                    maxLength={20}
-                    className={inputCls}
-                  />
-                  {trimmedRegistration && !isRegistrationFormatValid && (
-                    <p className="mt-1 text-xs text-red-500">
-                      请填写有效的飞机注册号（2-20 位字母/数字/连字符）
-                    </p>
+              {/* 分区驱动动态字段：选择分区后才展开 */}
+              {category && (
+                <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3">
+                  {/* 拍摄时间：三区通用必填 */}
+                  <div>
+                    <label className="text-xs text-gray-500">拍摄时间 <span className="text-red-500">*</span></label>
+                    <input
+                      type="datetime-local"
+                      value={categoryFields.shootTime}
+                      onChange={(e) => updateCategoryField('shootTime', e.target.value)}
+                      disabled={step === 'uploading'}
+                      className={`${inputCls} mt-1`}
+                    />
+                  </div>
+
+                  {category === 'aviation' && (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-500">飞机注册号 <span className="text-red-500">*</span></label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            type="text"
+                            value={registrationNumber}
+                            onChange={(e) =>
+                              setRegistrationNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9/-]/g, '').slice(0, 20))
+                            }
+                            readOnly={isRegistrationNa}
+                            disabled={step === 'uploading'}
+                            placeholder="如 B-1234"
+                            maxLength={20}
+                            className={inputCls}
+                          />
+                          <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isRegistrationNa}
+                              disabled={step === 'uploading'}
+                              onChange={(e) => setRegistrationNumber(e.target.checked ? REGISTRATION_NA : '')}
+                              className="h-4 w-4 accent-blue-700"
+                            />
+                            无注册号
+                          </label>
+                        </div>
+                        {!isRegistrationNa && registrationNumber.trim() && !isRegistrationDraftValid(registrationNumber) && (
+                          <p className="mt-1 text-xs text-red-500">请填写有效的飞机注册号（2-20 位字母/数字/连字符）</p>
+                        )}
+                        {/* 注册号合法后自动识别机型与航司（仅登录态查询，N/A 不查询） */}
+                        {!isRegistrationNa && (
+                          <AircraftInfoCard
+                            registration={registrationNumber}
+                            enabled={isAuthenticated && step !== 'uploading'}
+                            onHit={handleAircraftHit}
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500">机型 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.aircraftModel}
+                          onChange={(e) => {
+                            aircraftModelTouchedRef.current = true;
+                            updateCategoryField('aircraftModel', e.target.value);
+                          }}
+                          disabled={step === 'uploading'}
+                          placeholder="如 Airbus A320neo；无机型请填 N/A"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.location}
+                          onChange={(e) => updateCategoryField('location', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 深圳宝安国际机场（SZX）；未知请填 N/A"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                    </>
                   )}
-                  {/* 注册号合法后自动识别机型与航司（仅登录态查询） */}
-                  <AircraftInfoCard
-                    registration={registrationNumber}
-                    enabled={isAuthenticated && step !== 'uploading'}
-                    onHit={handleAircraftHit}
+
+                  {category === 'railway' && (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-500">车号 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainNumber}
+                          onChange={(e) => updateCategoryField('trainNumber', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 HXD1-0001"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainModel}
+                          onChange={(e) => updateCategoryField('trainModel', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 和谐电1 / CR400AF"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">拍摄线路 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainLine}
+                          onChange={(e) => updateCategoryField('trainLine', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 京广线"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">所属局段 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainBureau}
+                          onChange={(e) => updateCategoryField('trainBureau', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 广铁集团广州机务段"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {category === 'automobile' && (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-500">车辆信息（编号） <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.vehicleNumber}
+                          onChange={(e) => updateCategoryField('vehicleNumber', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 粤B·12345 或 自编号"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.vehicleModel}
+                          onChange={(e) => updateCategoryField('vehicleModel', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 比亚迪 K8"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={categoryFields.location}
+                          onChange={(e) => updateCategoryField('location', e.target.value)}
+                          disabled={step === 'uploading'}
+                          placeholder="如 深圳市福田区；未知请填 N/A"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {category && (
+                <div>
+                  <label className={labelCls}>选择标签 <span className="text-red-500">*</span></label>
+                  <TagPicker
+                    tags={TAG_CATALOG[category]}
+                    selected={selectedTags}
+                    onChange={setSelectedTags}
+                    disabled={step === 'uploading'}
                   />
                 </div>
               )}
@@ -542,18 +769,6 @@ export function UploadPage() {
                 <label className={labelCls}>照片描述</label>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片描述（可选）" rows={3} className={`${inputCls} resize-none`} />
               </div>
-
-              {category && (
-                <div>
-                  <label className={labelCls}>选择标签 <span className="text-red-500">*</span></label>
-                  <TagSelector
-                    categoryId={category}
-                    selectedTags={selectedTags}
-                    onTagsChange={setSelectedTags}
-                    disabled={step === 'uploading'}
-                  />
-                </div>
-              )}
 
               <div>
                 <label className={labelCls}>水印设置</label>
@@ -685,10 +900,6 @@ export function UploadPage() {
                     <span className="text-xs text-gray-500">光圈</span>
                     <input type="text" value={exif.aperture || ''} onChange={(e) => setExif({ ...exif, aperture: e.target.value })} disabled={step === 'uploading'} className={`${inputCls} mt-1`} />
                   </div>
-                  <div className="col-span-2 md:col-span-3">
-                    <span className="text-xs text-gray-500">拍摄位置</span>
-                    <input type="text" value={exif.location || ''} onChange={(e) => setExif({ ...exif, location: e.target.value })} disabled={step === 'uploading'} className={`${inputCls} mt-1`} />
-                  </div>
                 </div>
               </div>
 
@@ -767,15 +978,8 @@ export function UploadPage() {
                 </button>
               </div>
 
-              {!canSubmit && step === 'fill' && (
-                <p className="text-xs text-center text-gray-400">
-                  {!title.trim() && '请填写标题'}
-                  {title.trim() && isRegistrationRequired && !isRegistrationFormatValid && '请填写有效的飞机注册号（2-20 位字母/数字/连字符）'}
-                  {title.trim() && isRegistrationValid && !category && '请选择分类'}
-                  {title.trim() && isRegistrationValid && category && selectedTags.length === 0 && '请至少选择一个标签'}
-                  {title.trim() && isRegistrationValid && category && selectedTags.length > 0 && !safetyAgreement && '请勾选安全声明'}
-                  {title.trim() && isRegistrationValid && category && selectedTags.length > 0 && safetyAgreement && !licenseAgreement && '请阅读并同意作品版权协议'}
-                </p>
+              {!canSubmit && step === 'fill' && missingHint && (
+                <p className="text-xs text-center text-gray-400">{missingHint}</p>
               )}
             </div>
           </div>

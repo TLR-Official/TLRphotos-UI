@@ -41,7 +41,7 @@ import { AuditToolkit } from './audit-tools';
 import { MobileReadOnlyNotice } from './MobileReadOnlyNotice';
 import { UserTitleBadge } from '../shared/UserTitleBadge';
 import { RegistrationField } from './audit-form/RegistrationField';
-import { isRegistrationDraftValid } from './audit-form/registration';
+import { isRegistrationDraftValid } from '../shared/registration';
 import { LocationField, type LocationDraft } from './audit-form/LocationField';
 
 /**
@@ -489,14 +489,25 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
           <InfoCard title="用户填写信息" icon={<Hash className="w-5 h-5" />}>
             <div className="space-y-3 text-sm">
               <InfoRow label="标题" value={photo.title} />
-              <RegistrationField
-                value={metaDraft.registration_number}
-                disabled={actionLoading || metaSaving}
-                onChange={(value) => {
-                  setMetaDraft((prev) => ({ ...prev, registration_number: value }));
-                  setMetaDirty(true);
-                }}
-              />
+              {photo.category === 'aviation' ? (
+                <RegistrationField
+                  value={metaDraft.registration_number}
+                  disabled={actionLoading || metaSaving}
+                  onChange={(value) => {
+                    setMetaDraft((prev) => ({ ...prev, registration_number: value }));
+                    setMetaDirty(true);
+                  }}
+                />
+              ) : (
+                <InfoRow
+                  label={photo.category === 'railway' ? '机车信息' : '车辆信息'}
+                  value={
+                    String(
+                      photo.structured_tags?.[photo.category === 'railway' ? '车号' : '车辆编号'] ?? '',
+                    ) || '（未填写）'
+                  }
+                />
+              )}
               {photo.is_hot === 1 && (
                 <p className="text-sm text-gray-600">用户热门意愿: 是</p>
               )}

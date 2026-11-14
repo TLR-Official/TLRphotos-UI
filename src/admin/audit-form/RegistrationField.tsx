@@ -6,7 +6,7 @@
  *  - 选中「无注册号」：值固定为 N/A 且输入框只读，再次点击取消并清空；
  *  - 留空表示「未填写」，与 N/A（审核确认无注册号）语义区分。
  */
-import { REGISTRATION_NA, REGISTRATION_PATTERN } from './registration';
+import { REGISTRATION_NA, REGISTRATION_PATTERN } from '../../shared/registration';
 
 interface RegistrationFieldProps {
   /** 当前值（空串表示未填写） */

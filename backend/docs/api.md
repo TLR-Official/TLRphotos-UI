@@ -119,6 +119,7 @@
 > V3.2.0 起列表项新增 `registration_number`（飞机注册号，存量数据可能为 `null`）与 `is_hot`（0/1）字段。
 > V4.6.0-beta 起列表项新增 `aircraft_type`（机型，如 `Boeing 777-300ER`）与 `airline`（所属航司，如 `Air China`），未识别时为 `""`；`keyword` 关键词同时匹配 `title` / `description` / `registration_number` / `aircraft_type` / `airline`。
 > V4.1.2-beta.3 起 `GET /api/photos` 与 `GET /api/photos/search` 共用标签筛选能力：`tag`（逗号分隔多标签 AND）、`tag_key` + `tag_value`（第三层属性）均生效。
+> V4.11 起列表与搜索的排序均以 `id` 作为同秒并列的兜底键（如 `created_at DESC, id DESC`），刷新与翻页顺序稳定；`/api/auth/me/photos` 与公开用户作品列表同步。
 
 ### 获取所有标签
 
@@ -388,7 +389,7 @@
 ```
 
 > **V3.2.0 新增字段**：
-> - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。
+> - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。**V4.11 起额外接受 `N/A`（确认无注册号）**，此时跳过机型/航司识别。
 >   **V4.1.2-beta.2 起分区条件必填**：仅当 `category = "aviation"` 时必填，缺失或非法返回 `400 { code: "REGISTRATION_REQUIRED" }`（校验先于 OSS 完成调用）；其他分区为选填，空值或非法格式均不阻断，落库为 `null`。未传 `category`（旧客户端）按非航空分区处理。
 > - `is_hot`（number/boolean/string，可选）：上传者「愿意推荐为热门图片」意愿标记，接受 `true`/`"true"`/`"1"`/`1`，其余视为未勾选（0）。仅作审核参考，不公开展示。
 > - **V4.1.2-beta.3 起 `tags` 强制必填（至少一个第二层标签）**：缺失、空数组或解析后为空时返回 `400 { code: "TAG_OBJECT_REQUIRED", message: "请至少选择一个第二层标签" }`；`tags` 数组元素为第二层标签对象名，落库为 JSON 数组字符串。
@@ -426,12 +427,12 @@ Content-Type: multipart/form-data
 |------|------|------|------|
 | image | file | 是 | 图片文件（JPG/PNG/WebP/HEIC，最大50MB） |
 | category | string | 是 | 照片分区（aviation/railway/automobile），未提供时返回 400 `请选择照片分区` |
-| registration_number | string | 条件必填 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`）。**V4.1.2-beta.2 起仅 `category=aviation` 时必填**，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }`；其他分区选填，空值或非法格式不阻断，落库为 `null` |
-| aircraft_type / airline | — | 只读 | V4.6.0-beta：服务端按 `registration_number` 自动识别后写入，客户端**无需也不应提交**；识别失败时落库为 `""`，不影响上传 |
+| registration_number | string | 条件必填 | 飞机注册号（V3.2.0）：2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`），**V4.11 起额外接受 `N/A`（确认无注册号）**。**V4.1.2-beta.2 起仅 `category=aviation` 时必填**，缺失或非法返回 400 `{ code: "REGISTRATION_REQUIRED" }`；其他分区选填，空值或非法格式不阻断，落库为 `null` |
+| aircraft_type / airline | — | 只读 | V4.6.0-beta：服务端按 `registration_number` 自动识别后写入，客户端**无需也不应提交**；识别失败时落库为 `""`，不影响上传。V4.11 起 `registration_number=N/A` 时跳过识别 |
 | is_hot | string | 否 | 「愿意推荐为热门图片」意愿标记（V3.2.0）：`true`/`1` 视为勾选，其余为未勾选（0）；仅作审核参考，不公开展示 |
 | title | string | 否 | 照片标题，默认"未命名照片" |
-| tags | string/array | 是 | 第二层标签对象名（V4.1.2-beta.3 起强制必填）：数组或中英文逗号分隔字符串，至少一个；为空返回 400 `{ code: "TAG_OBJECT_REQUIRED" }` |
-| structured_tags | string/object | 否 | 第三层细分标签属性键值扁平对象（V4.1.2-beta.3），如 `{"机型类型":"宽体机"}`，用于属性维度筛选 |
+| tags | string/array | 是 | 标签名数组（V4.1.2-beta.3 起强制必填）：至少一个；为空返回 400 `{ code: "TAG_OBJECT_REQUIRED" }`。V4.11 起使用 PRD 定稿的三大板块标签清单（航空 19 / 铁路 20 / 汽车 11），前端按分区提供多选 |
+| structured_tags | string/object | 否 | 第三层细分标签属性键值扁平对象（V4.1.2-beta.3），如 `{"机型类型":"宽体机"}`，用于属性维度筛选。V4.11 起上传页按分区写入：航空 `拍摄时间/机型`、铁路 `拍摄时间/车号/车型/拍摄线路/所属局段`、汽车 `拍摄时间/车辆编号/车型`；详情页按分区读取展示 |
 | description | string | 否 | 照片描述 |
 | camera_model | string | 否 | 相机型号 |
 | vehicle | string | 否 | 拍摄设备 |

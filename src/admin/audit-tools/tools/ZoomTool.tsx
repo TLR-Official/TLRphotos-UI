@@ -165,11 +165,11 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
     };
   }, [zoomBy, resetZoom, flashIndicator]);
 
-  // ── 拖拽平移（仅在缩放工具激活且已放大时）──
+  // ── 拖拽平移（已放大即可拖动，不再要求缩放工具处于激活态 — V4.11 修复审核端无法拖动）──
   // V4.10.0：拖拽帧内直接写 transform，不逐帧 setState；松手后才同步一次位置状态
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!active || scale === 1) return;
+      if (scale === 1) return;
       e.preventDefault();
       isDragging.current = true;
       setDragging(true);
@@ -177,7 +177,7 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
       dragLastDelta.current = { dx: 0, dy: 0 };
       pointerRef.current = { x: e.clientX, y: e.clientY };
     },
-    [active, scale, tx, ty]
+    [scale, tx, ty]
   );
 
   const handleMouseMove = useCallback(
@@ -236,7 +236,7 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
       onMouseLeave={handleMouseUp}
       onDragStart={handleDragStart}
       className={`relative overflow-hidden select-none ${
-        active && isZoomed ? 'cursor-grab active:cursor-grabbing' : ''
+        isZoomed ? 'cursor-grab active:cursor-grabbing' : ''
       }`}
     >
       {/* 变换层：图片 + 叠加层同层，拖拽/缩放时同步移动 */}
@@ -304,8 +304,8 @@ export function ZoomTool({ active, children }: ZoomToolProps) {
         </div>
       )}
 
-      {/* 拖拽提示：仅在激活 + 已放大时显示（左上角，避免与右上角徽章重叠） */}
-      {active && isZoomed && (
+      {/* 拖拽提示：已放大即显示（左上角，避免与右上角徽章重叠） */}
+      {isZoomed && (
         <div className="absolute top-3 left-3 px-2 py-1 bg-blue-700/80 text-white text-xs rounded pointer-events-none z-30">
           拖拽移动 | 滚轮缩放
         </div>

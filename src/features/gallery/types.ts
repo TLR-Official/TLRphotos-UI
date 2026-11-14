@@ -19,6 +19,10 @@ export interface PhotoListItem {
   airline?: string | null;
   /** 热门意愿标记：1=上传者愿意推荐为热门 */
   is_hot?: number;
+  /** 分区（aviation / railway / automobile），用于详情页按分区展示字段名（B1） */
+  category?: string | null;
+  /** 结构化标签（V4.11：含拍摄时间/机型/车号/车型/线路/局段/车辆编号等分区字段） */
+  structured_tags?: string | Record<string, unknown> | null;
   /** 浏览量（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */
   views?: number;
   /** 点赞数（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */

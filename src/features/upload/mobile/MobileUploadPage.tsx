@@ -21,8 +21,16 @@ import { MobileBackHeader } from '../../../shared/MobileBackHeader';
 import { AircraftInfoCard } from '../../../shared/AircraftInfoCard';
 import type { AircraftLookupResult } from '../../../api/aircraft';
 import { useTip } from '../../../shared/useTip';
-import { TagSelector } from '../../../components/TagSelector';
-import type { SelectedTag } from '../../../components/TagSelector';
+import { TagPicker } from '../TagPicker';
+import {
+  EMPTY_CATEGORY_FIELDS,
+  TAG_CATALOG,
+  UPLOAD_CATEGORIES,
+  buildCategoryStructuredTags,
+  toDateTimeLocal,
+} from '../../../shared/tagCatalog';
+import type { CategoryFormFields, PhotoCategory } from '../../../shared/tagCatalog';
+import { REGISTRATION_NA, isRegistrationDraftValid, isRegistrationFilledValid } from '../../../shared/registration';
 import type { ApiResponse } from '../../../api/client';
 import type { DirectUploadResponse, PhotoUploadMeta } from '../../../api/photos';
 import { WatermarkEditor } from './WatermarkEditor';
@@ -37,17 +45,7 @@ import { uploadPhotoWithProgress } from './uploadWithProgress';
 import type { UploadHandle } from './uploadWithProgress';
 import { NETWORK_ERROR_CODE, UPLOAD_ABORTED_CODE } from './uploadWithProgress';
 
-/** 照片分区 */
-type Category = 'aviation' | 'railway' | 'automobile';
-
-/** 分区三选一卡片（id 与后端分类一致；label 按移动端 PRD 用词） */
-const CATEGORIES: { id: Category; name: string }[] = [
-  { id: 'aviation', name: '航空' },
-  { id: 'railway', name: '铁路' },
-  { id: 'automobile', name: '公路' },
-];
-
-/** 分步标题 */
+/** 水印固定文案（用户不可改） */
 const STEPS = ['选图', '填信息', '水印', '确认'] as const;
 
 /** 水印固定文案（用户不可改） */
@@ -59,9 +57,6 @@ const DRAFT_KEY = 'mobile_upload_draft';
 /** 允许的图片 MIME 类型与大小上限（与桌面端一致：50MB） */
 const VALID_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-
-/** 注册号格式：2-20 位字母/数字/连字符（首位不允许连字符），与后端一致 */
-const REGISTRATION_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 
 /** 网络异常自动重试退避（1s / 2s / 4s，共 3 次） */
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -82,14 +77,40 @@ interface ExifData {
 interface DraftPayload {
   title: string;
   description: string;
-  category: Category | null;
-  selectedTags: SelectedTag[];
+  category: PhotoCategory | null;
+  selectedTags: string[];
+  categoryFields: CategoryFormFields;
   registrationNumber: string;
   isHot: boolean;
   safetyAgreement: boolean;
   licenseAgreement: boolean;
   watermark: WatermarkValue;
   savedAt: number;
+}
+
+/** 兼容旧草稿：把历史 SelectedTag 对象数组迁移为标签名数组 */
+function normalizeDraftTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && typeof (item as { objectName?: unknown }).objectName === 'string') {
+        return (item as { objectName: string }).objectName;
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+/** 兼容旧草稿：逐字段收敛为字符串 */
+function normalizeDraftFields(raw: unknown): CategoryFormFields {
+  const result = { ...EMPTY_CATEGORY_FIELDS };
+  if (!raw || typeof raw !== 'object') return result;
+  for (const key of Object.keys(result) as (keyof CategoryFormFields)[]) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value === 'string') result[key] = value;
+  }
+  return result;
 }
 
 /** 读取本地草稿；无草稿或解析失败返回 null */
@@ -106,7 +127,8 @@ function loadDraft(): DraftPayload | null {
         parsed.category === 'aviation' || parsed.category === 'railway' || parsed.category === 'automobile'
           ? parsed.category
           : null,
-      selectedTags: Array.isArray(parsed.selectedTags) ? parsed.selectedTags : [],
+      selectedTags: normalizeDraftTags(parsed.selectedTags),
+      categoryFields: normalizeDraftFields(parsed.categoryFields),
       registrationNumber: typeof parsed.registrationNumber === 'string' ? parsed.registrationNumber : '',
       isHot: parsed.isHot === true,
       safetyAgreement: parsed.safetyAgreement === true,
@@ -133,6 +155,7 @@ function isDraftMeaningful(draft: DraftPayload | null): draft is DraftPayload {
       draft.description.trim() ||
       draft.category ||
       draft.selectedTags.length > 0 ||
+      Object.values(draft.categoryFields).some((value) => value.trim()) ||
       draft.registrationNumber.trim() ||
       draft.isHot,
   );
@@ -160,6 +183,8 @@ export function MobileUploadPage() {
   const tagSectionRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const uploadRef = useRef<UploadHandle | null>(null);
+  // 用户是否手动机型：识别结果不得覆盖用户输入（B4）
+  const aircraftModelTouchedRef = useRef(false);
 
   // 惰性读取草稿并直接作为各字段初始值（避免挂载期先写空草稿覆盖已有草稿）
   const [initialDraft] = useState<DraftPayload | null>(() => {
@@ -176,8 +201,11 @@ export function MobileUploadPage() {
 
   const [title, setTitle] = useState(initialDraft?.title ?? '');
   const [description, setDescription] = useState(initialDraft?.description ?? '');
-  const [category, setCategory] = useState<Category | null>(initialDraft?.category ?? null);
-  const [selectedTags, setSelectedTags] = useState<SelectedTag[]>(initialDraft?.selectedTags ?? []);
+  const [category, setCategory] = useState<PhotoCategory | null>(initialDraft?.category ?? null);
+  const [selectedTags, setSelectedTags] = useState<string[]>(initialDraft?.selectedTags ?? []);
+  const [categoryFields, setCategoryFields] = useState<CategoryFormFields>(
+    initialDraft?.categoryFields ?? EMPTY_CATEGORY_FIELDS,
+  );
   const [registrationNumber, setRegistrationNumber] = useState(initialDraft?.registrationNumber ?? '');
   const [isHot, setIsHot] = useState(initialDraft?.isHot ?? false);
   const [safetyAgreement, setSafetyAgreement] = useState(initialDraft?.safetyAgreement ?? false);
@@ -208,6 +236,13 @@ export function MobileUploadPage() {
       return;
     }
     setSelectedTags([]);
+    setCategoryFields((prev) => ({
+      ...EMPTY_CATEGORY_FIELDS,
+      shootTime: prev.shootTime,
+      location: prev.location,
+    }));
+    setRegistrationNumber('');
+    aircraftModelTouchedRef.current = false;
   }, [category]);
 
   // 元数据变化时写入草稿（仅元数据，不存图片）
@@ -217,6 +252,7 @@ export function MobileUploadPage() {
       description,
       category,
       selectedTags,
+      categoryFields,
       registrationNumber,
       isHot,
       safetyAgreement,
@@ -229,7 +265,7 @@ export function MobileUploadPage() {
     } catch {
       // 存储配额异常时静默忽略，不影响主流程
     }
-  }, [title, description, category, selectedTags, registrationNumber, isHot, safetyAgreement, licenseAgreement, watermark]);
+  }, [title, description, category, selectedTags, categoryFields, registrationNumber, isHot, safetyAgreement, licenseAgreement, watermark]);
 
   /** 内容区滚动到顶部（步骤切换时调用） */
   const scrollToTop = () => {
@@ -280,30 +316,44 @@ export function MobileUploadPage() {
         if (exifData.ImageWidth) newExif.width = exifData.ImageWidth;
         if (exifData.ImageHeight) newExif.height = exifData.ImageHeight;
         setExif(newExif);
+
+        // V4.11：拍摄时间 / 地点预填（不覆盖用户已输入的值）
+        const shotDate = exifData.DateTimeOriginal instanceof Date ? exifData.DateTimeOriginal : null;
+        setCategoryFields((prev) => ({
+          ...prev,
+          shootTime: prev.shootTime || (shotDate ? toDateTimeLocal(shotDate) : ''),
+          location: prev.location || newExif.location || '',
+        }));
       }
     } catch {
       // EXIF 解析失败静默忽略
     }
   }, []);
 
-  // 注册号校验：仅航空分区必填；非航空分区留空即通过（V4.1.2-beta.2 规则）
+  // 注册号校验：仅航空分区必填；支持 N/A（确认无注册号）
   const isRegistrationRequired = category === 'aviation';
-  const trimmedRegistration = registrationNumber.trim();
-  const isRegistrationFormatValid = REGISTRATION_PATTERN.test(trimmedRegistration);
+  const trimmedRegistration = registrationNumber.trim().toUpperCase();
+  const isRegistrationNa = trimmedRegistration === REGISTRATION_NA;
+  const isRegistrationFormatValid = isRegistrationFilledValid(trimmedRegistration);
   const isRegistrationValid = !isRegistrationRequired || isRegistrationFormatValid;
 
-  // V4.6.2：注册号识别命中后，自动回填「飞行器」标签的「机型」「航司」属性（仅当用户未填写时）
+  // V4.11：注册号识别命中后仅回填空白的「机型」，不覆盖用户手填值（B4）
   const handleAircraftHit = useCallback((info: AircraftLookupResult) => {
-    setSelectedTags((prev) =>
-      prev.map((tag) => {
-        if (tag.objectId !== 'av_flight') return tag;
-        const attrs = { ...tag.attributes };
-        if (info.aircraft_type && !attrs['机型']) attrs['机型'] = info.aircraft_type;
-        if (info.airline && !attrs['航司']) attrs['航司'] = info.airline;
-        return { ...tag, attributes: attrs };
-      }),
+    if (aircraftModelTouchedRef.current || !info.aircraft_type) return;
+    setCategoryFields((prev) =>
+      prev.aircraftModel.trim() ? prev : { ...prev, aircraftModel: info.aircraft_type || '' },
     );
   }, []);
+
+  /** 切换分区（字段与标签由 category 变化副作用统一重置） */
+  const handleCategoryChange = (next: PhotoCategory) => {
+    setCategory(next);
+  };
+
+  /** 更新分区动态字段 */
+  const updateCategoryField = (key: keyof CategoryFormFields, value: string) => {
+    setCategoryFields((prev) => ({ ...prev, [key]: value }));
+  };
 
   /** 步骤前进（携带各步校验，失败时给出具体错误并定位） */
   const goNext = () => {
@@ -336,8 +386,48 @@ export function MobileUploadPage() {
         return;
       }
       if (!isRegistrationValid) {
-        setError('请填写有效的飞机注册号（2-20 位字母/数字/连字符）');
+        setError('请填写有效的飞机注册号或选择「无注册号」');
         registrationInputRef.current?.focus();
+        return;
+      }
+      if (!categoryFields.shootTime.trim()) {
+        setError('请填写拍摄时间');
+        return;
+      }
+      if (category === 'aviation' && !categoryFields.aircraftModel.trim()) {
+        setError('请填写机型（无机型可填 N/A）');
+        return;
+      }
+      if (category === 'aviation' && !categoryFields.location.trim()) {
+        setError('请填写拍摄地点（未知可填 N/A）');
+        return;
+      }
+      if (category === 'railway' && !categoryFields.trainNumber.trim()) {
+        setError('请填写车号');
+        return;
+      }
+      if (category === 'railway' && !categoryFields.trainModel.trim()) {
+        setError('请填写车型');
+        return;
+      }
+      if (category === 'railway' && !categoryFields.trainLine.trim()) {
+        setError('请填写拍摄线路');
+        return;
+      }
+      if (category === 'railway' && !categoryFields.trainBureau.trim()) {
+        setError('请填写所属局段');
+        return;
+      }
+      if (category === 'automobile' && !categoryFields.vehicleNumber.trim()) {
+        setError('请填写车辆信息（编号）');
+        return;
+      }
+      if (category === 'automobile' && !categoryFields.vehicleModel.trim()) {
+        setError('请填写车型');
+        return;
+      }
+      if (category === 'automobile' && !categoryFields.location.trim()) {
+        setError('请填写拍摄地点（未知可填 N/A）');
         return;
       }
       setStep(3);
@@ -368,9 +458,12 @@ export function MobileUploadPage() {
     setDescription('');
     setCategory(null);
     setSelectedTags([]);
+    setCategoryFields(EMPTY_CATEGORY_FIELDS);
     setRegistrationNumber('');
     setIsHot(false);
     setSafetyAgreement(false);
+    setLicenseAgreement(false);
+    aircraftModelTouchedRef.current = false;
     setWatermark(DEFAULT_WATERMARK);
     setDraftRestored(false);
   };
@@ -382,22 +475,18 @@ export function MobileUploadPage() {
     setProgress(0);
     setRetryInfo('');
 
-    // 组装元数据（与桌面端 UploadPage 相同的字段与扁平化规则）
-    const tagsList = selectedTags.map((t) => t.objectName);
-    const structuredTags: Record<string, string> = {};
-    selectedTags.forEach((tag) => {
-      Object.entries(tag.attributes).forEach(([key, value]) => {
-        if (value) structuredTags[key] = value;
-      });
-    });
+    // 组装元数据（与桌面端 UploadPage 相同的字段与 structured_tags 规则）
+    const tagsList = selectedTags;
+    const structuredTags = category ? buildCategoryStructuredTags(category, categoryFields) : {};
     const pos = watermarkPosToXY(watermark.posIndex);
     const meta: PhotoUploadMeta & Record<string, unknown> = {
       title: title.trim(),
       description: description.trim(),
       tags: tagsList,
-      category,
+      category: category ?? undefined,
       structured_tags: JSON.stringify(structuredTags),
       registration_number: isRegistrationRequired ? trimmedRegistration : '',
+      location: category === 'railway' ? exif.location || '' : categoryFields.location.trim(),
       is_hot: isHot ? 1 : 0,
       ...exif,
       watermarkText: WATERMARK_TEXT,
@@ -436,7 +525,7 @@ export function MobileUploadPage() {
       } catch {
         // 忽略
       }
-      setTimeout(() => navigate('/my-works'), 1200);
+      // V4.11：停留在成功页，不自动跳转详情/我的作品
       return;
     }
 
@@ -471,7 +560,7 @@ export function MobileUploadPage() {
       return;
     }
     setError(message);
-  }, [file, selectedTags, watermark, title, description, category, isRegistrationRequired, trimmedRegistration, isHot, exif, token, verificationGuard, navigate]);
+  }, [file, selectedTags, categoryFields, watermark, title, description, category, isRegistrationRequired, trimmedRegistration, isHot, exif, token, verificationGuard]);
 
   /** 提交入口：终步校验后进入上传遮罩 */
   const handleSubmit = () => {
@@ -492,6 +581,33 @@ export function MobileUploadPage() {
   /** 取消当前上传 */
   const handleCancelUpload = () => {
     uploadRef.current?.abort();
+  };
+
+  /** 成功页「继续上传」：清空本次表单并回到选图步骤 */
+  const handleUploadAnother = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null);
+    setPreview('');
+    setFileError('');
+    setError('');
+    setTitle('');
+    setDescription('');
+    setCategory(null);
+    setSelectedTags([]);
+    setCategoryFields(EMPTY_CATEGORY_FIELDS);
+    setRegistrationNumber('');
+    setIsHot(false);
+    setSafetyAgreement(false);
+    setLicenseAgreement(false);
+    setWatermark(DEFAULT_WATERMARK);
+    setExif({});
+    setDraftRestored(false);
+    aircraftModelTouchedRef.current = false;
+    setUploading(false);
+    setUploadPhase('uploading');
+    setProgress(0);
+    setStep(1);
+    scrollToTop();
   };
 
   const watermarkSizeLabel =
@@ -688,14 +804,14 @@ export function MobileUploadPage() {
                   分区 <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-2">
-                  {CATEGORIES.map((cat) => {
+                  {UPLOAD_CATEGORIES.map((cat) => {
                     const selected = category === cat.id;
                     return (
                       <button
                         key={cat.id}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => setCategory(cat.id)}
+                        onClick={() => handleCategoryChange(cat.id)}
                         className={`flex h-[72px] flex-1 items-center justify-center rounded-xl border text-base transition-colors ${
                           selected
                             ? 'border-blue-700 bg-blue-50 font-medium text-blue-700'
@@ -709,53 +825,207 @@ export function MobileUploadPage() {
                 </div>
               </div>
 
+              {/* 分区驱动的动态字段：区域选定后展开 */}
+              {category && (
+                <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                      拍摄时间 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={categoryFields.shootTime}
+                      onChange={(e) => updateCategoryField('shootTime', e.target.value)}
+                      className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                    />
+                  </div>
+
+                  {category === 'aviation' && (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          飞机注册号 <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={registrationInputRef}
+                            type="text"
+                            value={registrationNumber}
+                            onChange={(e) =>
+                              setRegistrationNumber(
+                                e.target.value.toUpperCase().replace(/[^A-Z0-9/-]/g, '').slice(0, 20),
+                              )
+                            }
+                            readOnly={isRegistrationNa}
+                            placeholder="如 B-1234"
+                            maxLength={20}
+                            autoCapitalize="characters"
+                            className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                          />
+                          <label className="flex min-h-[44px] items-center gap-1.5 whitespace-nowrap text-sm text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={isRegistrationNa}
+                              onChange={(e) => setRegistrationNumber(e.target.checked ? REGISTRATION_NA : '')}
+                              className="h-5 w-5 accent-blue-700"
+                            />
+                            无注册号
+                          </label>
+                        </div>
+                        {!isRegistrationNa && trimmedRegistration && !isRegistrationDraftValid(trimmedRegistration) && (
+                          <p className="mt-1 text-xs text-red-500">
+                            请填写有效的飞机注册号（2-20 位字母/数字/连字符）
+                          </p>
+                        )}
+                        {/* 注册号合法后自动识别机型与航司（N/A 不查询） */}
+                        {!isRegistrationNa && (
+                          <AircraftInfoCard
+                            registration={registrationNumber}
+                            enabled={isAuthenticated}
+                            onHit={handleAircraftHit}
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          机型 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.aircraftModel}
+                          onChange={(e) => {
+                            aircraftModelTouchedRef.current = true;
+                            updateCategoryField('aircraftModel', e.target.value);
+                          }}
+                          placeholder="如 Airbus A320neo；无机型请填 N/A"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          拍摄地点 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.location}
+                          onChange={(e) => updateCategoryField('location', e.target.value)}
+                          placeholder="如 深圳宝安国际机场（SZX）；未知请填 N/A"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {category === 'railway' && (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          车号 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainNumber}
+                          onChange={(e) => updateCategoryField('trainNumber', e.target.value)}
+                          placeholder="如 HXD1-0001"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          车型 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainModel}
+                          onChange={(e) => updateCategoryField('trainModel', e.target.value)}
+                          placeholder="如 和谐电1 / CR400AF"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          拍摄线路 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainLine}
+                          onChange={(e) => updateCategoryField('trainLine', e.target.value)}
+                          placeholder="如 京广线"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          所属局段 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.trainBureau}
+                          onChange={(e) => updateCategoryField('trainBureau', e.target.value)}
+                          placeholder="如 广铁集团广州机务段"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {category === 'automobile' && (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          车辆信息（编号） <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.vehicleNumber}
+                          onChange={(e) => updateCategoryField('vehicleNumber', e.target.value)}
+                          placeholder="如 粤B·12345 或自编号"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          车型 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.vehicleModel}
+                          onChange={(e) => updateCategoryField('vehicleModel', e.target.value)}
+                          placeholder="如 比亚迪 K8"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          拍摄地点 <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={categoryFields.location}
+                          onChange={(e) => updateCategoryField('location', e.target.value)}
+                          placeholder="如 深圳市福田区；未知请填 N/A"
+                          className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div ref={tagSectionRef}>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   标签 <span className="text-red-500">*</span>
                 </label>
                 {category ? (
-                  <TagSelector
-                    categoryId={category}
-                    selectedTags={selectedTags}
-                    onTagsChange={setSelectedTags}
-                  />
+                  <TagPicker tags={TAG_CATALOG[category]} selected={selectedTags} onChange={setSelectedTags} />
                 ) : (
                   <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 py-4 text-center text-sm text-gray-400">
                     请先选择分区
                   </div>
                 )}
               </div>
-
-              {/* 飞机注册号：仅航空分区展示并要求填写，其余分区完全不出现 */}
-              {isRegistrationRequired && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">
-                    飞机注册号 <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    ref={registrationInputRef}
-                    type="text"
-                    value={registrationNumber}
-                    onChange={(e) =>
-                      setRegistrationNumber(
-                        e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20),
-                      )
-                    }
-                    placeholder="如 B-1234"
-                    maxLength={20}
-                    autoCapitalize="characters"
-                    className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
-                  />
-                  <p className="mt-1 text-xs text-gray-400">如 B-1234 / G-DCDE，2~20 位字母数字或连字符</p>
-                  {trimmedRegistration && !isRegistrationFormatValid && (
-                    <p className="mt-1 text-xs text-red-500">
-                      请填写有效的飞机注册号（2-20 位字母/数字/连字符）
-                    </p>
-                  )}
-                  {/* 注册号合法后自动识别机型与航司（仅登录态查询） */}
-                  <AircraftInfoCard registration={registrationNumber} enabled={isAuthenticated} onHit={handleAircraftHit} />
-                </div>
-              )}
 
               <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3">
                 <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-3 py-2">
@@ -803,7 +1073,7 @@ export function MobileUploadPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-base font-medium text-gray-800">{title}</p>
                     <p className="mt-0.5 text-xs text-gray-500">
-                      {CATEGORIES.find((c) => c.id === category)?.name ?? ''}
+                      {UPLOAD_CATEGORIES.find((c) => c.id === category)?.name ?? ''}
                       {file ? ` · ${(file.size / 1024 / 1024).toFixed(2)} MB` : ''}
                     </p>
                   </div>
@@ -812,19 +1082,73 @@ export function MobileUploadPage() {
                   <div className="flex">
                     <dt className="w-20 flex-shrink-0 text-gray-500">标签</dt>
                     <dd className="flex flex-1 flex-wrap gap-1">
-                      {selectedTags.map((t) => (
-                        <span key={t.objectId} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                          {t.objectName}
+                      {selectedTags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                          {tag}
                         </span>
                       ))}
                     </dd>
+                  </div>
+                  <div className="flex">
+                    <dt className="w-20 flex-shrink-0 text-gray-500">拍摄时间</dt>
+                    <dd className="flex-1 text-gray-800">{categoryFields.shootTime.replace('T', ' ')}</dd>
                   </div>
                   {/* 注册号仅在航空分区展示（与第 2 步表单一致） */}
                   {isRegistrationRequired && (
                     <div className="flex">
                       <dt className="w-20 flex-shrink-0 text-gray-500">注册号</dt>
-                      <dd className="flex-1 text-gray-800">{trimmedRegistration}</dd>
+                      <dd className="flex-1 text-gray-800">
+                        {isRegistrationNa ? '无注册号' : trimmedRegistration}
+                      </dd>
                     </div>
+                  )}
+                  {category === 'aviation' && (
+                    <>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">机型</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.aircraftModel}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">拍摄地点</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.location}</dd>
+                      </div>
+                    </>
+                  )}
+                  {category === 'railway' && (
+                    <>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">车号</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.trainNumber}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">车型</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.trainModel}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">拍摄线路</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.trainLine}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">所属局段</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.trainBureau}</dd>
+                      </div>
+                    </>
+                  )}
+                  {category === 'automobile' && (
+                    <>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">车辆信息</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.vehicleNumber}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">车型</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.vehicleModel}</dd>
+                      </div>
+                      <div className="flex">
+                        <dt className="w-20 flex-shrink-0 text-gray-500">拍摄地点</dt>
+                        <dd className="flex-1 text-gray-800">{categoryFields.location}</dd>
+                      </div>
+                    </>
                   )}
                   <div className="flex">
                     <dt className="w-20 flex-shrink-0 text-gray-500">热门意愿</dt>
@@ -943,7 +1267,29 @@ export function MobileUploadPage() {
             {uploadPhase === 'success' ? (
               <>
                 <CheckCircle2 className="mx-auto h-12 w-12 text-green-600" />
-                <p className="mt-3 font-medium text-gray-800">已提交，等待审核</p>
+                <p className="mt-3 text-lg font-semibold text-gray-800">上传成功！</p>
+                <p className="mt-1 text-sm text-gray-500">作品已提交，等待审核</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="mt-5 h-12 w-full rounded-xl bg-blue-700 font-medium text-white"
+                >
+                  返回首页
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/my-works')}
+                  className="mt-2 h-12 w-full rounded-xl border border-gray-300 text-gray-700"
+                >
+                  我的作品
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUploadAnother}
+                  className="mt-2 h-12 w-full rounded-xl border border-gray-300 text-gray-700"
+                >
+                  继续上传
+                </button>
               </>
             ) : uploadPhase === 'failed' ? (
               <>

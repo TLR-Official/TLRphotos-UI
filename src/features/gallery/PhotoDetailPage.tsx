@@ -20,6 +20,24 @@ import { CommentList } from '../comments/components/CommentList';
 import { MobileZoomableImage } from './MobileZoomableImage';
 import { UserTitleBadge } from '../../shared/UserTitleBadge';
 
+/** 解析后端 structured_tags（可能是 JSON 字符串或对象） */
+function parseStructuredTags(raw: PhotoDetail['structured_tags']): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 读取结构化标签中的字符串字段（缺失返回空串） */
+function metaText(tags: Record<string, unknown>, key: string): string {
+  const value = tags[key];
+  return typeof value === 'string' ? value : '';
+}
+
 
 /**
  * 照片详情页组件
@@ -198,6 +216,25 @@ export function PhotoDetailPage() {
   const isOwner = user && photo && photo.user_id === user.id;
   // 是否可查看真实图片（与 CachedImage「审核中」占位逻辑一致）：已审核或携带凭证
   const viewable = !(photo?.status && photo.status !== 'approved' && !token);
+
+  // V4.11（B1）：按分区展示「注册号 / 机车信息 / 车辆信息」，避免汽车作品显示飞机注册号
+  const structured = photo ? parseStructuredTags(photo.structured_tags) : {};
+  const category = photo?.category ?? '';
+  const identityLabel = category === 'railway' ? '机车信息' : category === 'automobile' ? '车辆信息' : '注册号';
+  const identityValue =
+    category === 'railway'
+      ? metaText(structured, '车号')
+      : category === 'automobile'
+        ? metaText(structured, '车辆编号')
+        : photo?.registration_number === 'N/A'
+          ? '无注册号'
+          : photo?.registration_number || '';
+  const modelLabel = category === 'aviation' ? '机型' : '车型';
+  const modelValue =
+    category === 'aviation'
+      ? photo?.aircraft_type || metaText(structured, '机型')
+      : metaText(structured, '车型');
+  const shootTime = metaText(structured, '拍摄时间').replace('T', ' ');
 
   /**
    * 下载带水印原图
@@ -525,16 +562,23 @@ export function PhotoDetailPage() {
             <div className={`rounded-xl shadow-lg p-6 theme-bg-transition bg-white`}>
               <h2 className={`text-lg font-semibold mb-4 text-gray-900`}>照片信息</h2>
               <div className="space-y-4">
-                {photo.registration_number && (
+                {identityValue && (
                   <div className="flex justify-between items-center">
-                    <span className={`text-sm text-gray-500`}>注册号</span>
-                    <span className={`font-medium text-sm font-mono text-gray-900`}>
-                      {photo.registration_number === 'N/A' ? '无注册号' : photo.registration_number}
-                    </span>
+                    <span className={`text-sm text-gray-500`}>{identityLabel}</span>
+                    <span className={`font-medium text-sm font-mono text-gray-900`}>{identityValue}</span>
                   </div>
                 )}
-                {photo.aircraft_type && <DetailRow label="机型" value={photo.aircraft_type} />}
-                {photo.airline && <DetailRow label="所属航司" value={photo.airline} />}
+                {modelValue && <DetailRow label={modelLabel} value={modelValue} />}
+                {category === 'aviation' && photo.airline && (
+                  <DetailRow label="所属航司" value={photo.airline} />
+                )}
+                {category === 'railway' && metaText(structured, '拍摄线路') && (
+                  <DetailRow label="拍摄线路" value={metaText(structured, '拍摄线路')} />
+                )}
+                {category === 'railway' && metaText(structured, '所属局段') && (
+                  <DetailRow label="所属局段" value={metaText(structured, '所属局段')} />
+                )}
+                {shootTime && <DetailRow label="拍摄时间" value={shootTime} />}
                 <DetailRow label="拍摄工具" value={photo.vehicle} />
                 <DetailRow label="相机型号" value={photo.camera_model} />
                 <DetailRow label="拍摄地点" value={photo.location} />

@@ -83,6 +83,8 @@ const REGISTRATION_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 function normalizeRegistrationNumber(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const value = input.trim().toUpperCase();
+  // V4.11：N/A 表示「确认无注册号」，与留空（未填写）区分
+  if (value === 'N/A') return 'N/A';
   return REGISTRATION_PATTERN.test(value) ? value : null;
 }
 
@@ -367,7 +369,8 @@ router.get('/search', photoReadLimiter, async (req, res) => {
     const safeSortBy = validSortBy.includes(String(sortBy)) ? sortBy : 'created_at';
     const safeSortOrder = validSortOrder.includes(String(sortOrder)) ? sortOrder : 'desc';
 
-    query += ` ORDER BY ${safeSortBy} ${safeSortOrder}`;
+    // V4.11（B3）：同秒并列时以 id 兜底，保证刷新/翻页顺序稳定
+    query += ` ORDER BY ${safeSortBy} ${safeSortOrder}, id ${safeSortOrder}`;
 
     const photos = await db.all(query, params);
 
@@ -469,7 +472,8 @@ router.get('/', photoReadLimiter, async (req, res) => {
         params.push(`%"${escapeLikePattern(attrKey)}":"${escapeLikePattern(attrValue)}"%`);
       }
     }
-    baseQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    // V4.11（B3）：同秒并列时以 id 倒序兜底，保证作品集顺序稳定
+    baseQuery += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
     const photos = await db.all(baseQuery, params);
@@ -1095,7 +1099,7 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
     }
 
     // V4.6.0：航空分区按注册号自动识别机型/所属航司，与 OSS 确认并行，失败降级为空
-    const aircraftInfoPromise = isAviationCategory && normalizedRegistration
+    const aircraftInfoPromise = isAviationCategory && normalizedRegistration && normalizedRegistration !== 'N/A'
       ? lookupAircraft(normalizedRegistration).catch(() => null)
       : Promise.resolve(null);
 
@@ -1372,7 +1376,7 @@ router.post(
 
     // V4.6.0：航空分区按注册号自动识别机型/所属航司。
     // 与图片处理并行发起，命中即落库；超时/未收录/上游异常一律降级为 null，绝不阻断上传。
-    const aircraftInfoPromise = isAviationCategory && normalizedRegistration
+    const aircraftInfoPromise = isAviationCategory && normalizedRegistration && normalizedRegistration !== 'N/A'
       ? lookupAircraft(normalizedRegistration).catch(() => null)
       : Promise.resolve(null);
 
