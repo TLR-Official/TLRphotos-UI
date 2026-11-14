@@ -27,6 +27,8 @@ export interface PhotoListItem {
   views?: number;
   /** 点赞数（V4.1.2-beta.3：热门接口与部分列表接口返回，用于轮播/推荐页展示） */
   likes?: number;
+  /** 上传时间（列表接口返回；首页合并分区数据后按此列倒序还原全站顺序） */
+  created_at?: string;
 }
 
 /** 上传者信息（嵌入在照片详情中，用于展示上传者头像与昵称） */

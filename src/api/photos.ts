@@ -71,11 +71,13 @@ export interface UploadCompleteResponse {
 /**
  * 获取全部照片列表
  * @param category - 可选分区 ID，传入时仅返回该分区照片
+ * @param limit - 可选返回数量（后端上限 100），首页板块墙按分区取满以保证分组覆盖
  * @returns ApiResponse<PhotoListItem[]>
  */
-export async function getPhotos(category?: string): Promise<ApiResponse<PhotoListItem[]>> {
+export async function getPhotos(category?: string, limit?: number): Promise<ApiResponse<PhotoListItem[]>> {
   const query = new URLSearchParams();
   if (category) query.set('category', category);
+  if (limit) query.set('limit', String(limit));
   const qs = query.toString();
   return request<PhotoListItem[]>(qs ? `/photos?${qs}` : '/photos');
 }
