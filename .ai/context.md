@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-15 00:30 | [fix] 标签聚合页展示当前标签筛选条件 (V4.14.0-beta) — 首页板块组标题跳转 `/gallery?category=...&tag=...` 时，面包屑、右侧照片计数栏与侧边「当前筛选」均展示当前标签，避免只看到结果与「清除筛选」却无从确认筛选条件；无接口与数据变更；前端 5 套件 39 用例、oxlint 0 error、build index-E3E-mnrV.js；线上 headless 渲染确认「共 42 张照片」且标签胶囊正常显示 | src/features/gallery/GalleryPage.tsx |
 | 2026-11-15 00:26 | [fix] 标签筛选兼容 structured_tags 字符串值 (V4.14.0-beta) — `GET /api/photos` 与 `/api/photos/search` 的 `tag` 条件由仅匹配 tags 数组扩展为 `(tags LIKE ? OR structured_tags LIKE ?)`，存量照片（tags=["飞行器"]、structured_tags={"机型类型":"宽体机"}）从首页板块组标题跳转筛选页不再为空；新增集成用例 1 例（两接口同时断言），后端 31 套件 518 用例全绿；`backend/docs/api.md` 同步标签筛选口径 | backend/src/routes/photos.ts、backend/tests/integration/photos.test.ts、backend/docs/api.md |
 | 2026-11-15 00:24 | [fix] 详情页下载回退原图而非压缩派生图 (V4.14.0-beta) — 无带水印图的照片（如水印未配置）下载时仍取原图，避免把按 4.3 缩放后的派生图当作「下载原图」；详情展示仍优先 `detail_url`；lint 0 error、build index-CXcYmgFA.js 531.23KB / gzip 151.75KB | src/features/gallery/PhotoDetailPage.tsx |
 | 2026-11-15 00:22 | [fix] 过期未消费上传凭证同步清理孤儿原图 (V4.14.0-beta) — `cleanupExpiredUploadIntents` 先查询「已过期且未消费」凭证并删除其 OSS 原图，再删除凭证行，避免用户中途放弃或完成回调失败导致对象长期占用存储；`backend/docs/api.md` 补充说明；后端 517 用例全绿并已重启 | backend/src/services/photoProcessService.ts、backend/docs/api.md |

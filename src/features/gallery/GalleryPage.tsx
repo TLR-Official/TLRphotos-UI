@@ -378,6 +378,13 @@ export function GalleryPage() {
                       <span className="px-1 text-gray-800 font-medium">{selectedAttr.value}</span>
                     </>
                   )}
+                  {/* V4.14.0：首页板块组标题跳转时展示当前标签，避免只剩「清除筛选」而看不到筛选条件 */}
+                  {hotTag && (
+                    <>
+                      <span className="text-gray-400">›</span>
+                      <span className="px-1 text-gray-800 font-medium">{hotTag}</span>
+                    </>
+                  )}
                   {(selectedObject || selectedAttr || hotTag) && (
                     <button
                       onClick={() => {
@@ -503,7 +510,7 @@ export function GalleryPage() {
                   <p className="text-xs leading-6">
                     分区：{categories.find((c) => c.id === selectedCategory)?.name || '-'}
                     <br />
-                    标签：{selectedObject?.name || '未选择（点击上方标签下钻）'}
+                    标签：{[selectedObject?.name, hotTag].filter(Boolean).join(' · ') || '未选择（点击上方标签下钻）'}
                     {selectedAttr && (
                       <>
                         <br />
@@ -522,6 +529,11 @@ export function GalleryPage() {
                     {selectedObject && (
                       <span className="px-2 py-0.5 text-sm rounded-full bg-blue-50 text-blue-800">
                         {selectedObject.name}
+                      </span>
+                    )}
+                    {hotTag && (
+                      <span className="px-2 py-0.5 text-sm rounded-full bg-blue-50 text-blue-800">
+                        {hotTag}
                       </span>
                     )}
                   </div>
