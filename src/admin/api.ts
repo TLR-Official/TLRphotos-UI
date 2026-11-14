@@ -267,13 +267,33 @@ export async function recallPhoto(id: string, reason?: string): Promise<{ succes
 }
 
 /**
- * 确认照片为热门（V4.0.0）
- * 写入 is_hot_confirmed=1 并通知所有者；重复确认幂等返回。
+ * 确认照片为热门（V4.0.0，V4.12.0 增加时效）
+ * 写入 is_hot_confirmed=1 与 hot_expires_at 并通知所有者；重复确认幂等返回。
  * @param id 照片 id
+ * @param days 热门时长（10/15/30/60/120/360 天，默认 30）
  */
-export async function confirmPhotoHot(id: string): Promise<{ success: boolean; message?: string; data?: { is_hot_confirmed: number } }> {
+export async function confirmPhotoHot(
+  id: string,
+  days = 30,
+): Promise<{ success: boolean; message?: string; data?: { is_hot_confirmed: number; hot_expires_at?: string | null } }> {
   const response = await fetch(`${API_BASE}/photos/${id}/hot`, {
     method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ days }),
+  });
+  return response.json();
+}
+
+/**
+ * 审核端删除已过审照片（V4.12.0，PRD 7.2）
+ * 仅 approved 可删；未过审返回 409 PHOTO_NOT_DELETABLE。
+ * @param id 照片 id
+ */
+export async function deleteAdminPhoto(
+  id: string,
+): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${API_BASE}/photos/${id}`, {
+    method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.json();
@@ -567,6 +587,24 @@ export async function updateUserEmail(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ email, turnstile_token: turnstileToken }),
+  });
+  return response.json();
+}
+
+/**
+ * 高权限强制修改用户昵称（V4.12.0，PRD 4.4；仅 super）
+ * 不受用户年度 3 次限制，操作留痕。
+ * @param id 用户 id
+ * @param username 新昵称（2-32 字符）
+ */
+export async function forceRenameUser(
+  id: string,
+  username: string,
+): Promise<{ success: boolean; message?: string; code?: string; data?: { username: string } }> {
+  const response = await fetch(`${API_BASE}/users/${id}/username`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ username }),
   });
   return response.json();
 }

@@ -228,7 +228,7 @@ export function AdminApp() {
       case 'admins':
         return <AdminsPage currentAdmin={admin} />;
       case 'users':
-        return <UsersPage />;
+        return <UsersPage currentAdmin={admin} />;
       case 'logs':
         return <LogsPage />;
       case 'forum':

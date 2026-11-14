@@ -31,6 +31,7 @@ import { formatLocalDateTime } from '../utils/datetime';
 import { deleteUserSessions } from '../services/cookieService';
 import { createNotification } from '../services/notificationService';
 import { PENALTY_CAPS } from '../services/penaltyService';
+import { deleteFromOSS } from '../services/ossService';
 import { evaluateAlerts, takeMetricsSnapshot } from '../services/metricsService';
 import {
   verifyTurnstileToken,
@@ -1111,11 +1112,15 @@ router.put('/photos/:id/recall', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
- * 确认照片为热门（V4.0.0）。
- * 写入 is_hot_confirmed=1（区别于用户上传时的 is_hot 意愿标记），
+ * 确认照片为热门（V4.0.0，V4.12.0 增加时效）。
+ * 写入 is_hot_confirmed=1（区别于用户上传时的 is_hot 意愿标记）与 hot_expires_at，
  * 已确认热门的照片不可被召回。重复确认幂等返回，不重复通知。
+ * 时效可选 10 / 15 / 30 / 60 / 120 / 360 天，默认 30 天；到期由每日作业自动取消热门标识。
  * @param id 照片 ID
+ * @body days 热门时长（天，可选）
  */
+const HOT_DURATION_DAYS = [10, 15, 30, 60, 120, 360];
+
 router.put('/photos/:id/hot', adminAuthMiddleware, async (req, res) => {
   if (!req.admin) {
     return res.status(401).json({ success: false, message: '未授权' });
@@ -1127,25 +1132,112 @@ router.put('/photos/:id/hot', adminAuthMiddleware, async (req, res) => {
   }
 
   if (photo.is_hot_confirmed === 1) {
-    return res.json({ success: true, message: '该作品已是热门作品', data: { is_hot_confirmed: 1 } });
+    return res.json({
+      success: true,
+      message: '该作品已是热门作品',
+      data: { is_hot_confirmed: 1, hot_expires_at: photo.hot_expires_at || null },
+    });
   }
 
-  await db.run('UPDATE photos SET is_hot_confirmed = 1 WHERE id = ?', req.params.id);
+  // 热门时效：仅接受白名单天数，缺省 30 天
+  const requestedDays = Number(req.body?.days);
+  const days = HOT_DURATION_DAYS.includes(requestedDays) ? requestedDays : 30;
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+  await db.run('UPDATE photos SET is_hot_confirmed = 1, hot_expires_at = ? WHERE id = ?', [
+    expiresAt,
+    req.params.id,
+  ]);
 
   if (photo.user_id) {
     await createNotification({
       user_id: photo.user_id,
       type: 'photo_hot',
       title: '作品被评为热门',
-      content: `您的作品《${photo.title}》已被评为热门作品，将在热门位展示。`,
+      content: `您的作品《${photo.title}》已被评为热门作品，将在热门位展示 ${days} 天。`,
       related_type: 'photo',
       related_id: photo.id,
     });
   }
 
-  await logAdminAction(req.admin, 'confirm_photo_hot', 'photo', req.params.id, { title: photo.title });
+  await logAdminAction(req.admin, 'confirm_photo_hot', 'photo', req.params.id, {
+    title: photo.title,
+    days,
+    hot_expires_at: expiresAt,
+  });
 
-  res.json({ success: true, message: '已确认为热门作品', data: { is_hot_confirmed: 1 } });
+  res.json({
+    success: true,
+    message: `已确认为热门作品（${days} 天）`,
+    data: { is_hot_confirmed: 1, hot_expires_at: expiresAt },
+  });
+});
+
+/**
+ * 审核端删除已过审照片（V4.12.0，PRD 7.2）。
+ * 仅 approved 照片可删除；pending / rejected 保留证据不可删（自动清理另见 7.3）。
+ * 删除范围：OSS 原图/缩略图/预览图/水印图 + 点赞/浏览/评论关联记录 + 照片本体。
+ * @param id 照片 ID
+ */
+router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  const photo = await db.get<any>('SELECT * FROM photos WHERE id = ?', [req.params.id]);
+  if (!photo) {
+    return res.status(404).json({ success: false, message: '照片不存在' });
+  }
+
+  // 分区审核员与分区总审核仅能删除本分区照片
+  if (
+    (req.admin.role === 'zone_auditor' || req.admin.role === 'zone_master') &&
+    photo.category !== req.admin.zone
+  ) {
+    return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
+  }
+
+  if (photo.status !== 'approved') {
+    return res.status(409).json({
+      success: false,
+      code: 'PHOTO_NOT_DELETABLE',
+      message: '未过审作品不可删除（保留证据用于申诉）；已过审作品才可删除',
+    });
+  }
+
+  const OSS_DOMAIN = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
+  const extractKey = (url: string | null | undefined): string | null => {
+    if (!url || !url.startsWith(OSS_DOMAIN)) return null;
+    return url.slice(OSS_DOMAIN.length).split('?')[0] || null;
+  };
+
+  const keys = [
+    extractKey(photo.original_url),
+    extractKey(photo.thumbnail_path),
+    extractKey(photo.preview_url),
+    extractKey(photo.watermarked_url),
+  ].filter(Boolean) as string[];
+
+  for (const key of keys) {
+    try {
+      await deleteFromOSS(key);
+    } catch (error) {
+      console.warn(`[Admin] OSS 删除失败 photo=${photo.id} key=${key}:`, error);
+    }
+  }
+
+  await db.run('DELETE FROM photo_likes WHERE photo_id = ?', [photo.id]);
+  await db.run('DELETE FROM photo_views WHERE photo_id = ?', [photo.id]);
+  await db.run("DELETE FROM comments WHERE subject_type = 'photo' AND subject_id = ?", [photo.id]);
+  await db.run('DELETE FROM photos WHERE id = ?', [photo.id]);
+
+  await logAdminAction(req.admin, 'delete_photo', 'photo', photo.id, {
+    title: photo.title,
+    status: photo.status,
+    objects: keys.length,
+  });
+
+  res.json({ success: true, message: '照片已删除' });
 });
 
 /**
@@ -1344,6 +1436,59 @@ router.post('/users/:id/unban', adminAuthMiddleware, requireRole(['super']), asy
   await logAdminAction(req.admin, 'unban_user', 'user', req.params.id, { username: user.username, email: user.email }, req.ip);
 
   res.json({ success: true, message: '用户已解封' });
+});
+
+/**
+ * 高权限强制修改用户昵称（V4.12.0，PRD 4.4）。
+ * 不受「每年最多修改 3 次」限制，但同样写入 nickname_changes 留痕（changed_by 记录管理员）。
+ * @param id 用户 ID
+ * @body username 新昵称（2-32 字符）
+ */
+router.put('/users/:id/username', adminAuthMiddleware, requireRole(['super']), async (req, res) => {
+  if (!req.admin) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+
+  // 高危管理操作：需管理员人机验证状态（168h 内同 IP 有效）
+  const denied = await ensureHumanVerified('admin', req.admin.id, req);
+  if (denied) {
+    return res.status(denied.status).json(denied.payload);
+  }
+
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+  if (username.length < 2 || username.length > 32) {
+    return res.status(400).json({ success: false, message: '昵称长度须为 2-32 个字符' });
+  }
+
+  const user = await db.get<any>('SELECT id, username FROM users WHERE id = ?', [req.params.id]);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  if (user.username === username) {
+    return res.json({ success: true, message: '昵称未变更', data: { username } });
+  }
+
+  const now = new Date().toISOString();
+  try {
+    await db.run('UPDATE users SET username = ?, updated_at = ? WHERE id = ?', [username, now, req.params.id]);
+  } catch (error) {
+    if (String(error).includes('UNIQUE')) {
+      return res.status(409).json({ success: false, code: 'USERNAME_TAKEN', message: '该昵称已被其他用户使用' });
+    }
+    throw error;
+  }
+
+  await db.run(
+    'INSERT INTO nickname_changes (user_id, old_username, new_username, changed_at, changed_by) VALUES (?, ?, ?, ?, ?)',
+    [req.params.id, user.username, username, now, req.admin.username],
+  );
+  await logAdminAction(req.admin, 'force_rename_user', 'user', req.params.id, {
+    from: user.username,
+    to: username,
+  });
+
+  res.json({ success: true, message: '昵称已修改', data: { username } });
 });
 
 /**

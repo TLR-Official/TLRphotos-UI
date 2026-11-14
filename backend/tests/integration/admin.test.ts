@@ -731,3 +731,139 @@ describe('V2.0.0 PUT /api/admin/users/:id/email', () => {
     expect(row?.email_verified).toBe(1);
   });
 });
+
+describe('V4.12.0 热门时效 / 审核端删除 / 强制改昵称', () => {
+  const hotPhotoId = 'test-hot-photo';
+  const approvedPhotoId = 'test-approved-photo';
+  const pendingPhotoId = 'test-pending-delete-photo';
+  const targetUserId = 'test-rename-user';
+
+  beforeEach(async () => {
+    const { db } = await import('../../src/db');
+    await db.run(
+      `INSERT OR REPLACE INTO photos (id, title, thumbnail_path, original_url, category, status, is_hot, is_hot_confirmed)
+       VALUES (?, ?, ?, ?, 'aviation', 'approved', 1, 0)`,
+      hotPhotoId, '热门时效测试', 'https://example.com/t.webp', 'https://example.com/o.jpg'
+    );
+    await db.run(
+      `INSERT OR REPLACE INTO photos (id, title, thumbnail_path, original_url, category, status)
+       VALUES (?, ?, ?, ?, 'aviation', 'approved')`,
+      approvedPhotoId, '可删除作品', 'https://example.com/t2.webp', 'https://example.com/o2.jpg'
+    );
+    await db.run(
+      `INSERT OR REPLACE INTO photos (id, title, thumbnail_path, original_url, category, status)
+       VALUES (?, ?, ?, ?, 'aviation', 'pending')`,
+      pendingPhotoId, '未过审作品', 'https://example.com/t3.webp', 'https://example.com/o3.jpg'
+    );
+    await db.run(
+      `INSERT OR REPLACE INTO users (id, email, password_hash, username)
+       VALUES (?, ?, 'hash', ?)`,
+      targetUserId, 'rename@example.com', 'old-name'
+    );
+  });
+
+  it('确认热门时写入 10 天到期时间', async () => {
+    const res = await request(app)
+      .put(`/api/admin/photos/${hotPhotoId}/hot`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ days: 10 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.is_hot_confirmed).toBe(1);
+
+    const { db } = await import('../../src/db');
+    const row = await db.get<{ is_hot_confirmed: number; hot_expires_at: string }>(
+      'SELECT is_hot_confirmed, hot_expires_at FROM photos WHERE id = ?',
+      hotPhotoId
+    );
+    expect(row?.is_hot_confirmed).toBe(1);
+    const expires = Date.parse(row!.hot_expires_at);
+    const expected = Date.now() + 10 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(expires - expected)).toBeLessThan(60 * 1000);
+  });
+
+  it('热门时长不在白名单时按默认 30 天处理', async () => {
+    const res = await request(app)
+      .put(`/api/admin/photos/${hotPhotoId}/hot`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ days: 999 });
+    expect(res.status).toBe(200);
+    const { db } = await import('../../src/db');
+    const row = await db.get<{ hot_expires_at: string }>(
+      'SELECT hot_expires_at FROM photos WHERE id = ?',
+      hotPhotoId
+    );
+    const days = (Date.parse(row!.hot_expires_at) - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(29.9);
+    expect(days).toBeLessThan(30.1);
+  });
+
+  it('到期热门由作业自动取消标识', async () => {
+    const { db } = await import('../../src/db');
+    await db.run('UPDATE photos SET is_hot_confirmed = 1, hot_expires_at = ? WHERE id = ?', [
+      new Date(Date.now() - 60 * 1000).toISOString(),
+      hotPhotoId,
+    ]);
+    const { expireHotPhotos } = await import('../../src/services/hotExpiryService');
+    const count = await expireHotPhotos(db);
+    expect(count).toBeGreaterThanOrEqual(1);
+
+    const row = await db.get<{ is_hot_confirmed: number; hot_expires_at: string | null }>(
+      'SELECT is_hot_confirmed, hot_expires_at FROM photos WHERE id = ?',
+      hotPhotoId
+    );
+    expect(row?.is_hot_confirmed).toBe(0);
+    expect(row?.hot_expires_at).toBeNull();
+  });
+
+  it('未过审作品不可被审核端删除', async () => {
+    const res = await request(app)
+      .delete(`/api/admin/photos/${pendingPhotoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PHOTO_NOT_DELETABLE');
+  });
+
+  it('已过审作品可被审核端删除', async () => {
+    const res = await request(app)
+      .delete(`/api/admin/photos/${approvedPhotoId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`);
+    expect(res.status).toBe(200);
+
+    const { db } = await import('../../src/db');
+    const row = await db.get('SELECT id FROM photos WHERE id = ?', [approvedPhotoId]);
+    expect(row).toBeUndefined();
+  });
+
+  it('分区审核员不可删除非本分区作品', async () => {
+    const res = await request(app)
+      .delete(`/api/admin/photos/${approvedPhotoId}`)
+      .set('Authorization', `Bearer ${zoneAuditorToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('超管可强制修改用户昵称并留痕', async () => {
+    const res = await request(app)
+      .put(`/api/admin/users/${targetUserId}/username`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ username: 'new-name' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe('new-name');
+
+    const { db } = await import('../../src/db');
+    const user = await db.get<{ username: string }>('SELECT username FROM users WHERE id = ?', [targetUserId]);
+    expect(user?.username).toBe('new-name');
+    const change = await db.get<{ changed_by: string }>(
+      'SELECT changed_by FROM nickname_changes WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+      [targetUserId]
+    );
+    expect(change?.changed_by).toBe('superadmin');
+  });
+
+  it('非超管不可强制修改昵称', async () => {
+    const res = await request(app)
+      .put(`/api/admin/users/${targetUserId}/username`)
+      .set('Authorization', `Bearer ${zoneAuditorToken}`)
+      .send({ username: 'hacked' });
+    expect(res.status).toBe(403);
+  });
+});

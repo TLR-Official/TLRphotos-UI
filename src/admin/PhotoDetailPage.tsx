@@ -23,6 +23,7 @@ import {
   ThumbsUp,
   ShieldAlert,
   Gavel,
+  Trash2,
 } from 'lucide-react';
 import {
   getPhotoDetail,
@@ -34,6 +35,7 @@ import {
   confirmPhotoHot,
   assignPhoto,
   updatePhotoMeta,
+  deleteAdminPhoto,
 } from './api';
 import type { AdminPhotoDetail, AdminUser } from './types';
 import { CachedImage } from '../components/CachedImage';
@@ -70,6 +72,9 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
   const [recallReason, setRecallReason] = useState('');
   // hotLoading：确认热门请求进行中
   const [hotLoading, setHotLoading] = useState(false);
+  // V4.12.0：热门时长（天，PRD 4.2 白名单）与审核端删除状态
+  const [hotDays, setHotDays] = useState(30);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   // 分配：候选审核员列表与选中项（仅 super/zone_master 加载）
   const [assignees, setAssignees] = useState<AdminUser[]>([]);
   const [assigneeId, setAssigneeId] = useState('');
@@ -271,12 +276,12 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
     setRecallLoading(false);
   };
 
-  /** 确认热门（V4.0.0）：二次确认后调用，成功后刷新详情展示已确认状态 */
+  /** 确认热门（V4.0.0，V4.12.0 支持时长）：二次确认后调用，成功后刷新详情展示已确认状态 */
   const handleConfirmHot = async () => {
     if (!id || hotLoading) return;
-    if (!confirm('确认将该作品标记为热门？确认后将通知作品所有者，且该作品不可再被召回。')) return;
+    if (!confirm(`确认将该作品评为热门 ${hotDays} 天？到期后将自动取消热门标识，且确认后不可再被召回。`)) return;
     setHotLoading(true);
-    const result = await confirmPhotoHot(id);
+    const result = await confirmPhotoHot(id, hotDays);
     if (result.success) {
       showNotice(result.message || '已确认为热门作品');
       await fetchDetail();
@@ -284,6 +289,21 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
       showNotice(result.message || '操作失败');
     }
     setHotLoading(false);
+  };
+
+  /** 审核端删除已过审作品（V4.12.0，PRD 7.2）：两级确认后永久删除照片与 OSS 对象 */
+  const handleDeletePhoto = async () => {
+    if (!id || deleteLoading) return;
+    if (!confirm('删除后不可恢复，将同时清除原图、缩略图、预览图与评论。确定删除该作品？')) return;
+    if (!confirm('再次确认：该作品已通过审核，删除将从作品集与热门位移除。仍要删除？')) return;
+    setDeleteLoading(true);
+    const result = await deleteAdminPhoto(id);
+    if (result.success) {
+      navigate('/admin/photos');
+      return;
+    }
+    showNotice(result.message || '删除失败');
+    setDeleteLoading(false);
   };
 
   /** 分配/转移审核任务（V4.0.0）：将照片指派给下拉选中的审核员 */
@@ -660,7 +680,11 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
           <div className="flex items-center gap-3 flex-wrap">
             <p className="text-sm text-gray-500 mr-auto">
               {photo.is_hot_confirmed === 1
-                ? '该作品已确认为热门，不可召回'
+                ? `该作品已确认为热门${
+                    photo.hot_expires_at
+                      ? `，到期时间 ${new Date(photo.hot_expires_at).toLocaleString('zh-CN')}`
+                      : ''
+                  }，不可召回`
                 : '审核纠错：召回将使照片回到待审核队列'}
             </p>
             {/* 召回：窗口内静默；超窗弹出原因必填对话框 */}
@@ -671,15 +695,29 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
             >
               {recallLoading ? '召回中...' : '召回'}
             </button>
-            {/* 确认热门：未确认时显示 */}
-            {photo.is_hot_confirmed !== 1 && (
-              <button
-                onClick={handleConfirmHot}
-                disabled={hotLoading}
-                className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 disabled:opacity-50 text-blue-700 rounded-lg text-sm font-medium transition-colors"
-              >
-                {hotLoading ? '提交中...' : '确认热门'}
-              </button>
+            {/* 确认热门：仅用户表达热门意愿且尚未确认时显示（PRD 4.2） */}
+            {photo.is_hot === 1 && photo.is_hot_confirmed !== 1 && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={hotDays}
+                  onChange={(e) => setHotDays(Number(e.target.value))}
+                  disabled={hotLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-700"
+                >
+                  {[10, 15, 30, 60, 120, 360].map((days) => (
+                    <option key={days} value={days}>
+                      {days} 天
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleConfirmHot}
+                  disabled={hotLoading}
+                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 disabled:opacity-50 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {hotLoading ? '提交中...' : '确认热门'}
+                </button>
+              </div>
             )}
             {/* 分配/转移：仅 super/zone_master 展示（分配对象列表接口权限） */}
             {canAssign && assignees.length > 0 && (
@@ -705,6 +743,15 @@ export function PhotoDetailPage({ id, currentAdmin }: { id: string; currentAdmin
                 </button>
               </div>
             )}
+            {/* 审核端删除：仅已过审作品可删（PRD 7.2），两级确认 */}
+            <button
+              onClick={() => void handleDeletePhoto()}
+              disabled={deleteLoading}
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-50 text-red-600 rounded-lg text-sm font-medium transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deleteLoading ? '删除中...' : '删除作品'}
+            </button>
           </div>
         </div>
       )}

@@ -1280,6 +1280,8 @@ Authorization: Bearer <token>
 }
 ```
 
+> **V4.12.0 昵称修改限制（PRD 4.4）**：`username` 与实际值不同即计为一次修改，滚动 365 天内最多 3 次；超限返回 `403 { code: "NICKNAME_CHANGE_LIMIT" }`。高权限强制修改走管理端 `PUT /api/admin/users/:id/username`，不受此限制。
+
 **响应**:
 ```json
 {
@@ -2087,6 +2089,7 @@ Authorization: Bearer <admin_token>
 **约束**：
 - 仅作品所有者可对本人照片发起申诉（非所有者 403）
 - 仅 `status=rejected` 的照片可申诉（其余状态 400）
+- **V4.12.0（PRD 7.3）**：上传满 7 天后禁止申诉，返回 `403 APPEAL_WINDOW_EXPIRED`
 - 同一照片已存在 `pending` 申诉时不可重复发起，返回 `409 APPEAL_IN_PROGRESS`（撤回/裁决后可再次发起）
 
 **请求体**:
@@ -2105,6 +2108,7 @@ Authorization: Bearer <admin_token>
 | 401 | AUTH_REQUIRED 未登录 |
 | 403 | EMAIL_VERIFICATION_REQUIRED 邮箱未确权 |
 | 403 | 仅作品所有者可发起申诉（无 code） |
+| 403 | APPEAL_WINDOW_EXPIRED 上传满 7 天，超过申诉时限 |
 | 400 | 仅未通过审核的作品可发起申诉 / 请填写申诉理由（无 code） |
 | 404 | 照片不存在 |
 | 409 | APPEAL_IN_PROGRESS 该作品已有待处理的申诉 |
@@ -2277,11 +2281,53 @@ Authorization: Bearer <admin_token>
 
 **PUT** `/api/admin/photos/:id/hot`
 
-**鉴权**：管理员 JWT。写入 `is_hot_confirmed=1`（区别于用户上传时的 `is_hot` 意愿标记），并向所有者发送 `photo_hot` 通知。重复确认幂等返回、不重复通知。**已确认热门的照片不可被召回**（返回 `HOT_NOT_RECALLABLE`）。
+**鉴权**：管理员 JWT。写入 `is_hot_confirmed=1` 与 `hot_expires_at`（区别于用户上传时的 `is_hot` 意愿标记），并向所有者发送 `photo_hot` 通知。重复确认幂等返回、不重复通知。**已确认热门的照片不可被召回**（返回 `HOT_NOT_RECALLABLE`）。
+
+**请求体**:
+```json
+{ "days": 30 }
+```
+
+`days` 仅接受 `10 / 15 / 30 / 60 / 120 / 360`，缺省或非白名单值按 30 天处理。到期后由每日清理作业自动将 `is_hot_confirmed` 置 0 并清空 `hot_expires_at`，历史已处理数据不做回溯。
 
 **响应**:
 ```json
-{ "success": true, "message": "已确认为热门作品", "data": { "is_hot_confirmed": 1 } }
+{
+  "success": true,
+  "message": "已确认为热门作品（30 天）",
+  "data": { "is_hot_confirmed": 1, "hot_expires_at": "2026-12-14T15:00:00.000Z" }
+}
+```
+
+### 删除已过审照片（V4.12.0）
+
+**DELETE** `/api/admin/photos/:id`
+
+**鉴权**：`PHOTO_AUDIT_ROLES`；分区审核员/分区总审核仅能删除本分区照片（跨区 403）。
+
+**约束**：仅 `status=approved` 可删除；`pending` / `rejected` 返回 `409 PHOTO_NOT_DELETABLE`（保留证据用于申诉，超期未审由自动清理作业另行处理）。删除范围包含 OSS 原图/缩略图/预览图/水印图与点赞、浏览、评论关联记录。
+
+**响应**:
+```json
+{ "success": true, "message": "照片已删除" }
+```
+
+### 强制修改用户昵称（V4.12.0）
+
+**PUT** `/api/admin/users/:id/username`
+
+**鉴权**：仅 `super`；需管理员人机验证状态。
+
+**请求体**:
+```json
+{ "username": "new-name" }
+```
+
+昵称长度 2-32 字符；不受用户「每年最多修改 3 次」限制，但写入 `nickname_changes`（`changed_by` 记录管理员用户名）并落 `force_rename_user` 审计日志。昵称占用返回 `409 USERNAME_TAKEN`。
+
+**响应**:
+```json
+{ "success": true, "message": "昵称已修改", "data": { "username": "new-name" } }
 ```
 
 ### 分配审核员

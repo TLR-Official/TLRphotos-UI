@@ -122,6 +122,8 @@ export interface AdminPhotoDetail {
   is_hot?: number;
   /** V4.0.0：管理员确认热门标记，1=已确认热门（确认后禁止召回） */
   is_hot_confirmed?: number;
+  /** V4.12.0：热门到期时间（ISO，到期后每日作业自动取消热门标识） */
+  hot_expires_at?: string | null;
   /** V4.0.0：审核留痕（存量 approved 可能为 null） */
   reviewed_by?: string | null;
   reviewed_at?: string | null;

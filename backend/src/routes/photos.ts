@@ -1663,8 +1663,8 @@ router.post('/:id/appeal', requireVerifiedEmail, async (req, res) => {
       });
     }
 
-    const photo = await db.get<{ id: string; user_id: string | null; status: string; title: string }>(
-      'SELECT id, user_id, status, title FROM photos WHERE id = ?',
+    const photo = await db.get<{ id: string; user_id: string | null; status: string; title: string; created_at: string }>(
+      'SELECT id, user_id, status, title, created_at FROM photos WHERE id = ?',
       id
     );
     if (!photo) {
@@ -1679,6 +1679,16 @@ router.post('/:id/appeal', requireVerifiedEmail, async (req, res) => {
     // 仅被拒绝的作品可申诉
     if (photo.status !== 'rejected') {
       return res.status(400).json({ success: false, message: '仅未通过审核的作品可发起申诉' });
+    }
+
+    // V4.12.0（PRD 7.3）：上传满 7 天后禁止申诉
+    const uploadedAt = Date.parse(photo.created_at);
+    if (Number.isFinite(uploadedAt) && Date.now() - uploadedAt > 7 * 24 * 60 * 60 * 1000) {
+      return res.status(403).json({
+        success: false,
+        code: 'APPEAL_WINDOW_EXPIRED',
+        message: '作品上传已满 7 天，超过申诉时限，无法再发起申诉',
+      });
     }
 
     // 同一照片存在待处理申诉时不可重复发起（撤回/裁决后可再次发起）

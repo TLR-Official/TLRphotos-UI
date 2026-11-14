@@ -40,6 +40,8 @@ import { cleanupExpired } from './services/cookieService';
 import { cleanupExpiredVerifications } from './services/verificationService';
 import { cleanupExpiredCodes } from './services/otpService';
 import { cleanupOldNotifications } from './services/notificationService';
+import { expireHotPhotos } from './services/hotExpiryService';
+import { cleanupUnreviewedPhotos } from './services/photoCleanupService';
 import {
   initSuperAdmin,
   checkAdminJwtConfig,
@@ -183,6 +185,18 @@ function scheduleCleanup() {
       const notificationsDeleted = await cleanupOldNotifications();
       if (notificationsDeleted > 0) {
         console.log(`[Cleanup] Deleted ${notificationsDeleted} old read notifications at ${new Date().toISOString()}`);
+      }
+      // V4.12.0：热门时效到期自动取消（PRD 4.2）
+      const expiredHot = await expireHotPhotos(db);
+      if (expiredHot > 0) {
+        console.log(`[Cleanup] Expired ${expiredHot} hot photos at ${new Date().toISOString()}`);
+      }
+      // V4.12.0：待审核超过 30 天的作品自动清理（PRD 7.3）
+      const cleaned = await cleanupUnreviewedPhotos(db);
+      if (cleaned.photos > 0) {
+        console.log(
+          `[Cleanup] Removed ${cleaned.photos} unreviewed photos (${cleaned.objects} objects) at ${new Date().toISOString()}`,
+        );
       }
     } catch (error) {
       console.error('[Cleanup] Failed to clean up expired sessions:', error);

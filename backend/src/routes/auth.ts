@@ -851,6 +851,24 @@ router.put('/me', async (req, res) => {
 
     const { username, bio, website, location, custom_fields } = req.body;
 
+    // V4.12.0（PRD 4.4）：昵称（username）每个自然年最多修改 3 次，防止频繁改名规避追责
+    const nextUsername = typeof username === 'string' ? username.trim() : '';
+    const usernameChanged = nextUsername !== '' && nextUsername !== currentUser.username;
+    if (usernameChanged) {
+      const since = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+      const history = await db.get<{ count: number }>(
+        'SELECT COUNT(*) as count FROM nickname_changes WHERE user_id = ? AND changed_at >= ?',
+        [decoded.userId, since],
+      );
+      if ((history?.count ?? 0) >= 3) {
+        return res.status(403).json({
+          success: false,
+          code: 'NICKNAME_CHANGE_LIMIT',
+          message: '昵称每年最多修改 3 次，本年度修改次数已用完',
+        });
+      }
+    }
+
     const updatedUser = await updateUser(decoded.userId, {
       username,
       bio,
@@ -859,6 +877,14 @@ router.put('/me', async (req, res) => {
       // 自定义字段序列化为 JSON 字符串便于持久化
       custom_fields: custom_fields ? JSON.stringify(custom_fields) : null,
     });
+
+    // 昵称实际变更后留痕（用于年度次数限制）
+    if (usernameChanged) {
+      await db.run(
+        'INSERT INTO nickname_changes (user_id, old_username, new_username, changed_at, changed_by) VALUES (?, ?, ?, ?, ?)',
+        [decoded.userId, currentUser.username, updatedUser.username, new Date().toISOString(), null],
+      );
+    }
 
     res.json({
       success: true,

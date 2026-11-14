@@ -544,6 +544,22 @@ const initSchema = async () => {
   try {
     await db.run('ALTER TABLE photos ADD COLUMN longitude REAL');
   } catch {}
+  // V4.12.0：热门时效（PRD 4.2）——确认热门时写入到期时间，每日作业到期自动取消热门标识
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN hot_expires_at TEXT');
+  } catch {}
+  // V4.12.0：昵称修改记录（PRD 4.4）——自然年内最多修改 3 次，高权限强制修改亦留痕
+  await db.run(`CREATE TABLE IF NOT EXISTS nickname_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    old_username TEXT,
+    new_username TEXT NOT NULL,
+    changed_at TEXT NOT NULL,
+    changed_by TEXT
+  )`);
+  await db.run(
+    'CREATE INDEX IF NOT EXISTS idx_nickname_changes_user_time ON nickname_changes(user_id, changed_at)'
+  );
   // V4.6.0：注册号 → 机型/航司 的查询缓存，避免重复请求上游被限流（TTL 由服务层控制）
   await db.run(`CREATE TABLE IF NOT EXISTS aircraft_cache (
     registration TEXT PRIMARY KEY,

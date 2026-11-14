@@ -10,11 +10,11 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, User, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, Settings, X, Gavel, MapPin } from 'lucide-react';
-import { getUsers, toggleUser, updateUserPermissions, submitAdminVerification } from './api';
+import { Search, User, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight, Settings, X, Gavel, MapPin, PenLine } from 'lucide-react';
+import { getUsers, toggleUser, updateUserPermissions, submitAdminVerification, forceRenameUser } from './api';
 import { useHumanVerification } from '../shared/useHumanVerification';
 import { UserTitleBadge } from '../shared/UserTitleBadge';
-import type { User as AdminUser } from './types';
+import type { AdminUser as CurrentAdmin, User as AdminUser } from './types';
 
 /** 权限弹窗中七项功能权限的配置（label + 字段 key + 说明） */
 const PERMISSION_FIELDS: { key: 'can_upload' | 'can_view' | 'can_download' | 'can_like' | 'can_comment' | 'can_forum_post' | 'can_ban_manage'; label: string; desc: string }[] = [
@@ -29,9 +29,10 @@ const PERMISSION_FIELDS: { key: 'can_upload' | 'can_view' | 'can_download' | 'ca
 
 /**
  * 用户管理页组件
+ * @param currentAdmin 当前登录管理员（仅 super 展示强制改昵称入口）
  * @returns 加载态 / 用户表格 + 搜索框 + 分页 + 权限弹窗 JSX
  */
-export function UsersPage() {
+export function UsersPage({ currentAdmin }: { currentAdmin?: CurrentAdmin | null }) {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUser[]>([]);
   // V1.8.0：人机验证门（禁用切换与权限变更为高危管理操作，走管理员验证接口）
@@ -51,6 +52,10 @@ export function UsersPage() {
   // 权限弹窗：正在编辑权限的用户（null 时弹窗关闭）
   const [permUser, setPermUser] = useState<AdminUser | null>(null);
   const [permLoading, setPermLoading] = useState(false);
+  // V4.12.0：高权限强制修改昵称弹窗（仅 super）
+  const [renameUser, setRenameUser] = useState<AdminUser | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameLoading, setRenameLoading] = useState(false);
 
   // 关键词防抖 300ms：输入停止后才触发检索
   useEffect(() => {
@@ -111,6 +116,28 @@ export function UsersPage() {
       alert(result.message || '权限更新失败');
     }
     setPermLoading(false);
+  };
+
+  /**
+   * 高权限强制修改用户昵称（V4.12.0，PRD 4.4）
+   * 不受用户年度 3 次限制；服务端记录 changed_by 与审计日志。
+   */
+  const handleForceRename = async () => {
+    if (!renameUser || renameLoading) return;
+    const next = renameValue.trim();
+    if (next.length < 2 || next.length > 32) {
+      alert('昵称长度须为 2-32 个字符');
+      return;
+    }
+    setRenameLoading(true);
+    const result = await verificationGuard('admin_user_admin', () => forceRenameUser(renameUser.id, next));
+    if (result.success) {
+      setRenameUser(null);
+      await fetchUsers();
+    } else {
+      alert(result.message || '修改昵称失败');
+    }
+    setRenameLoading(false);
   };
 
   /**
@@ -228,6 +255,19 @@ export function UsersPage() {
                           >
                             {user.is_active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
                           </button>
+                          {/* V4.12.0：高权限强制修改昵称（仅 super） */}
+                          {currentAdmin?.role === 'super' && (
+                            <button
+                              onClick={() => {
+                                setRenameUser(user);
+                                setRenameValue(user.username || '');
+                              }}
+                              title="强制修改昵称（不受年度 3 次限制）"
+                              className="p-2 rounded-lg text-gray-600 hover:text-gray-800 hover:bg-gray-100 cursor-pointer transition-colors"
+                            >
+                              <PenLine className="w-5 h-5" />
+                            </button>
+                          )}
                           {/* 权限设置按钮 */}
                           <button
                             onClick={() => setPermUser(user)}
@@ -331,6 +371,54 @@ export function UsersPage() {
                 className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
               >
                 完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* V4.12.0：强制修改昵称弹窗（仅 super） */}
+      {renameUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => !renameLoading && setRenameUser(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">强制修改昵称</h3>
+              <button
+                onClick={() => !renameLoading && setRenameUser(null)}
+                disabled={renameLoading}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-600 mb-3">
+                用户：<span className="font-medium text-gray-800">{renameUser.username || renameUser.email}</span>
+              </p>
+              <label className="block text-xs text-gray-500 mb-1">新昵称（2-32 个字符）</label>
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                disabled={renameLoading}
+                maxLength={32}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-3">高权限修改不受用户年度 3 次限制，操作将记录审计日志。</p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => setRenameUser(null)}
+                disabled={renameLoading}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void handleForceRename()}
+                disabled={renameLoading}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+              >
+                {renameLoading ? '保存中...' : '保存'}
               </button>
             </div>
           </div>
