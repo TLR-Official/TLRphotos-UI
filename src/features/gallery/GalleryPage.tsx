@@ -311,6 +311,17 @@ export function GalleryPage() {
     setShowTagSheet(false);
   };
 
+  /**
+   * 切换分区：清空标签筛选（下钻层级由分区 effect 重置）。
+   * 避免从首页板块组标题带着「宽体机」跳到航空后，再切到铁路仍残留该标签导致空结果。
+   * URL 初始化的分区不经过此回调，因此深链筛选不受影响。
+   */
+  const handleCategoryChange = (categoryId: string) => {
+    if (categoryId === selectedCategory) return;
+    setSelectedCategory(categoryId);
+    setHotTag(null);
+  };
+
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-8">
@@ -328,7 +339,7 @@ export function GalleryPage() {
               {categories.map((cat) => (
                 <button
                   key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
+                  onClick={() => handleCategoryChange(cat.id)}
                   className={`px-6 py-3 font-medium transition-all border-b-2 max-md:min-h-[44px] max-md:shrink-0 max-md:px-4 ${
                     selectedCategory === cat.id
                       ? 'border-blue-700 text-blue-800'
