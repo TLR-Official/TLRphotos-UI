@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-14 23:10 | [docs] 传图速度优化裁决为方案A：OSS直传+服务端异步水印压缩 (V4.10.1-beta.2) | docs/prd-v4.11-upload-tag-optimization.md、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-11-14 22:52 | [docs] 新增上传与标签体系优化PRD：缺陷修复/表单重构/标签定稿/主页板块化 (V4.10.1-beta.1) | docs/prd-v4.11-upload-tag-optimization.md、package.json、package-lock.json、.trae/rules/版本管理规则.md |
 | 2026-11-07 23:53 | [release] 版本号升级至 V4.10.1-beta — 高德地图改为运行时配置并补充验收流程 | 全项目 |
 | 2026-11-07 23:53 | [fix] 地图 Key 改为后端运行时下发 (V4.10.1-beta) — 此前构建期无 `VITE_AMAP_KEY` 时 `if (!AMAP_KEY)` 被常量折叠，脚本注入分支摇树移除（产物无 `webapi.amap.com`），地图选点永远不可用；新增 `backend/src/routes/publicConfig.ts`（`GET /api/config/public` 返回 `amap_js_key` / `amap_security_code`，未配置为 `null`，仅两个公开字段，`Cache-Control: public, max-age=300`）并在 `server.ts` 挂载；重写 `src/admin/audit-form/amapLoader.ts`：删除同步 `isAmapConfigured()`，构建期 `VITE_AMAP_*` 优先、否则请求运行时配置（模块级 Promise 缓存），无 Key 抛 `AMAP_NOT_CONFIGURED`，注入失败抛 `AMAP_LOAD_FAILED` 并清空单例允许重试；`LocationField.tsx` 移除同步预判、错误文案改为后端 `AMAP_JS_KEY`；`backend/.env.example` 新增两变量，根 `.env.example` 标注 `VITE_AMAP_*` 为可选覆盖；`backend/docs/api.md` 新增公开配置章节；新增 `backend/tests/integration/public-config.test.ts` 3 用例；构建产物已重新包含地图加载代码；后端 tsc 0 error、30 套件 500 用例全绿，前端 oxlint 0 error（18 存量 warning 未新增）、build 通过 | backend/src/routes/publicConfig.ts、backend/src/server.ts、backend/tests/integration/public-config.test.ts、backend/.env.example、backend/docs/api.md、src/admin/audit-form/amapLoader.ts、src/admin/audit-form/LocationField.tsx、.env.example |
