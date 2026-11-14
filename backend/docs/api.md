@@ -418,7 +418,9 @@
 > - `403 UPLOAD_KEY_NOT_OWNED`：Key 未由当前用户申请预签名，或凭证已被伪造；
 > - `409 UPLOAD_KEY_CONSUMED`：该凭证已用于完成过上传，不可重复消费；
 > - `410 UPLOAD_SESSION_EXPIRED`：凭证超过 1 小时有效期，需重新申请预签名；
-> - `400 UPLOAD_OBJECT_NOT_FOUND`：OSS 中不存在该 Key 对应的原图（直传失败或 Key 错误）。
+> - `400 UPLOAD_OBJECT_NOT_FOUND`：OSS 中不存在该 Key 对应的原图（直传失败或 Key 错误）；
+> - `400 UPLOAD_OBJECT_EMPTY`：原图体积为 0；
+> - `413 UPLOAD_TOO_LARGE`：原图超过 50MB 上限，超限对象会被服务端清理。
 
 > **V3.2.0 新增字段**：
 > - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。**V4.11 起额外接受 `N/A`（确认无注册号）**，此时跳过机型/航司识别。

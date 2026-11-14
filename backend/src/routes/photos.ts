@@ -1215,6 +1215,28 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
         message: '未找到已上传的原图，请重新上传',
       });
     }
+    // V4.13.0：原图体积上限 50MB（与直传接口一致），防止超大对象拖垮 Worker 内存
+    const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+    if (objectInfo.size <= 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'UPLOAD_OBJECT_EMPTY',
+        message: '上传的原图为空，请重新上传',
+      });
+    }
+    if (objectInfo.size > MAX_UPLOAD_BYTES) {
+      // 超限对象直接清理，避免占用 OSS 存储
+      try {
+        await deleteFromOSS(key);
+      } catch (error) {
+        console.warn('[Upload] 清理超限原图失败:', error);
+      }
+      return res.status(413).json({
+        success: false,
+        code: 'UPLOAD_TOO_LARGE',
+        message: '原图超过 50MB 上限，请压缩后再上传',
+      });
+    }
 
     // 水印配置：与直传路径同构，Worker 生成详情派生图时按此叠加文字水印与底部信息条
     let watermarkConfig: WatermarkConfig | undefined;
