@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-15 00:37 | [chore] 补充待审照片自动清理作业测试 (V4.14.0-beta) — 新增 `backend/tests/integration/photo-cleanup.test.ts` 3 例：满 30 天 pending 连同 5 个 OSS 派生对象与点赞/浏览/评论/任务记录一并删除；29 天 pending 与已过审老照片保留；`PHOTO_CLEANUP_ENABLED=off` 时跳过；内存库 + OSS mock，不触达生产库；后端 32 套件 521 用例全绿 | backend/tests/integration/photo-cleanup.test.ts |
 | 2026-11-15 00:35 | [fix] 首页板块墙按分区取数避免整组缺失 (V4.14.0-beta) — `PhotosContext` 由「全站最新 50 张」改为航空/铁路/汽车各取一页（limit=100）后合并去重、按上传时间倒序与 id 兜底还原全站顺序；解决最新 50 张集中在航空时铁路/汽车标签组整组不渲染的问题（生产最新 50 张中铁路为 0）；轮播回退仍取合并后最新 6 张；`PhotoListItem` 补充 `created_at` 字段；前端 5 套件 39 用例、oxlint 0 error、build index-DRfTd5Fd.js 531.90KB / gzip 151.95KB | src/shared/PhotosContext.tsx、src/api/photos.ts、src/features/gallery/types.ts |
 | 2026-11-15 00:33 | [fix] 画廊切换分区时清空标签筛选 (V4.14.0-beta) — 从首页板块组标题带 `tag` 跳转后手动切换分区会残留原分区标签（如航空「宽体机」切到铁路）导致空结果；分区 Tab 改走 `handleCategoryChange` 清空 `hotTag`，URL 初始化的分区不经该回调，深链筛选不受影响；前端 5 套件 39 用例、oxlint 0 error、build index-BsQJWcyB.js 531.57KB / gzip 151.79KB | src/features/gallery/GalleryPage.tsx |
 | 2026-11-15 00:30 | [fix] 标签聚合页展示当前标签筛选条件 (V4.14.0-beta) — 首页板块组标题跳转 `/gallery?category=...&tag=...` 时，面包屑、右侧照片计数栏与侧边「当前筛选」均展示当前标签，避免只看到结果与「清除筛选」却无从确认筛选条件；无接口与数据变更；前端 5 套件 39 用例、oxlint 0 error、build index-E3E-mnrV.js；线上 headless 渲染确认「共 42 张照片」且标签胶囊正常显示 | src/features/gallery/GalleryPage.tsx |
