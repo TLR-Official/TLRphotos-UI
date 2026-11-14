@@ -340,3 +340,32 @@ describe('V2.0.0 纯邮箱账号体系', () => {
     expect(res.body.code).toBe('INVALID_PARAMS');
   });
 });
+
+// V4.12.0（PRD 4.4 / A9）：昵称每个自然年最多修改 3 次，第 4 次应被拒绝
+describe('PUT /api/auth/me 昵称修改限制', () => {
+  it('同一年内第 4 次修改昵称返回 403 NICKNAME_CHANGE_LIMIT', async () => {
+    const email = `nickname-limit-${Date.now()}@example.com`;
+    const code = await requestRegisterCode(email);
+    const registered = await request(app)
+      .post('/api/auth/register')
+      .send({ email, password: 'Test123456', username: 'nickname-limit-user', code });
+    expect(registered.status).toBe(201);
+    const token = registered.body.data.token as string;
+
+    for (let i = 1; i <= 3; i += 1) {
+      const res = await request(app)
+        .put('/api/auth/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ username: `nickname-limit-${i}-${Date.now()}` });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    }
+
+    const fourth = await request(app)
+      .put('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: `nickname-limit-4-${Date.now()}` });
+    expect(fourth.status).toBe(403);
+    expect(fourth.body.code).toBe('NICKNAME_CHANGE_LIMIT');
+  });
+});
