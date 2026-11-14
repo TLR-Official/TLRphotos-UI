@@ -62,8 +62,12 @@ export function PhotosProvider({ children }: { children: ReactNode }) {
       }
       // 全部请求失败时保留现有列表，避免首页闪空
       if (merged.size > 0) {
+        const timeOf = (value?: string) => {
+          const ts = value ? Date.parse(value) : NaN;
+          return Number.isFinite(ts) ? ts : 0;
+        };
         const list = Array.from(merged.values()).sort((a, b) => {
-          const byTime = (b.created_at || '').localeCompare(a.created_at || '');
+          const byTime = timeOf(b.created_at) - timeOf(a.created_at);
           return byTime !== 0 ? byTime : b.id.localeCompare(a.id);
         });
         setPhotos(list);

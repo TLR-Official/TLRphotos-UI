@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-15 00:40 | [fix] 首页合并照片按时间戳解析排序 (V4.14.0-beta) — 分区合并后的排序由字符串 `localeCompare` 改为 `Date.parse` 比较时间戳，兼容存量 `YYYY-MM-DD HH:mm:ss` 与新增 ISO 时间格式混排，避免同秒/跨格式时轮播回退顺序错乱；无法解析时回退 id 倒序；前端 5 套件 39 用例、oxlint 0 error、build index-DPZK5uI4.js 531.95KB / gzip 151.97KB | src/shared/PhotosContext.tsx |
 | 2026-11-15 00:39 | [chore] 补充昵称年度修改次数限制测试 (V4.14.0-beta) — 在 `auth.test.ts` 新增 `PUT /api/auth/me` 用例：同一用户连续 3 次改名成功，第 4 次返回 403 `NICKNAME_CHANGE_LIMIT`；覆盖 PRD 4.4 / A9 用户侧限制（管理端强制改名用例已在 admin.test.ts）；后端 32 套件 522 用例全绿 | backend/tests/integration/auth.test.ts |
 | 2026-11-15 00:37 | [chore] 补充待审照片自动清理作业测试 (V4.14.0-beta) — 新增 `backend/tests/integration/photo-cleanup.test.ts` 3 例：满 30 天 pending 连同 5 个 OSS 派生对象与点赞/浏览/评论/任务记录一并删除；29 天 pending 与已过审老照片保留；`PHOTO_CLEANUP_ENABLED=off` 时跳过；内存库 + OSS mock，不触达生产库；后端 32 套件 521 用例全绿 | backend/tests/integration/photo-cleanup.test.ts |
 | 2026-11-15 00:35 | [fix] 首页板块墙按分区取数避免整组缺失 (V4.14.0-beta) — `PhotosContext` 由「全站最新 50 张」改为航空/铁路/汽车各取一页（limit=100）后合并去重、按上传时间倒序与 id 兜底还原全站顺序；解决最新 50 张集中在航空时铁路/汽车标签组整组不渲染的问题（生产最新 50 张中铁路为 0）；轮播回退仍取合并后最新 6 张；`PhotoListItem` 补充 `created_at` 字段；前端 5 套件 39 用例、oxlint 0 error、build index-DRfTd5Fd.js 531.90KB / gzip 151.95KB | src/shared/PhotosContext.tsx、src/api/photos.ts、src/features/gallery/types.ts |
