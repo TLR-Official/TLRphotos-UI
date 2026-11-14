@@ -557,7 +557,7 @@ export function UploadPage() {
 
             <div className="space-y-4">
               <div>
-                <label className={labelCls}>选择分区 <span className="text-red-500">*</span></label>
+                <label className={labelCls}>选择分区 <span className="text-red-500">★</span></label>
                 <div className="flex flex-wrap gap-3 mt-2">
                   {UPLOAD_CATEGORIES.map((cat) => (
                     <button
@@ -577,8 +577,9 @@ export function UploadPage() {
               </div>
 
               <div>
-                <label className={labelCls}>标题 <span className="text-red-500">*</span></label>
-                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="请输入照片标题" className={inputCls} />
+                <label className={labelCls}>标题 <span className="text-red-500">★</span></label>
+                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={step === 'uploading'} placeholder="如 dsc 5501 xxxx" className={inputCls} />
+                <p className="mt-1 text-xs text-red-500">仅为格式示例，请谨慎填写</p>
               </div>
 
               {/* 分区驱动动态字段：选择分区后才展开 */}
@@ -586,7 +587,7 @@ export function UploadPage() {
                 <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3">
                   {/* 拍摄时间：三区通用必填 */}
                   <div>
-                    <label className="text-xs text-gray-500">拍摄时间 <span className="text-red-500">*</span></label>
+                    <label className="text-xs text-gray-500">拍摄时间 <span className="text-red-500">★</span></label>
                     <input
                       type="datetime-local"
                       value={categoryFields.shootTime}
@@ -599,7 +600,7 @@ export function UploadPage() {
                   {category === 'aviation' && (
                     <>
                       <div>
-                        <label className="text-xs text-gray-500">飞机注册号 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">飞机注册号 <span className="text-red-500">★</span></label>
                         <div className="flex items-center gap-2 mt-1">
                           <input
                             type="text"
@@ -638,7 +639,7 @@ export function UploadPage() {
                       </div>
 
                       <div>
-                        <label className="text-xs text-gray-500">机型 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">机型 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.aircraftModel}
@@ -653,7 +654,7 @@ export function UploadPage() {
                       </div>
 
                       <div>
-                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.location}
@@ -674,7 +675,7 @@ export function UploadPage() {
                   {category === 'railway' && (
                     <>
                       <div>
-                        <label className="text-xs text-gray-500">车号 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">车号 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.trainNumber}
@@ -685,7 +686,7 @@ export function UploadPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.trainModel}
@@ -696,7 +697,7 @@ export function UploadPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">拍摄线路 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">拍摄线路 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.trainLine}
@@ -707,7 +708,7 @@ export function UploadPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">所属局段 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">所属局段 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.trainBureau}
@@ -723,7 +724,7 @@ export function UploadPage() {
                   {category === 'automobile' && (
                     <>
                       <div>
-                        <label className="text-xs text-gray-500">车辆信息（编号） <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">车辆信息（编号） <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.vehicleNumber}
@@ -734,7 +735,7 @@ export function UploadPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">车型 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.vehicleModel}
@@ -745,7 +746,7 @@ export function UploadPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">*</span></label>
+                        <label className="text-xs text-gray-500">拍摄地点 <span className="text-red-500">★</span></label>
                         <input
                           type="text"
                           value={categoryFields.location}
@@ -762,7 +763,7 @@ export function UploadPage() {
 
               {category && (
                 <div>
-                  <label className={labelCls}>选择标签 <span className="text-red-500">*</span></label>
+                  <label className={labelCls}>选择标签 <span className="text-red-500">★</span></label>
                   <TagPicker
                     tags={TAG_CATALOG[category]}
                     selected={selectedTags}
@@ -936,7 +937,7 @@ export function UploadPage() {
                 />
                 <label htmlFor="safety-agreement" className={`text-sm flex-1 text-gray-700`}>
                   <span className="text-red-500 font-medium">我确认本影像不涉及任何军事设施、装备或敏感区域</span>
-                  <span className="text-red-500">*</span>
+                  <span className="text-red-500">★</span>
                 </label>
               </div>
 

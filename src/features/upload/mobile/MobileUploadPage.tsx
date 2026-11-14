@@ -777,20 +777,21 @@ export function MobileUploadPage() {
             <div className="space-y-5">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  标题 <span className="text-red-500">*</span>
+                  标题 <span className="text-red-500">★</span>
                 </label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="请输入照片标题"
+                  placeholder="如 dsc 5501 xxxx"
                   className="h-12 w-full rounded-lg border border-gray-300 bg-white px-4 text-gray-800 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
                 />
+                <p className="mt-1 text-xs text-red-500">仅为格式示例，请谨慎填写</p>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  描述 <span className="text-red-500">*</span>
+                  描述
                 </label>
                 <textarea
                   value={description}
@@ -803,7 +804,7 @@ export function MobileUploadPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  分区 <span className="text-red-500">*</span>
+                  分区 <span className="text-red-500">★</span>
                 </label>
                 <div className="flex gap-2">
                   {UPLOAD_CATEGORIES.map((cat) => {
@@ -832,7 +833,7 @@ export function MobileUploadPage() {
                 <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">
-                      拍摄时间 <span className="text-red-500">*</span>
+                      拍摄时间 <span className="text-red-500">★</span>
                     </label>
                     <input
                       type="datetime-local"
@@ -846,7 +847,7 @@ export function MobileUploadPage() {
                     <>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          飞机注册号 <span className="text-red-500">*</span>
+                          飞机注册号 <span className="text-red-500">★</span>
                         </label>
                         <div className="flex items-center gap-2">
                           <input
@@ -891,7 +892,7 @@ export function MobileUploadPage() {
 
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          机型 <span className="text-red-500">*</span>
+                          机型 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -907,7 +908,7 @@ export function MobileUploadPage() {
 
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          拍摄地点 <span className="text-red-500">*</span>
+                          拍摄地点 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -928,7 +929,7 @@ export function MobileUploadPage() {
                     <>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          车号 <span className="text-red-500">*</span>
+                          车号 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -940,7 +941,7 @@ export function MobileUploadPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          车型 <span className="text-red-500">*</span>
+                          车型 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -952,7 +953,7 @@ export function MobileUploadPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          拍摄线路 <span className="text-red-500">*</span>
+                          拍摄线路 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -964,7 +965,7 @@ export function MobileUploadPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          所属局段 <span className="text-red-500">*</span>
+                          所属局段 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -981,7 +982,7 @@ export function MobileUploadPage() {
                     <>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          车辆信息（编号） <span className="text-red-500">*</span>
+                          车辆信息（编号） <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -993,7 +994,7 @@ export function MobileUploadPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          车型 <span className="text-red-500">*</span>
+                          车型 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -1005,7 +1006,7 @@ export function MobileUploadPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                          拍摄地点 <span className="text-red-500">*</span>
+                          拍摄地点 <span className="text-red-500">★</span>
                         </label>
                         <input
                           type="text"
@@ -1022,7 +1023,7 @@ export function MobileUploadPage() {
 
               <div ref={tagSectionRef}>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  标签 <span className="text-red-500">*</span>
+                  标签 <span className="text-red-500">★</span>
                 </label>
                 {category ? (
                   <TagPicker tags={TAG_CATALOG[category]} selected={selectedTags} onChange={setSelectedTags} />
@@ -1182,7 +1183,7 @@ export function MobileUploadPage() {
                   <span className="font-medium text-red-500">
                     我确认本影像不涉及任何军事设施、装备或敏感区域
                   </span>
-                  <span className="text-red-500">*</span>
+                  <span className="text-red-500">★</span>
                 </span>
               </label>
 
