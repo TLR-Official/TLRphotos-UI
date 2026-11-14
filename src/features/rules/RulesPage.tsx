@@ -2,8 +2,9 @@
  * @file 传图 / 网站规则页（V4.13.0，PRD 8.2）
  * @description
  *  以 PDF 文件承载传图规则与网站规则，桌面端顶栏与移动端「我的」功能列表提供入口。
- *  规则文件放在 public/rules/ 下，按静态资源分发；点击卡片在新标签页打开浏览器原生 PDF 预览，
+ *  规则文件放在 public/rule-files/ 下，按静态资源分发；点击卡片在新标签页打开浏览器原生 PDF 预览，
  *  同时提供下载入口。规则更新时替换 PDF 即可，无需改代码。
+ *  注意：静态目录不能命名为 rules，否则会与 SPA 的 /rules 路由冲突（nginx 目录 301 → 403）。
  */
 import { Download, FileText } from 'lucide-react';
 
@@ -25,14 +26,14 @@ const RULE_FILES: RuleFile[] = [
   {
     title: 'TLRphotos 传图规则',
     description: '作品要求、分区必填信息、标签规范、审核与申诉、版权许可与热门推荐。',
-    href: '/rules/upload-rules.pdf',
+    href: '/rule-files/upload-rules.pdf',
     size: '约 466 KB',
     version: '2026-11 版',
   },
   {
     title: 'TLRphotos 网站规则',
     description: '账户与资料、社区行为、三级处罚体系、内容与隐私、作品许可与数据清理。',
-    href: '/rules/site-rules.pdf',
+    href: '/rule-files/site-rules.pdf',
     size: '约 433 KB',
     version: '2026-11 版',
   },
