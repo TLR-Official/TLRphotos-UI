@@ -43,6 +43,10 @@ import { cleanupOldNotifications } from './services/notificationService';
 import { expireHotPhotos } from './services/hotExpiryService';
 import { cleanupUnreviewedPhotos } from './services/photoCleanupService';
 import {
+  cleanupExpiredUploadIntents,
+  startPhotoProcessWorker,
+} from './services/photoProcessService';
+import {
   initSuperAdmin,
   checkAdminJwtConfig,
   detectExposedSuperPassword,
@@ -163,6 +167,8 @@ let cleanupTimer: NodeJS.Timeout | null = null;
 let cleanupInterval: NodeJS.Timeout | null = null;
 // 评论归档作业句柄（V3.0.0：启动一次 + 24h 周期）
 let archiveInterval: NodeJS.Timeout | null = null;
+// 异步图片处理 Worker 停止函数（V4.13.0）
+let stopPhotoWorker: (() => void) | null = null;
 
 /**
  * 调度过期会话清理任务。
@@ -197,6 +203,11 @@ function scheduleCleanup() {
         console.log(
           `[Cleanup] Removed ${cleaned.photos} unreviewed photos (${cleaned.objects} objects) at ${new Date().toISOString()}`,
         );
+      }
+      // V4.13.0：清理超期的预签名上传凭证（PRD 4.5）
+      const intents = await cleanupExpiredUploadIntents(db);
+      if (intents > 0) {
+        console.log(`[Cleanup] Removed ${intents} expired upload intents at ${new Date().toISOString()}`);
       }
     } catch (error) {
       console.error('[Cleanup] Failed to clean up expired sessions:', error);
@@ -260,6 +271,10 @@ function gracefulShutdown(signal: string) {
     clearInterval(archiveInterval);
     archiveInterval = null;
   }
+  if (stopPhotoWorker) {
+    stopPhotoWorker();
+    stopPhotoWorker = null;
+  }
   process.exit(0);
 }
 
@@ -289,6 +304,8 @@ const startServer = async () => {
     scheduleCleanup();
     // V3.0.0：评论归档作业（启动一次 + 24h 周期）
     scheduleArchiveJob();
+    // V4.13.0：异步水印/压缩 Worker（PRD 4.5 方案 A，SQLite 任务表 + 进程内轮询）
+    stopPhotoWorker = startPhotoProcessWorker(db);
     // 启动内存自动释放管理器（30s 采样，分级触发 GC / sharp缓存清理 / 自重启）
     memoryManager.start();
     // V4.9.0：启动核心链路的成功率/CPU/内存指标采样与多级告警

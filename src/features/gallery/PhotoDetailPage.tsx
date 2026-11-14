@@ -244,8 +244,8 @@ export function PhotoDetailPage() {
    */
   const handleDownload = () => {
     if (!photo) return;
-    // 带水印原图优先；无水印图时回退到原图（标注无水印）
-    const baseUrl = photo.watermarked_url || photo.original_url;
+    // 带水印原图优先；异步处理中回退派生图/原图（标注无水印）
+    const baseUrl = photo.watermarked_url || photo.detail_url || photo.original_url;
     if (!baseUrl) {
       setDownloadError('该照片暂无可下载的原图');
       setTimeout(() => setDownloadError(''), 3000);
@@ -410,17 +410,30 @@ export function PhotoDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 flex justify-center items-start">
             <div className={`rounded-xl shadow-lg overflow-hidden theme-bg-transition bg-white`}>
+              {/* V4.13.0：异步水印/压缩处理中或失败时展示状态提示，图片回退原图不阻断浏览 */}
+              {photo.processing_status && photo.processing_status !== 'done' && (
+                <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      photo.processing_status === 'failed' ? 'bg-red-500' : 'bg-blue-700'
+                    }`}
+                  />
+                  {photo.processing_status === 'failed'
+                    ? '图片处理失败，当前展示原图'
+                    : '图片处理中，当前暂展示原图'}
+                </div>
+              )}
               {/* 移动端/触屏：双击 + pinch 手势缩放容器；「审核中」占位图不挂手势（viewable=false） */}
               {(isMobile || isTouch) && viewable ? (
                 <MobileZoomableImage
-                  src={photo.watermarked_url || photo.preview_url || photo.original_url}
+                  src={photo.detail_url || photo.watermarked_url || photo.preview_url || photo.original_url}
                   alt={photo.title}
                   status={photo.status}
                   authToken={token || undefined}
                 />
               ) : (
                 <CachedImage
-                  src={photo.watermarked_url || photo.preview_url || photo.original_url}
+                  src={photo.detail_url || photo.watermarked_url || photo.preview_url || photo.original_url}
                   alt={photo.title}
                   status={photo.status}
                   authToken={token || undefined}

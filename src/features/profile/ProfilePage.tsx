@@ -851,6 +851,7 @@ export function ProfilePage() {
                 { label: '我的作品', onClick: () => navigate('/my-works') },
                 { label: '我的申诉', onClick: () => navigate('/my-appeals') },
                 { label: '通知中心', onClick: () => navigate('/notifications') },
+                { label: '传图 / 网站规则', onClick: () => navigate('/rules') },
                 { label: '公开主页', onClick: () => user?.id && navigate(`/users/${user.id}`) },
                 { label: '设置', onClick: () => setViewMode('settings') },
               ] as const).map((item) => (

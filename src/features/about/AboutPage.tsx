@@ -23,6 +23,26 @@ const TEAM_ROLES: TeamRole[] = [
   { name: '航空审核', description: '简介待站长补充。' },
 ];
 
+/** 合作伙伴（V4.13.0，PRD 8.1）：首期静态配置，不建表；LOGO 用名称首字母块占位，后续可替换为图片地址 */
+interface Partner {
+  /** 名称 */
+  name: string;
+  /** LOGO 文案（无图片时展示） */
+  logoText: string;
+  /** LOGO 图片地址（可选，配置后优先展示） */
+  logoUrl?: string;
+  /** 简介 */
+  description: string;
+}
+
+const PARTNERS: Partner[] = [
+  {
+    name: 'AAF 航空摄影组',
+    logoText: 'AAF',
+    description: '航空摄影爱好者组织，长期与本站开展作品交流与线下拍摄活动。',
+  },
+];
+
 /**
  * 关于我们页面组件
  * 站点数据首次挂载时请求一次；加载中显示占位文案，
@@ -183,6 +203,37 @@ export function AboutPage() {
             </p>
           </div>
         </section>
+
+        {/* 合作伙伴（V4.13.0，PRD 8.1）：LOGO + 名称 + 简介，纵向卡片排列 */}
+        {PARTNERS.length > 0 && (
+          <section className="mt-10">
+            <h2 className="text-lg font-semibold text-black mb-4">合作伙伴</h2>
+            <div className="space-y-4">
+              {PARTNERS.map((partner) => (
+                <div
+                  key={partner.name}
+                  className="bg-white border border-gray-200 rounded-xl p-5 flex items-start gap-4"
+                >
+                  {partner.logoUrl ? (
+                    <img
+                      src={partner.logoUrl}
+                      alt={partner.name}
+                      className="h-14 w-14 flex-shrink-0 rounded-lg object-cover border border-gray-200"
+                    />
+                  ) : (
+                    <div className="h-14 w-14 flex-shrink-0 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center">
+                      <span className="text-sm font-bold text-blue-700">{partner.logoText}</span>
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-black">{partner.name}</h3>
+                    <p className="mt-1 text-sm text-gray-600 leading-relaxed">{partner.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 支持我们（占位卡） */}
         <section className="mt-10">

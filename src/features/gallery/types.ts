@@ -43,6 +43,10 @@ export interface PhotoDetail extends PhotoListItem {
   original_url: string;
   preview_url?: string;
   watermarked_url?: string;
+  /** 异步处理生成的详情派生图代理地址（V4.13.0；未生成时为空串） */
+  detail_url?: string;
+  /** 异步处理状态（V4.13.0）：pending/processing/done/failed */
+  processing_status?: string;
   watermark_config?: string;
   created_at: string;
   description: string;

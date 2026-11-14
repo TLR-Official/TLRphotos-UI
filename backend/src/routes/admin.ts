@@ -1207,8 +1207,11 @@ router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES)
 
   const OSS_DOMAIN = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
   const extractKey = (url: string | null | undefined): string | null => {
-    if (!url || !url.startsWith(OSS_DOMAIN)) return null;
-    return url.slice(OSS_DOMAIN.length).split('?')[0] || null;
+    if (!url) return null;
+    if (url.startsWith(OSS_DOMAIN)) return url.slice(OSS_DOMAIN.length).split('?')[0] || null;
+    // V4.13.0：异步上传落库为纯 Key，直接返回（外部 URL 不处理）
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return url.split('?')[0] || null;
+    return null;
   };
 
   const keys = [
@@ -1216,9 +1219,10 @@ router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES)
     extractKey(photo.thumbnail_path),
     extractKey(photo.preview_url),
     extractKey(photo.watermarked_url),
+    extractKey(photo.detail_key),
   ].filter(Boolean) as string[];
 
-  for (const key of keys) {
+  for (const key of new Set(keys)) {
     try {
       await deleteFromOSS(key);
     } catch (error) {
@@ -1229,6 +1233,8 @@ router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES)
   await db.run('DELETE FROM photo_likes WHERE photo_id = ?', [photo.id]);
   await db.run('DELETE FROM photo_views WHERE photo_id = ?', [photo.id]);
   await db.run("DELETE FROM comments WHERE subject_type = 'photo' AND subject_id = ?", [photo.id]);
+  // V4.13.0：清理异步处理任务，避免 Worker 继续处理已删除照片
+  await db.run('DELETE FROM photo_tasks WHERE photo_id = ?', [photo.id]);
   await db.run('DELETE FROM photos WHERE id = ?', [photo.id]);
 
   await logAdminAction(req.admin, 'delete_photo', 'photo', photo.id, {

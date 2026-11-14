@@ -42,9 +42,10 @@ import {
   DEFAULT_WATERMARK,
 } from './watermark';
 import type { WatermarkValue } from './watermark';
-import { uploadPhotoWithProgress } from './uploadWithProgress';
-import type { UploadHandle } from './uploadWithProgress';
-import { NETWORK_ERROR_CODE, UPLOAD_ABORTED_CODE } from './uploadWithProgress';
+// V4.13.0：改为 OSS 预签名直传 + 服务端异步水印/压缩（PRD 4.5 方案 A）
+import { uploadPhotoViaPresigned } from '../presignedUpload';
+import type { PresignedUploadHandle } from '../presignedUpload';
+import { NETWORK_ERROR_CODE, UPLOAD_ABORTED_CODE } from '../presignedUpload';
 
 /** 水印固定文案（用户不可改） */
 const STEPS = ['选图', '填信息', '水印', '确认'] as const;
@@ -183,7 +184,7 @@ export function MobileUploadPage() {
   const registrationInputRef = useRef<HTMLInputElement>(null);
   const tagSectionRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const uploadRef = useRef<UploadHandle | null>(null);
+  const uploadRef = useRef<PresignedUploadHandle | null>(null);
   // 用户是否手动机型：识别结果不得覆盖用户输入（B4）
   const aircraftModelTouchedRef = useRef(false);
 
@@ -507,7 +508,7 @@ export function MobileUploadPage() {
         setProgress(0);
       }
       const op = () => {
-        const handle = uploadPhotoWithProgress(file, meta, token || undefined, setProgress);
+        const handle = uploadPhotoViaPresigned(file, meta, token || undefined, setProgress);
         uploadRef.current = handle;
         return handle.promise;
       };

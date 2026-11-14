@@ -560,6 +560,54 @@ const initSchema = async () => {
   await db.run(
     'CREATE INDEX IF NOT EXISTS idx_nickname_changes_user_time ON nickname_changes(user_id, changed_at)'
   );
+  // V4.13.0：异步水印/压缩任务（PRD 4.5 方案 A）——原图 OSS 直传后登记任务，
+  // 进程内 Worker 拉取原图生成缩略图/预览图/详情派生图并回写 OSS，禁止外部消息队列。
+  await db.run(`CREATE TABLE IF NOT EXISTS photo_tasks (
+    id TEXT PRIMARY KEY,
+    photo_id TEXT NOT NULL,
+    original_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    derived_key TEXT,
+    thumbnail_key TEXT,
+    preview_key TEXT,
+    watermarked_key TEXT,
+    derived_width INTEGER,
+    derived_height INTEGER,
+    original_bytes INTEGER,
+    processing_ms INTEGER,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT
+  )`);
+  await db.run(
+    'CREATE INDEX IF NOT EXISTS idx_photo_tasks_status_next ON photo_tasks(status, next_attempt_at)'
+  );
+  await db.run('CREATE INDEX IF NOT EXISTS idx_photo_tasks_photo ON photo_tasks(photo_id)');
+  // V4.13.0：预签名上传凭证——防止客户端拿他人 OSS Key 冒充上传完成，1 小时有效、一次性消费
+  await db.run(`CREATE TABLE IF NOT EXISTS photo_upload_intents (
+    oss_key TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT
+  )`);
+  await db.run(
+    'CREATE INDEX IF NOT EXISTS idx_photo_upload_intents_user ON photo_upload_intents(user_id, created_at DESC)'
+  );
+  // V4.13.0：派生图路径与异步处理状态（pending/processing/done/failed），
+  // 存量照片默认 done（已有预览/水印图），新上传由 Worker 更新
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN detail_key TEXT');
+  } catch {}
+  try {
+    await db.run("ALTER TABLE photos ADD COLUMN processing_status TEXT DEFAULT 'done'");
+  } catch {}
+  try {
+    await db.run('ALTER TABLE photos ADD COLUMN original_bytes INTEGER DEFAULT 0');
+  } catch {}
   // V4.6.0：注册号 → 机型/航司 的查询缓存，避免重复请求上游被限流（TTL 由服务层控制）
   await db.run(`CREATE TABLE IF NOT EXISTS aircraft_cache (
     registration TEXT PRIMARY KEY,

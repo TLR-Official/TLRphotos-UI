@@ -191,6 +191,8 @@
     "registration_number": "B-1234",
     "aircraft_type": "Boeing 777-300ER",
     "airline": "Air China",
+    "processing_status": "done",
+    "detail_url": "/api/photos/image/photos%2Fdetail%2F1234567890_abc123_detail.webp?photoId=000001",
     "created_at": "2024-05-15T18:30:00Z"
   }
 }
@@ -199,6 +201,7 @@
 **字段说明**:
 - `is_liked`: 当前登录用户是否已点赞；未登录或未点赞时返回 `false`，前端用于切换点赞按钮视觉状态
 - `registration_number` / `aircraft_type` / `airline`（V4.6.0-beta）：注册号及服务端自动识别的机型与所属航司；非航空分区或未识别时为 `null` / `""`，前端应做空态处理，不可视为错误
+- `detail_url` / `processing_status`（V4.13.0）：异步水印/压缩生成详情派生图的代理地址与处理状态（`pending` / `processing` / `done` / `failed`）；非 `done` 时前端应回退展示原图并提示「处理中 / 处理失败」，不得视为错误
 - `views`: 经过 24h 去重后的有效浏览数（同一 viewer_key 在窗口内重复计数只计 1 次）
 - `reviewer`（V4.1.2-beta.3）：仅 `status=rejected` 时非空，形如 `{ "name": "审核员用户名", "reviewed_at": "2026-10-23T12:00:00Z" }`；不暴露管理员内部 ID
 - `uploader.title`（V4.7.0）：上传者称号（邀请码授予），未获称号为 `null`；前端在用户名后渲染统一小标签
@@ -361,6 +364,11 @@
 }
 ```
 
+> **V4.13.0 上传凭证**：每次调用都会登记一条一次性上传凭证（`photo_upload_intents`，绑定当前用户，1 小时有效）。
+> 客户端拿到 `uploadUrl` 后必须直接 `PUT` 原图至 OSS（浏览器直传，不经本站服务器），再调用完成回调；
+> 完成回调会校验 Key 归属、是否已消费与是否过期，防止冒用他人 OSS 对象。
+> OSS Bucket 需为站点域名与本地开发域名配置 `PUT` 的 CORS 规则（已在生产 Bucket 配置）。
+
 ### 完成上传并保存照片
 
 **POST** `/api/photos/upload/complete`
@@ -369,12 +377,19 @@
 
 **V1.7.0 权限检查**：被封禁/禁用用户返回 `401 { code: "USER_BANNED" / "USER_DISABLED" }`；`can_upload=0` 返回 `403 { code: "PERMISSION_DENIED" }`。
 
+> **V4.13.0 异步处理（PRD 4.5 方案 A）**：完成回调只确认 OSS 对象、写入照片记录并登记异步任务后立即返回，
+> 原图的水印与压缩由服务端 Worker 在后台完成。响应中的 `processing: true` 表示处理尚未完成；
+> 处理完成前详情页与列表回退展示原图（`thumbnail_path` 暂时指向原图），处理完成后自动切换为派生图。
+> 详见下文「异步水印与压缩（V4.13.0）」。
+
 **请求体**:
 ```json
 {
   "key": "photos/1234567890_abc123.jpg",
   "title": "城市天际线",
-  "tags": ["城市", "航拍"],
+  "category": "aviation",
+  "tags": ["宽体机"],
+  "structured_tags": "{\"拍摄时间\":\"2026-11-14T20:00\",\"机型\":\"Airbus A350\"}",
   "description": "傍晚时分的城市天际线",
   "registration_number": "B-1234",
   "is_hot": 1,
@@ -386,9 +401,24 @@
   "shutter_speed": "1/500s",
   "aperture": "f/8",
   "width": 1200,
-  "height": 800
+  "height": 800,
+  "watermarkText": "TLRphotos",
+  "watermarkX": 50,
+  "watermarkY": 80,
+  "watermarkOpacity": 0.6,
+  "watermarkSize": 32
 }
 ```
+
+> **V4.13.0 字段补全**：完成回调现已与直传接口同构，支持 `category`、`structured_tags`、`location`、
+> 全部水印字段（`watermarkText/X/Y/Opacity/Size`）；服务端把水印配置写入 `photos.watermark_config`，
+> Worker 生成详情派生图时按此叠加文字水印与底部信息条。
+>
+> **V4.13.0 错误码**（均发生在 OSS 对象确认与落库之前）：
+> - `403 UPLOAD_KEY_NOT_OWNED`：Key 未由当前用户申请预签名，或凭证已被伪造；
+> - `409 UPLOAD_KEY_CONSUMED`：该凭证已用于完成过上传，不可重复消费；
+> - `410 UPLOAD_SESSION_EXPIRED`：凭证超过 1 小时有效期，需重新申请预签名；
+> - `400 UPLOAD_OBJECT_NOT_FOUND`：OSS 中不存在该 Key 对应的原图（直传失败或 Key 错误）。
 
 > **V3.2.0 新增字段**：
 > - `registration_number`（string）：飞机注册号，2-20 位大写字母/数字/连字符且须以字母或数字开头（如 `B-1234`、`N123AB`）；服务端 trim + 转大写校验。**V4.11 起额外接受 `N/A`（确认无注册号）**，此时跳过机型/航司识别。
@@ -406,11 +436,43 @@
   "data": {
     "photoId": "000013",
     "key": "photos/1234567890_abc123.jpg",
-    "url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/1234567890_abc123.jpg",
-    "thumbnailUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/photos/thumbnails/1234567890_abc123_thumb.webp"
+    "processing": true,
+    "url": "/api/photos/image/photos%2F1234567890_abc123.jpg?photoId=000013",
+    "thumbnailUrl": "/api/photos/image/photos%2F1234567890_abc123.jpg?photoId=000013"
   }
 }
 ```
+
+> `processing`（V4.13.0）：`true` 表示异步水印/压缩任务已登记；`false` 表示服务端已内联处理完成
+> （仅当 `PHOTO_ASYNC_PROCESSING=off` 的排障降级模式）。
+> 处理完成前 `url` / `thumbnailUrl` 均指向原图代理地址；Worker 完成后照片的
+> `thumbnail_path` / `preview_url` / `watermarked_url` / `detail_key` 会更新为派生图。
+
+### 异步水印与压缩（V4.13.0）
+
+原图经预签名直传 OSS 后，服务端在完成回调中写入 `photo_tasks` 任务记录，进程内 Worker
+（每 3 秒轮询，单次最多处理 3 条）从 OSS 拉取原图并在内存中生成三类 WebP 派生图：
+
+| 派生图 | 规格 | 落库字段 |
+|--------|------|----------|
+| 缩略图 | 最长边 800px，质量 80 | `thumbnail_path` |
+| 预览图 | 最长边 1200px，质量 90 | `preview_url` |
+| 详情图 | 按原图体积五档缩放 + 文字水印 + 底部信息条，质量 85 | `detail_key`（水印存在时同步 `watermarked_url`） |
+
+**详情图缩放比例（PRD 4.3）**：
+
+| 原图体积 | 缩放比例 |
+|----------|----------|
+| 0 – 500 KB | 100% |
+| 500 KB – 1 MB | 80% |
+| 1 MB – 5 MB | 60% |
+| 5 MB – 10 MB | 50% |
+| 10 MB 以上 | 40% |
+
+**任务状态**：`pending` → `processing` → `done`；失败按 30s / 2min / 10min 指数退避重试 3 次，
+仍失败标记 `failed`，照片 `processing_status` 同步为 `failed`，详情页回退展示原图，不影响审核与浏览。
+服务重启时会把中断的 `processing` 任务重置为 `pending` 重新执行。
+处理过程不写入服务器磁盘、不引入 Redis / 独立消息队列；`PHOTO_ASYNC_PROCESSING=off` 时完成回调内联处理（排障用）。
 
 ### 直接上传图片
 

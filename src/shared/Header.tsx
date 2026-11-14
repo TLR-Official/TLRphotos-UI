@@ -156,6 +156,15 @@ export function Header() {
           >
             关于我们
           </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/rules');
+            }}
+            className="theme-text-transition text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            传图规则
+          </button>
           </div>
 
           {isAuthenticated ? (

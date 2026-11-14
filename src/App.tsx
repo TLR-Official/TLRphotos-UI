@@ -27,6 +27,7 @@ import { UploadPage } from './features/upload/UploadPage';
 import { ForumHomePage } from './features/forum/ForumHomePage';
 import { BoardPage } from './features/forum/BoardPage';
 import { AboutPage } from './features/about/AboutPage';
+import { RulesPage } from './features/rules/RulesPage';
 import { NewsListPage } from './features/news/NewsListPage';
 import { NotificationPage } from './features/notifications/NotificationPage';
 import { Header } from './shared/Header';
@@ -170,6 +171,7 @@ function AppRouterContent() {
           <Route path="/forum/t/:threadId" element={<ThreadDetailPage />} />
           <Route path="/forum/new" element={<NewThreadPage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/rules" element={<RulesPage />} />
           <Route path="/news" element={<NewsListPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/notifications" element={<NotificationPage />} />

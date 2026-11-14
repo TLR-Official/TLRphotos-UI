@@ -10,8 +10,13 @@ import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../db';
-import { generatePresignedUploadUrl, completeUpload, getFileUrl, deleteFromOSS } from '../services/ossService';
+import { generatePresignedUploadUrl, getFileUrl, deleteFromOSS, objectExists } from '../services/ossService';
 import { processImage, uploadProcessedImages, WatermarkConfig, disposeProcessedBuffers } from '../services/imageService';
+import {
+  createPhotoTask,
+  isAsyncProcessingEnabled,
+  processPhotoTaskNow,
+} from '../services/photoProcessService';
 import { lookupAircraft } from '../services/aircraftLookupService';
 import { getProxyUrl, escapeLikePattern } from '../utils/url';
 import { parsePhotoTags } from '../utils/photoTags';
@@ -634,6 +639,9 @@ router.get('/:id', photoReadLimiter, async (req, res) => {
         thumbnail_path: getProxyUrl(photo.thumbnail_path, photo.id),
         preview_url: photo.preview_url ? getProxyUrl(photo.preview_url, photo.id) : '',
         watermarked_url: photo.watermarked_url ? getProxyUrl(photo.watermarked_url, photo.id) : '',
+        // V4.13.0：异步处理派生图与状态（pending/processing 时前端回退原图并标注「处理中」）
+        detail_url: photo.detail_key ? getProxyUrl(photo.detail_key, photo.id) : '',
+        processing_status: photo.processing_status || 'done',
         tags: photo.tags ? JSON.parse(photo.tags) : [],
         uploader,
         // 审核驳回理由，仅在 rejected 状态下非空
@@ -1031,6 +1039,20 @@ router.post('/upload/presigned', uploadMetaLimiter, requireVerifiedEmail, async 
 
     const presignedUrl = await generatePresignedUploadUrl(fileName);
 
+    // V4.13.0：登记预签名凭证，完成回调时校验 Key 归属与一次性消费，
+    // 防止客户端拿他人 OSS Key 冒充上传完成
+    const now = new Date();
+    await db.run(
+      `INSERT INTO photo_upload_intents (oss_key, user_id, created_at, expires_at)
+       VALUES (?, ?, ?, ?)`,
+      [
+        presignedUrl.key,
+        authUser.id,
+        now.toISOString(),
+        new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+      ],
+    );
+
     res.json({
       success: true,
       data: {
@@ -1080,7 +1102,31 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       return res.status(denied.status).json(denied.payload);
     }
 
-    const { key, title, tags, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, width, height, registration_number, is_hot, category, structured_tags } = req.body;
+    const {
+      key,
+      title,
+      tags,
+      description,
+      camera_model,
+      vehicle,
+      location,
+      altitude,
+      focal_length,
+      iso,
+      shutter_speed,
+      aperture,
+      width,
+      height,
+      registration_number,
+      is_hot,
+      category,
+      structured_tags,
+      watermarkText,
+      watermarkX,
+      watermarkY,
+      watermarkOpacity,
+      watermarkSize,
+    } = req.body;
 
     if (!key) {
       return res.status(400).json({ success: false, message: '文件Key不能为空' });
@@ -1098,7 +1144,7 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       });
     }
 
-    // V4.6.0：航空分区按注册号自动识别机型/所属航司，与 OSS 确认并行，失败降级为空
+    // V4.6.0：航空分区按注册号自动识别机型/所属航司，失败降级为空
     const aircraftInfoPromise = isAviationCategory && normalizedRegistration && normalizedRegistration !== 'N/A'
       ? lookupAircraft(normalizedRegistration).catch(() => null)
       : Promise.resolve(null);
@@ -1133,10 +1179,61 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       }
     }
 
-    // 确认 OSS 上传结果，返回原图与缩略图 URL
-    const uploadResult = await completeUpload(key);
+    // V4.13.0：校验预签名凭证——Key 必须由本人申请、未消费且未过期，防止冒用他人对象
+    const intent = await db.get<{ user_id: string; expires_at: string; consumed_at: string | null }>(
+      'SELECT user_id, expires_at, consumed_at FROM photo_upload_intents WHERE oss_key = ?',
+      [key],
+    );
+    if (!intent || intent.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        code: 'UPLOAD_KEY_NOT_OWNED',
+        message: '上传凭证无效，请重新发起上传',
+      });
+    }
+    if (intent.consumed_at) {
+      return res.status(409).json({
+        success: false,
+        code: 'UPLOAD_KEY_CONSUMED',
+        message: '该上传凭证已被使用，请重新发起上传',
+      });
+    }
+    if (Date.parse(intent.expires_at) < Date.now()) {
+      return res.status(410).json({
+        success: false,
+        code: 'UPLOAD_SESSION_EXPIRED',
+        message: '上传凭证已过期，请重新发起上传',
+      });
+    }
 
-    // 等待航空器识别结果（已与 OSS 确认并行发起）
+    // 确认 OSS 对象确实存在并取得原图体积（异步处理按体积选择详情图缩放比例）
+    const objectInfo = await objectExists(key);
+    if (!objectInfo.exists) {
+      return res.status(400).json({
+        success: false,
+        code: 'UPLOAD_OBJECT_NOT_FOUND',
+        message: '未找到已上传的原图，请重新上传',
+      });
+    }
+
+    // 水印配置：与直传路径同构，Worker 生成详情派生图时按此叠加文字水印与底部信息条
+    let watermarkConfig: WatermarkConfig | undefined;
+    if (watermarkText) {
+      watermarkConfig = {
+        text: watermarkText,
+        x: parseInt(watermarkX) || 0,
+        y: parseInt(watermarkY) || 0,
+        opacity: parseFloat(watermarkOpacity) || 0.6,
+        size: parseInt(watermarkSize) || 32,
+        band: {
+          siteName: 'TLRphotos',
+          ownerName: authUser.username || 'TLRphotos 用户',
+          year: new Date().getFullYear(),
+        },
+      };
+    }
+
+    // 等待航空器识别结果（与 OSS 校验并行发起）
     const aircraftInfo = await aircraftInfoPromise;
 
     // V4.6.2：将识别出的机型/航司写入结构化标签「机型」「航司」字段（仅当用户未手动填写时）
@@ -1145,9 +1242,11 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
     // tags 字段支持数组或中英文逗号分隔字符串，统一序列化为 JSON 数组字符串存储
     const newPhoto = {
       title: title || '未命名照片',
-      thumbnail_path: uploadResult.thumbnailUrl,
-      original_url: uploadResult.url,
+      // 异步处理完成前缩略图回退原图，保证属主/审核端可查看；Worker 完成后替换为 800px 缩略图
+      thumbnail_path: key,
+      original_url: key,
       user_id: userId, // V1.5.0：补 user_id 字段，防止落库为 NULL
+      category: category || null,
       tags: JSON.stringify(parsedTagList),
       structured_tags: structuredTagsWithAircraft,
       width: width || 0,
@@ -1165,12 +1264,15 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       aircraft_type: aircraftInfo?.aircraftType || '',
       airline: aircraftInfo?.airline || '',
       is_hot: normalizeIsHot(is_hot),
+      watermark_config: watermarkConfig ? JSON.stringify(watermarkConfig) : '{}',
+      original_bytes: objectInfo.size,
+      processing_status: 'pending',
       likes: 0,
       views: 0,
       created_at: new Date().toISOString(),
     };
 
-    // 使用事务包装 ID 生成与插入，防止并发上传导致 ID 冲突
+    // 使用事务包装 ID 生成、照片插入与凭证消费，防止并发上传导致 ID 冲突或重复消费
     // BEGIN IMMEDIATE 立即获取写锁，串行化并发写入请求
     await db.exec('BEGIN IMMEDIATE TRANSACTION');
     let newId: string;
@@ -1187,12 +1289,18 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       newId = String(currentMaxId + 1).padStart(6, '0');
 
       await db.run(
-        'INSERT INTO photos (id, title, thumbnail_path, original_url, user_id, tags, structured_tags, width, height, description, camera_model, vehicle, location, altitude, focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline, is_hot, likes, views, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        `INSERT INTO photos
+          (id, title, thumbnail_path, original_url, user_id, category, tags, structured_tags,
+           width, height, description, camera_model, vehicle, location, altitude,
+           focal_length, iso, shutter_speed, aperture, registration_number, aircraft_type, airline,
+           is_hot, watermark_config, original_bytes, processing_status, likes, views, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
         newId,
         newPhoto.title,
         newPhoto.thumbnail_path,
         newPhoto.original_url,
         newPhoto.user_id,
+        newPhoto.category,
         newPhoto.tags,
         newPhoto.structured_tags,
         newPhoto.width,
@@ -1210,10 +1318,19 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
         newPhoto.aircraft_type,
         newPhoto.airline,
         newPhoto.is_hot,
+        newPhoto.watermark_config,
+        newPhoto.original_bytes,
+        newPhoto.processing_status,
         newPhoto.likes,
         newPhoto.views,
         newPhoto.created_at
       );
+
+      // 凭证一次性消费，重复调用直接 409（上方已校验）
+      await db.run('UPDATE photo_upload_intents SET consumed_at = ? WHERE oss_key = ?', [
+        new Date().toISOString(),
+        key,
+      ]);
 
       await db.exec('COMMIT');
     } catch (txError) {
@@ -1226,14 +1343,22 @@ router.post('/upload/complete', uploadMetaLimiter, requireVerifiedEmail, async (
       throw txError;
     }
 
+    // V4.13.0：登记异步水印/压缩任务；PHOTO_ASYNC_PROCESSING=off 时内联处理（排障降级）
+    const taskId = await createPhotoTask(db, newId, key, objectInfo.size);
+    const asyncProcessing = isAsyncProcessingEnabled();
+    if (!asyncProcessing) {
+      await processPhotoTaskNow(db, taskId);
+    }
+
     res.json({
       success: true,
       data: {
         photoId: newId,
-        key: uploadResult.key,
-        // 返回代理 URL 而非 OSS 直链
-        url: `/api/photos/image/${encodeURIComponent(uploadResult.url)}`,
-        thumbnailUrl: `/api/photos/image/${encodeURIComponent(uploadResult.thumbnailUrl)}`,
+        key,
+        processing: asyncProcessing,
+        // 返回代理 URL 而非 OSS 直链；处理完成前指向原图
+        url: `/api/photos/image/${encodeURIComponent(key)}?photoId=${newId}`,
+        thumbnailUrl: `/api/photos/image/${encodeURIComponent(key)}?photoId=${newId}`,
       },
     });
   } catch (error) {
@@ -1603,12 +1728,16 @@ router.delete('/:id', requireVerifiedEmail, async (req, res) => {
       return res.status(denied.status).json(denied.payload);
     }
 
-    // 从完整 OSS URL 中提取对象 Key（去除域名前缀与查询参数）
+    // 从完整 OSS URL 或纯 Key 中提取对象 Key（去除域名前缀与查询参数）
     const extractKey = (url: string) => {
       if (!url) return null;
       const ossDomain = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
       if (url.startsWith(ossDomain)) {
         return url.replace(ossDomain, '').split('?')[0];
+      }
+      // V4.13.0：异步上传落库为纯 Key，直接返回（外部 URL 不处理）
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return url.split('?')[0];
       }
       return null;
     };
@@ -1619,10 +1748,11 @@ router.delete('/:id', requireVerifiedEmail, async (req, res) => {
       extractKey(photo.thumbnail_path),
       extractKey(photo.preview_url),
       extractKey(photo.watermarked_url),
+      extractKey(photo.detail_key),
     ].filter(Boolean);
 
     // 逐个删除 OSS 对象，单文件失败不影响整体流程
-    for (const key of keysToDelete) {
+    for (const key of new Set(keysToDelete)) {
       try {
         await deleteFromOSS(key!);
       } catch (error) {
@@ -1632,6 +1762,8 @@ router.delete('/:id', requireVerifiedEmail, async (req, res) => {
 
     // 先删点赞记录再删照片，避免外键级联问题（虽已配置 ON DELETE CASCADE，显式删除更安全）
     await db.run('DELETE FROM photo_likes WHERE photo_id = ?', id);
+    // V4.13.0：清理异步处理任务，避免 Worker 继续处理已删除照片
+    await db.run('DELETE FROM photo_tasks WHERE photo_id = ?', id);
     await db.run('DELETE FROM photos WHERE id = ?', id);
 
     res.json({ success: true, message: '照片删除成功' });

@@ -14,10 +14,17 @@ const PENDING_RETENTION_DAYS = 30;
 /** OSS 域名前缀（与上传落库时的 URL 格式一致） */
 const OSS_DOMAIN = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
 
-/** 从 OSS URL 提取对象 Key（非 OSS 地址返回 null） */
+/** 从 OSS URL 或纯 Key 提取对象 Key（外部 URL 返回 null） */
 function extractOssKey(url: string | null | undefined): string | null {
-  if (!url || !url.startsWith(OSS_DOMAIN)) return null;
-  return url.slice(OSS_DOMAIN.length).split('?')[0] || null;
+  if (!url) return null;
+  if (url.startsWith(OSS_DOMAIN)) {
+    return url.slice(OSS_DOMAIN.length).split('?')[0] || null;
+  }
+  // V4.13.0：异步上传落库为纯 Key
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return url.split('?')[0] || null;
+  }
+  return null;
 }
 
 /**
@@ -34,7 +41,7 @@ export async function cleanupUnreviewedPhotos(
 
   const cutoff = new Date(Date.now() - PENDING_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const rows = await db.all<any[]>(
-    `SELECT id, title, original_url, thumbnail_path, preview_url, watermarked_url
+    `SELECT id, title, original_url, thumbnail_path, preview_url, watermarked_url, detail_key
      FROM photos
      WHERE status = 'pending' AND created_at <= ?`,
     [cutoff],
@@ -49,9 +56,10 @@ export async function cleanupUnreviewedPhotos(
       extractOssKey(photo.thumbnail_path),
       extractOssKey(photo.preview_url),
       extractOssKey(photo.watermarked_url),
+      extractOssKey(photo.detail_key),
     ].filter(Boolean) as string[];
 
-    for (const key of keys) {
+    for (const key of new Set(keys)) {
       try {
         await deleteFromOSS(key);
         objects += 1;
@@ -64,6 +72,8 @@ export async function cleanupUnreviewedPhotos(
     await db.run('DELETE FROM photo_likes WHERE photo_id = ?', [photo.id]);
     await db.run('DELETE FROM photo_views WHERE photo_id = ?', [photo.id]);
     await db.run("DELETE FROM comments WHERE subject_type = 'photo' AND subject_id = ?", [photo.id]);
+    // V4.13.0：清理异步处理任务，避免 Worker 处理已清理照片
+    await db.run('DELETE FROM photo_tasks WHERE photo_id = ?', [photo.id]);
     await db.run('DELETE FROM photos WHERE id = ?', [photo.id]);
     console.log(`[PhotoCleanup] 已清理待审超期作品 photo=${photo.id} title=${photo.title}`);
   }

@@ -5,10 +5,10 @@
  *  核心功能：
  *   1. 照片列表 / 搜索 / 详情 / 标签查询。
  *   2. 点赞 / 取消点赞 / 浏览数自增。
- *   3. 上传：预签名 URL 模式（getPresignedUrl + completeUpload）与直传模式（directUpload）。
+ *   3. 上传：OSS 预签名直传（getPresignedUrl + completeUpload，V4.13.0 起为唯一链路）。
  *   4. 删除照片。
  *   5. 公开用户信息与用户照片列表查询。
- *  注意：directUpload / deletePhoto / getPublicUser / getUserPhotos 直接使用 fetch，
+ *  注意：deletePhoto / getPublicUser / getUserPhotos 直接使用 fetch，
  *       因上传与删除需自定义 Authorization 头与 FormData 处理，且需检测非 JSON 响应避免解析异常。
  */
 
@@ -204,74 +204,6 @@ export interface DirectUploadResponse {
   thumbnailUrl: string;     // 缩略图 URL
   previewUrl: string;       // 预览图 URL
   watermarkedUrl?: string;  // 带水印图 URL（可选）
-}
-
-/**
- * 直传上传（不经 request 客户端，使用 FormData）
- * @param file - 图片文件
- * @param meta - 照片元数据（扁平化追加到 FormData）
- * @param token - 认证 Token（绕过 request 客户端的 localStorage 读取）
- * @returns ApiResponse<DirectUploadResponse>
- */
-export async function directUpload(
-  file: File,
-  meta: PhotoUploadMeta,
-  token?: string
-): Promise<ApiResponse<DirectUploadResponse>> {
-  const formData = new FormData();
-  formData.append('image', file);
-
-  // 将 meta 字段扁平化追加到 FormData，过滤 null / undefined
-  Object.entries(meta).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
-      formData.append(key, String(value));
-    }
-  });
-
-  // 手动注入 Authorization 头（绕过 request 客户端）
-  const headers: HeadersInit = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch('/api/photos/upload', {
-    method: 'POST',
-    body: formData,
-    headers,
-  });
-
-  if (!response.ok) {
-    // V1.8.0：解析响应体透传业务错误码（如 HUMAN_VERIFICATION_REQUIRED），供前端验证门识别
-    try {
-      const errText = await response.text();
-      if (errText) {
-        const errData = JSON.parse(errText);
-        return {
-          success: false,
-          code: errData.code,
-          message: errData.message || `上传失败: ${response.status} ${response.statusText}`,
-        };
-      }
-    } catch {
-      // 非 JSON 响应走下方统一提示
-    }
-    return {
-      success: false,
-      message: `上传失败: ${response.status} ${response.statusText}`,
-    };
-  }
-
-  // 检测响应类型，避免非 JSON 响应导致解析异常
-  const contentType = response.headers.get('content-type');
-  if (!contentType || !contentType.includes('application/json')) {
-    const text = await response.text();
-    return {
-      success: false,
-      message: `服务器返回非JSON响应: ${text.substring(0, 100)}`,
-    };
-  }
-
-  return response.json();
 }
 
 /**

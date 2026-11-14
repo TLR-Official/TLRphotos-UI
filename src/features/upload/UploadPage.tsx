@@ -8,7 +8,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import { useUser } from '../../shared/UserContext';
-import { directUpload } from '../../api/photos';
+import { uploadPhotoViaPresigned } from './presignedUpload';
 import { useHumanVerification } from '../../shared/useHumanVerification';
 import { computeBandPreviewLayout } from '../../shared/watermarkBand';
 import { AircraftInfoCard } from '../../shared/AircraftInfoCard';
@@ -386,12 +386,10 @@ export function UploadPage() {
     if (!canSubmit) return;
 
     setStep('uploading');
-    setProgress(10);
-    setUploadMsg('正在处理图片...');
+    setProgress(2);
+    setUploadMsg('正在上传原图...');
 
     try {
-      setProgress(30);
-      setUploadMsg('正在生成缩略图和水印...');
 
       const structuredTags = buildCategoryStructuredTags(category, categoryFields);
 
@@ -419,7 +417,10 @@ export function UploadPage() {
         uploadMeta.watermarkSize = watermarkSize;
       }
 
-      const result = await verificationGuard('photo_upload', () => directUpload(file, uploadMeta, token || undefined));
+      // V4.13.0：OSS 预签名直传原图，服务端登记异步水印/压缩任务后立即返回
+      const result = await verificationGuard('photo_upload', () =>
+        uploadPhotoViaPresigned(file, uploadMeta, token || undefined, (percent) => setProgress(percent)).promise,
+      );
 
       if (!result.success || !result.data) {
         setError(result.message || '上传失败');

@@ -177,6 +177,74 @@ describe('POST /api/photos/upload/complete', () => {
 });
 
 // ============================================================================
+// V4.13.0 预签名上传凭证（PRD 4.5 方案 A）
+// ============================================================================
+describe('V4.13.0 预签名上传凭证校验', () => {
+  /** 登记一条上传凭证 */
+  const insertIntent = async (
+    key: string,
+    userId: string,
+    options: { expired?: boolean; consumed?: boolean } = {},
+  ) => {
+    const now = Date.now();
+    await db.run(
+      `INSERT OR REPLACE INTO photo_upload_intents (oss_key, user_id, created_at, expires_at, consumed_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        key,
+        userId,
+        new Date(now).toISOString(),
+        new Date(options.expired ? now - 60_000 : now + 3_600_000).toISOString(),
+        options.consumed ? new Date(now).toISOString() : null,
+      ],
+    );
+  };
+
+  it('未登记凭证的 Key 返回 403 UPLOAD_KEY_NOT_OWNED', async () => {
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/unknown-key.jpg', title: '未知凭证', category: 'railway', tags: ['普速机车'] });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('UPLOAD_KEY_NOT_OWNED');
+  });
+
+  it('他人凭证不可消费', async () => {
+    await insertIntent('photos/intent-other.jpg', TEST_USER_A);
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenB}`)
+      .send({ key: 'photos/intent-other.jpg', title: '他人凭证', category: 'railway', tags: ['普速机车'] });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('UPLOAD_KEY_NOT_OWNED');
+  });
+
+  it('已过期凭证返回 410 UPLOAD_SESSION_EXPIRED', async () => {
+    await insertIntent('photos/intent-expired.jpg', TEST_USER_A, { expired: true });
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/intent-expired.jpg', title: '过期凭证', category: 'railway', tags: ['普速机车'] });
+
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe('UPLOAD_SESSION_EXPIRED');
+  });
+
+  it('已消费凭证返回 409 UPLOAD_KEY_CONSUMED', async () => {
+    await insertIntent('photos/intent-used.jpg', TEST_USER_A, { consumed: true });
+    const res = await request(app)
+      .post('/api/photos/upload/complete')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ key: 'photos/intent-used.jpg', title: '重复消费', category: 'railway', tags: ['普速机车'] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('UPLOAD_KEY_CONSUMED');
+  });
+});
+
+// ============================================================================
 // V3.2.0 注册号必填 / 热门意愿标记 / 注册号检索 / 大标签聚合
 // ============================================================================
 describe('V3.2.0 注册号与热门标记', () => {
