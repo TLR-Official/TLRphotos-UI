@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-15 00:24 | [fix] 详情页下载回退原图而非压缩派生图 (V4.14.0-beta) — 无带水印图的照片（如水印未配置）下载时仍取原图，避免把按 4.3 缩放后的派生图当作「下载原图」；详情展示仍优先 `detail_url`；lint 0 error、build index-CXcYmgFA.js 531.23KB / gzip 151.75KB | src/features/gallery/PhotoDetailPage.tsx |
 | 2026-11-15 00:22 | [fix] 过期未消费上传凭证同步清理孤儿原图 (V4.14.0-beta) — `cleanupExpiredUploadIntents` 先查询「已过期且未消费」凭证并删除其 OSS 原图，再删除凭证行，避免用户中途放弃或完成回调失败导致对象长期占用存储；`backend/docs/api.md` 补充说明；后端 517 用例全绿并已重启 | backend/src/services/photoProcessService.ts、backend/docs/api.md |
 | 2026-11-15 00:21 | [fix] 预签名完成回调增加原图体积守卫 (V4.14.0-beta) — 原图体积为 0 返回 `400 UPLOAD_OBJECT_EMPTY`，超过 50MB 返回 `413 UPLOAD_TOO_LARGE` 并删除超限对象，避免超大对象拖垮 Worker 内存；`backend/docs/api.md` 同步两个错误码；后端 31 套件 517 用例全绿并已重新构建重启 | backend/src/routes/photos.ts、backend/docs/api.md |
 | 2026-11-15 00:19 | [feat] 异步任务失败重跑脚本 (V4.14.0-beta，PRD 4.5.2) — 新增 `backend/scripts/requeue-photo-tasks.ts`，支持 `--photo-id` 指定照片与 `--dry-run` 预演，将 failed 任务重置为 pending、清空错误与尝试次数并把照片 processing_status 置回 pending，Worker 下一轮自动重试；`backend/docs/api.md` 补充运维用法；生产库 dry-run 验证无 failed 任务 | backend/scripts/requeue-photo-tasks.ts、backend/docs/api.md |

@@ -244,8 +244,8 @@ export function PhotoDetailPage() {
    */
   const handleDownload = () => {
     if (!photo) return;
-    // 带水印原图优先；异步处理中回退派生图/原图（标注无水印）
-    const baseUrl = photo.watermarked_url || photo.detail_url || photo.original_url;
+    // 带水印原图优先；无派生水印图时回退原图（标注无水印）
+    const baseUrl = photo.watermarked_url || photo.original_url;
     if (!baseUrl) {
       setDownloadError('该照片暂无可下载的原图');
       setTimeout(() => setDownloadError(''), 3000);
