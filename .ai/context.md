@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-15 00:19 | [feat] 异步任务失败重跑脚本 (V4.14.0-beta，PRD 4.5.2) — 新增 `backend/scripts/requeue-photo-tasks.ts`，支持 `--photo-id` 指定照片与 `--dry-run` 预演，将 failed 任务重置为 pending、清空错误与尝试次数并把照片 processing_status 置回 pending，Worker 下一轮自动重试；`backend/docs/api.md` 补充运维用法；生产库 dry-run 验证无 failed 任务 | backend/scripts/requeue-photo-tasks.ts、backend/docs/api.md |
 | 2026-11-15 00:17 | [fix] 首页板块墙兼容存量 structured_tags 标签值 (V4.14.0-beta) — 存量作品 tags 多为旧三层「飞行器」等对象名，按新标签清单直接过滤会导致板块为空；`TagSectionBoard` 预先构建每张照片的标签集合（tags 数组 + structured_tags 的字符串值，如 `机型类型:宽体机`），再按定稿清单分组；线上首页已验证展示「作品板块 / 窄体机」3×3 16:9 网格，宽体机/货机等组随预加载出现；重新构建 index-BvB7kBrK.js 531.24KB / gzip 151.75KB | src/features/home/TagSectionBoard.tsx |
 | 2026-11-15 00:15 | [feat] 上传表单输入引导：必填 ★ 标识与标题格式示例提示 (V4.14.0-beta，PRD 3.7) — 桌面与移动上传页全部必填字段标记由 `*` 改为 `★`；标题输入框示例改为「dsc 5501 xxxx」并新增红字「仅为格式示例，请谨慎填写」；移动端移除「描述」误标的必填星号；前端 39 用例、oxlint 0 error、build index-Ct2hb7fv.js 530.93KB / gzip 151.63KB | src/features/upload/UploadPage.tsx、src/features/upload/mobile/MobileUploadPage.tsx |
 | 2026-11-15 00:13 | [fix] 规则 PDF 静态目录改名 rule-files，避免与 /rules 路由冲突 (V4.14.0-beta) — 原 `public/rules/` 目录被 nginx `try_files $uri $uri/` 识别为目录并 301 到 `/rules/`（随后 403），导致 SPA 规则页无法打开；静态文件迁移至 `public/rule-files/`，页面链接与文档同步，`/rules` 与两份 PDF 线上均返回 200 | public/rule-files/、src/features/rules/RulesPage.tsx |

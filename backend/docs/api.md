@@ -473,6 +473,8 @@
 仍失败标记 `failed`，照片 `processing_status` 同步为 `failed`，详情页回退展示原图，不影响审核与浏览。
 服务重启时会把中断的 `processing` 任务重置为 `pending` 重新执行。
 处理过程不写入服务器磁盘、不引入 Redis / 独立消息队列；`PHOTO_ASYNC_PROCESSING=off` 时完成回调内联处理（排障用）。
+`failed` 任务可由运维重跑：`node -r ts-node/register/transpile-only scripts/requeue-photo-tasks.ts [--photo-id 000123] [--dry-run]`，
+脚本会把任务重置为 `pending` 并清空错误与尝试次数，Worker 下一轮自动重新处理。
 
 ### 直接上传图片
 
