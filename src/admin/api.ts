@@ -3,7 +3,7 @@
  * 封装后台所有接口请求：鉴权、管理员账户 CRUD、照片审核、用户管理、操作日志与系统统计。
  * token 内存缓存与 localStorage 同步，所有需鉴权接口自动附带 Authorization 头。
  */
-import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload, CoreMetrics, UpdatePhotoMetaPayload } from './types';
+import type { LoginResponse, ChangePasswordResponse, AdminUser, AdminPhoto, AdminPhotoDetail, AuditStats, SystemStats, AdminLog, User, Appeal, AppealStatus, Penalty, Announcement, AnnouncementPayload, AdminWarning, ForumBoard, ForumThreadItem, InviteCode, InviteCodePayload, CoreMetrics, UpdatePhotoMetaPayload, PartnerItem, PartnerPayload, RuleFileItem, RuleFilePayload } from './types';
 
 /** 后台接口前缀 */
 const API_BASE = '/api/admin';
@@ -898,6 +898,104 @@ export async function updateInviteCode(
  */
 export async function deleteInviteCode(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
   const response = await fetch(`${API_BASE}/invites/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// 站点内容管理（V4.15.0，Q13/Q14）：合作伙伴与规则文件，仅 super / news_editor
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 站点内容管理接口前缀 */
+const SITE_CONTENT_BASE = '/api/admin/site-content';
+
+/** 获取合作伙伴管理列表（含已下线） */
+export async function getAdminPartners(): Promise<{ success: boolean; data?: PartnerItem[]; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/partners`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/** 新建合作伙伴 */
+export async function createPartner(data: PartnerPayload): Promise<{ success: boolean; data?: { id: string }; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/partners`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/** 编辑合作伙伴 */
+export async function updatePartner(id: string, data: PartnerPayload): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/partners/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/** 合作伙伴上线/下线 */
+export async function togglePartner(id: string): Promise<{ success: boolean; data?: { is_active: number }; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/partners/${id}/toggle`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/** 删除合作伙伴 */
+export async function deletePartner(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/partners/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/** 获取规则文件管理列表（含已下线） */
+export async function getAdminRuleFiles(): Promise<{ success: boolean; data?: RuleFileItem[]; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/rule-files`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/** 新建规则文件 */
+export async function createRuleFile(data: RuleFilePayload): Promise<{ success: boolean; data?: { id: string }; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/rule-files`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/** 编辑规则文件 */
+export async function updateRuleFile(id: string, data: RuleFilePayload): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/rule-files/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+/** 规则文件上线/下线（下线即撤销前端链接） */
+export async function toggleRuleFile(id: string): Promise<{ success: boolean; data?: { is_active: number }; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/rule-files/${id}/toggle`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+/** 删除规则文件 */
+export async function deleteRuleFile(id: string): Promise<{ success: boolean; message?: string; code?: string }> {
+  const response = await fetch(`${SITE_CONTENT_BASE}/rule-files/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

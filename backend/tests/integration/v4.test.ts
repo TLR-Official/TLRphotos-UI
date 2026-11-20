@@ -593,6 +593,27 @@ describe('申诉（V4.0.0）', () => {
     expect(reCreateRes.status).toBe(201);
   });
 
+  it('同一作品 7 天内第 3 次申诉应返回 429 APPEAL_WEEKLY_LIMIT', async () => {
+    const weeklyPhotoId = 'v4-weekly-limit-photo';
+    await insertPhoto({ id: weeklyPhotoId, title: '申诉频次测试', status: 'rejected', user_id: TEST_USER_D });
+    const nowIso = new Date().toISOString();
+    await db.run(
+      "INSERT INTO appeals (id, photo_id, user_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'withdrawn', ?)",
+      ['weekly-1', weeklyPhotoId, TEST_USER_D, '第一次', nowIso]
+    );
+    await db.run(
+      "INSERT INTO appeals (id, photo_id, user_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'withdrawn', ?)",
+      ['weekly-2', weeklyPhotoId, TEST_USER_D, '第二次', nowIso]
+    );
+
+    const res = await request(app)
+      .post(`/api/photos/${weeklyPhotoId}/appeal`)
+      .set('Authorization', `Bearer ${tokenD}`)
+      .send({ reason: '第三次申诉' });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('APPEAL_WEEKLY_LIMIT');
+  });
+
   it('裁决 approve 应恢复照片为 approved 并通知（reviewed_by=裁决人）', async () => {
     const appeal = await db.get<any>(
       "SELECT id FROM appeals WHERE photo_id = ? AND status = 'pending'",

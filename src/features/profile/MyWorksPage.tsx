@@ -266,6 +266,23 @@ export function MyWorksPage() {
                     {new Date(photo.created_at).toLocaleDateString('zh-CN')}
                   </p>
 
+                  {/* V4.15.0（Q10）：未过审作品自动清理倒计时 */}
+                  {(photo.status === 'pending' || photo.status === 'rejected') && (() => {
+                    const createdAt = new Date(photo.created_at).getTime();
+                    if (!Number.isFinite(createdAt)) return null;
+                    const daysLeft = Math.max(
+                      0,
+                      Math.ceil(
+                        (createdAt + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000)
+                      )
+                    );
+                    return (
+                      <p className="mt-1 text-sm font-bold text-red-600">
+                        {daysLeft === 0 ? '即将被自动清理' : `还有 ${daysLeft} 天将被自动清理`}
+                      </p>
+                    );
+                  })()}
+
                   {/* 驳回理由与审核员编号（V4.1.2-beta.3：便于追责与申诉举证；移动端两行截断+查看详情） */}
                   {photo.status === 'rejected' && photo.rejection_reason && (
                     <div className="mt-2 p-2 rounded-lg bg-red-100 border border-red-200">

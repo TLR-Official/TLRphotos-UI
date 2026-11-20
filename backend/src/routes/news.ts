@@ -40,6 +40,12 @@ const NEWS_CONTENT_DIR = path.join(__dirname, '../../..', 'articles', 'news');
 /** 标题长度上限 */
 const NEWS_TITLE_MAX = 200;
 
+/**
+ * 新闻统一署名（V4.15.0）。
+ * 站长要求所有已发布与后续新增新闻均使用该署名，不再使用管理员姓名。
+ */
+const NEWS_AUTHOR = '特邀新闻评论员';
+
 // 公开读取限速：与 photos.ts 公开浏览同款（120 次/分，测试环境自动放行）
 const newsReadLimiter = createRateLimiter({ max: 120, message: '浏览过于频繁，请稍后再试' });
 
@@ -165,7 +171,8 @@ adminNewsRouter.post('/', ...newsAdminAccess, async (req, res) => {
 
     const id = crypto.randomUUID();
     const nowIso = new Date().toISOString();
-    const authorName = req.admin!.name || req.admin!.username;
+    // V4.15.0：新闻统一署名，忽略管理员姓名
+    const authorName = NEWS_AUTHOR;
 
     // 正文落盘（失败则整体失败，不产生脏数据）
     let contentPath: string;
@@ -208,7 +215,7 @@ adminNewsRouter.post('/', ...newsAdminAccess, async (req, res) => {
 
 /**
  * 编辑新闻：同创建校验；配图全删全插（事务内保证一致性）。
- * 作者保留创建者不变；正文文件按文章 id 覆盖写。
+ * 作者统一为「特邀新闻评论员」（V4.15.0）；正文文件按文章 id 覆盖写。
  */
 adminNewsRouter.put('/:id', ...newsAdminAccess, async (req, res) => {
   try {
@@ -249,8 +256,8 @@ adminNewsRouter.put('/:id', ...newsAdminAccess, async (req, res) => {
     try {
       await db.exec('BEGIN');
       await db.run(
-        'UPDATE articles SET title = ?, excerpt = ?, content_path = ?, board_id = ? WHERE id = ?',
-        [title.trim(), buildExcerpt(content), contentPath, board_id, article.id]
+        'UPDATE articles SET title = ?, excerpt = ?, content_path = ?, board_id = ?, author = ? WHERE id = ?',
+        [title.trim(), buildExcerpt(content), contentPath, board_id, NEWS_AUTHOR, article.id]
       );
       // 配图全删全插：编辑后的图序以本次数组顺序为准
       await db.run('DELETE FROM news_images WHERE article_id = ?', article.id);

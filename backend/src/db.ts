@@ -597,6 +597,89 @@ const initSchema = async () => {
   await db.run(
     'CREATE INDEX IF NOT EXISTS idx_photo_upload_intents_user ON photo_upload_intents(user_id, created_at DESC)'
   );
+  // V4.15.0（Q16）：原图已叠加水印标记——水印直接写回原图对象，避免重复叠加与保留大体积水印派生图
+  try {
+    await db.run('ALTER TABLE photo_tasks ADD COLUMN original_watermarked INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  // V4.15.0（Q13/Q14）：站点内容后台可维护——合作伙伴与规则文件链接
+  // 种子仅在表首次创建时写入：管理员在后台清空全部内容后重启不会被重新种回
+  const partnersTable = await db.get(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='partners'"
+  );
+  const ruleFilesTable = await db.get(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='rule_files'"
+  );
+  await db.run(`CREATE TABLE IF NOT EXISTS partners (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    logo_url TEXT,
+    logo_text TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  await db.run(`CREATE TABLE IF NOT EXISTS rule_files (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL,
+    size_text TEXT,
+    version_text TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  if (!partnersTable) {
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `INSERT INTO partners (id, name, description, logo_url, logo_text, sort_order, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, NULL, ?, 0, 1, ?, ?)`,
+      [
+        'partner_aaf',
+        'AAF 航空摄影组',
+        '航空摄影爱好者组织，长期与本站开展作品交流与线下拍摄活动。',
+        'AAF',
+        nowIso,
+        nowIso,
+      ]
+    );
+  }
+  if (!ruleFilesTable) {
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `INSERT INTO rule_files (id, title, description, url, size_text, version_text, sort_order, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [
+        'rule_upload',
+        'TLRphotos 传图规则',
+        '作品要求、分区必填信息、标签规范、审核与申诉、版权许可与热门推荐。',
+        '/rule-files/upload-rules.pdf',
+        '约 466 KB',
+        '2026-11 版',
+        0,
+        nowIso,
+        nowIso,
+      ]
+    );
+    await db.run(
+      `INSERT INTO rule_files (id, title, description, url, size_text, version_text, sort_order, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [
+        'rule_site',
+        'TLRphotos 网站规则',
+        '账户与资料、社区行为、三级处罚体系、内容与隐私、作品许可与数据清理。',
+        '/rule-files/site-rules.pdf',
+        '约 433 KB',
+        '2026-11 版',
+        1,
+        nowIso,
+        nowIso,
+      ]
+    );
+  }
   // V4.13.0：派生图路径与异步处理状态（pending/processing/done/failed），
   // 存量照片默认 done（已有预览/水印图），新上传由 Worker 更新
   try {

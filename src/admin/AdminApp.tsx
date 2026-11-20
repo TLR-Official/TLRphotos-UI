@@ -22,6 +22,7 @@ import { MyAuditsPage } from './MyAuditsPage';
 import { AppealsPage } from './AppealsPage';
 import { NewsPage } from './NewsPage';
 import { AnnouncementsPage } from './AnnouncementsPage';
+import { SiteContentPage } from './SiteContentPage';
 import { ForumPage } from './ForumPage';
 import { InvitesPage } from './InvitesPage';
 import { getCurrentAdmin, getAdminToken, setAdminToken } from './api';
@@ -81,6 +82,7 @@ function getPageIdFromPath(pathname: string): string {
   if (pathname.startsWith('/admin/news')) return 'news';
   if (pathname.startsWith('/admin/bans')) return 'bans';
   if (pathname.startsWith('/admin/announcements')) return 'announcements';
+  if (pathname.startsWith('/admin/site-content')) return 'site-content';
   if (pathname.startsWith('/admin/invites')) return 'invites';
   if (pathname.startsWith('/admin/dashboard')) return 'dashboard';
   return 'dashboard';
@@ -196,6 +198,9 @@ export function AdminApp() {
       case 'announcements':
         navigate('/admin/announcements');
         break;
+      case 'site-content':
+        navigate('/admin/site-content');
+        break;
       case 'invites':
         navigate('/admin/invites');
         break;
@@ -239,6 +244,8 @@ export function AdminApp() {
         return <BansPage currentAdmin={admin} />;
       case 'announcements':
         return <AnnouncementsPage currentAdmin={admin} />;
+      case 'site-content':
+        return <SiteContentPage currentAdmin={admin} />;
       case 'invites':
         return <InvitesPage currentAdmin={admin} />;
       default:

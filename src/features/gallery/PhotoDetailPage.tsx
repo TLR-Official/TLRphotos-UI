@@ -214,6 +214,13 @@ export function PhotoDetailPage() {
 
   // 仅当当前登录用户与照片上传者 id 一致时，判定为所有者
   const isOwner = user && photo && photo.user_id === user.id;
+  // V4.15.0（Q10）：未过审作品满 30 天自动清理，所有者查看时展示剩余天数
+  const autoCleanDaysLeft = (() => {
+    if (!photo || (photo.status !== 'pending' && photo.status !== 'rejected') || !photo.created_at) return null;
+    const createdAt = Date.parse(photo.created_at);
+    if (!Number.isFinite(createdAt)) return null;
+    return Math.max(0, Math.ceil((createdAt + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000)));
+  })();
   // 是否可查看真实图片（与 CachedImage「审核中」占位逻辑一致）：已审核或携带凭证
   const viewable = !(photo?.status && photo.status !== 'approved' && !token);
 
@@ -444,6 +451,19 @@ export function PhotoDetailPage() {
           </div>
 
           <div className="space-y-6">
+            {/* V4.15.0（Q10）：未过审作品自动清理倒计时（仅所有者可见，红色大字提示） */}
+            {isOwner && autoCleanDaysLeft !== null && (
+              <div className="rounded-xl border-2 border-red-500 bg-red-50 p-5">
+                <p className="text-xl font-bold text-red-600 md:text-2xl">
+                  {autoCleanDaysLeft === 0
+                    ? '该作品即将被自动清理'
+                    : `该作品还有 ${autoCleanDaysLeft} 天将被自动清理`}
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-red-700">
+                  请在清理前尽快按照要求重新上传；清理后原图与预览图将一并删除且不可恢复。
+                </p>
+              </div>
+            )}
             <div
               onClick={() => photo.uploader && navigate(`/users/${photo.uploader.id}`)}
               className={`rounded-xl shadow-lg p-4 theme-bg-transition bg-white ${photo.uploader ? 'cursor-pointer hover:shadow-xl transition-shadow' : ''}`}

@@ -335,7 +335,7 @@ describe('新闻区管理端（V4.0.0）', () => {
     expect(article?.type).toBe('news');
     expect(article?.board_id).toBe('aviation');
     // 作者关联当前管理员（articles.author 存管理员展示名）
-    expect(article?.author).toBe('V4新闻编辑');
+    expect(article?.author).toBe('特邀新闻评论员');
 
     const imgCount = await db.get<{ c: number }>(
       'SELECT COUNT(*) AS c FROM news_images WHERE article_id = ?',
@@ -493,7 +493,7 @@ describe('新闻区公开端（V4.0.0）', () => {
     expect(item).toBeTruthy();
     expect(item.title).toContain('注册号检索上线');
     expect(item.board_id).toBe('aviation');
-    expect(item.author_name).toBe('V4新闻编辑');
+    expect(item.author_name).toBe('特邀新闻评论员');
     expect(item.created_at).toBeTruthy();
     // 封面为首图代理 URL（preview_url 存在 → 优先预览图）
     expect(item.cover_image).toContain('/api/photos/image/');
@@ -515,7 +515,7 @@ describe('新闻区公开端（V4.0.0）', () => {
 
     // 版权声明由后端拼好：@{作者名} ©TLRphotos {当前年} 版权所有
     expect(res.body.data.copyright_notice).toBe(
-      `@V4新闻编辑 ©TLRphotos ${new Date().getFullYear()} 版权所有`
+      `@特邀新闻评论员 ©TLRphotos ${new Date().getFullYear()} 版权所有`
     );
   });
 

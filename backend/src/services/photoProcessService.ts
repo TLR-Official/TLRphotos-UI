@@ -2,8 +2,9 @@
  * @file 照片异步处理服务（V4.13.0，PRD 4.5 方案 A）
  * @description
  *  用户端 OSS 预签名直传原图后，`/api/photos/upload/complete` 仅落库并登记一条任务；
- *  本服务在进程内轮询 `photo_tasks` 表，从 OSS 拉取原图，生成缩略图、预览图与
- *  详情页派生图（按原图体积五档缩放 + TLRphotos 水印 + WebP），回写 OSS 后更新照片记录。
+ *  本服务在进程内轮询 `photo_tasks` 表，从 OSS 拉取原图，叠加水印后覆盖回原图对象，
+ *  再生成缩略图、预览图与详情页派生图（按原图体积五档缩放 + WebP）。
+ *  V4.15.0（Q16）：不再生成独立的水印派生图，派生图仅为压缩版本，降低 OSS 空间占用。
  *
  *  实现红线（PRD 4.5.3）：
  *  - 不引入 Redis / 独立消息队列，队列即 SQLite 任务表 + 进程内 Worker；
@@ -37,6 +38,8 @@ interface PhotoTaskRow {
   derived_width: number | null;
   derived_height: number | null;
   original_bytes: number | null;
+  /** V4.15.0（Q16）：原图是否已叠加水印，重试时避免重复叠加 */
+  original_watermarked: number | null;
   processing_ms: number | null;
   created_at: string;
   started_at: string | null;
@@ -179,6 +182,29 @@ async function processClaimedTask(db: Database, task: PhotoTaskRow, attempts: nu
       throw new Error('原图对象不存在');
     }
 
+    // 水印配置解析（上传完成回调写入 photos.watermark_config）
+    let watermarkConfig: WatermarkConfig | null = null;
+    if (photo.watermark_config) {
+      try {
+        const parsed = JSON.parse(photo.watermark_config) as WatermarkConfig;
+        if (parsed && (parsed.text || parsed.band)) watermarkConfig = parsed;
+      } catch {
+        watermarkConfig = null;
+      }
+    }
+
+    // V4.15.0（Q16）：水印直接叠加到原图并覆盖写回 OSS，派生图仅做压缩，不再生成独立水印派生对象。
+    // original_watermarked 标记保证任务重试时不会重复叠加。
+    let originalWatermarked = task.original_watermarked === 1;
+    if (watermarkConfig && !originalWatermarked) {
+      const watermarkedOriginal = await renderWatermarkedImage(originalBuffer, watermarkConfig);
+      await uploadBufferToOSS(watermarkedOriginal, task.original_key, 'image/webp');
+      disposeBuffer(originalBuffer);
+      originalBuffer = watermarkedOriginal;
+      originalWatermarked = true;
+      await db.run('UPDATE photo_tasks SET original_watermarked = 1 WHERE id = ?', [task.id]);
+    }
+
     const originalBytes = originalBuffer.byteLength;
     const scale = resolveDetailScale(originalBytes);
     const metadata = await sharp(originalBuffer).metadata();
@@ -187,7 +213,7 @@ async function processClaimedTask(db: Database, task: PhotoTaskRow, attempts: nu
     const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
     const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
 
-    // 三种派生图并行生成：缩略图 800、预览图 1200、详情图按五档比例缩放
+    // 三种派生图并行生成：缩略图 800、预览图 1200、详情图按五档比例缩放（源图已带水印）
     [thumbnailBuffer, previewBuffer, detailBuffer] = await Promise.all([
       sharp(originalBuffer)
         .rotate()
@@ -206,25 +232,6 @@ async function processClaimedTask(db: Database, task: PhotoTaskRow, attempts: nu
         .toBuffer(),
     ]);
 
-    // 详情派生图叠加文字水印与底部信息条（配置随上传完成回调写入 photos.watermark_config）
-    let watermarkConfig: WatermarkConfig | null = null;
-    if (photo.watermark_config) {
-      try {
-        const parsed = JSON.parse(photo.watermark_config) as WatermarkConfig;
-        if (parsed && (parsed.text || parsed.band)) watermarkConfig = parsed;
-      } catch {
-        watermarkConfig = null;
-      }
-    }
-
-    let watermarked = false;
-    if (watermarkConfig) {
-      const withWatermark = await renderWatermarkedImage(detailBuffer, watermarkConfig);
-      disposeBuffer(detailBuffer);
-      detailBuffer = withWatermark;
-      watermarked = true;
-    }
-
     const thumbnailKey = task.thumbnail_key || deriveKey(task.original_key, 'thumbnails', 'thumb');
     const previewKey = task.preview_key || deriveKey(task.original_key, 'previews', 'preview');
     const detailKey = task.derived_key || deriveKey(task.original_key, 'detail', 'detail');
@@ -241,19 +248,19 @@ async function processClaimedTask(db: Database, task: PhotoTaskRow, attempts: nu
     const processingMs = Date.now() - startedAt;
     const finishedAt = new Date().toISOString();
 
-    // 详情图即对外展示/下载的水印派生图；无配置时 watermarked_url 留空，回退预览/原图
+    // V4.15.0（Q16）：不再单独生成水印派生图（watermarked_url 置空，下载回退原图）；原图已带水印
     await db.run(
       `UPDATE photos
-       SET thumbnail_path = ?, preview_url = ?, watermarked_url = ?, detail_key = ?,
-           processing_status = 'done',
+       SET thumbnail_path = ?, preview_url = ?, watermarked_url = '', detail_key = ?,
+           original_bytes = ?, processing_status = 'done',
            width = CASE WHEN width IS NULL OR width = 0 THEN ? ELSE width END,
            height = CASE WHEN height IS NULL OR height = 0 THEN ? ELSE height END
        WHERE id = ?`,
       [
         thumbnailKey,
         previewKey,
-        watermarked ? detailKey : '',
         detailKey,
+        originalBytes,
         actualWidth,
         actualHeight,
         task.photo_id,
@@ -263,14 +270,15 @@ async function processClaimedTask(db: Database, task: PhotoTaskRow, attempts: nu
     await db.run(
       `UPDATE photo_tasks
        SET status = 'done', derived_key = ?, thumbnail_key = ?, preview_key = ?,
-           watermarked_key = ?, derived_width = ?, derived_height = ?,
-           original_bytes = ?, processing_ms = ?, finished_at = ?
+           watermarked_key = NULL, original_watermarked = ?,
+           derived_width = ?, derived_height = ?, original_bytes = ?,
+           processing_ms = ?, finished_at = ?
        WHERE id = ?`,
       [
         detailKey,
         thumbnailKey,
         previewKey,
-        watermarked ? detailKey : null,
+        originalWatermarked ? 1 : 0,
         actualWidth,
         actualHeight,
         originalBytes,

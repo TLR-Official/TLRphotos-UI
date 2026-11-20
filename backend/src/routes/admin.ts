@@ -1174,9 +1174,9 @@ router.put('/photos/:id/hot', adminAuthMiddleware, async (req, res) => {
 });
 
 /**
- * 审核端删除已过审照片（V4.12.0，PRD 7.2）。
- * 仅 approved 照片可删除；pending / rejected 保留证据不可删（自动清理另见 7.3）。
- * 删除范围：OSS 原图/缩略图/预览图/水印图 + 点赞/浏览/评论关联记录 + 照片本体。
+ * 审核端删除照片（V4.12.0，PRD 7.2；V4.15.0 按 Q10 取消「未过审不可删」限制）。
+ * 任意状态照片均可删除；未过审照片同时受「满 30 天自动清理」约束。
+ * 删除范围：OSS 原图/缩略图/预览图/水印图 + 点赞/浏览/评论/申诉关联记录 + 照片本体。
  * @param id 照片 ID
  */
 router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES), async (req, res) => {
@@ -1195,14 +1195,6 @@ router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES)
     photo.category !== req.admin.zone
   ) {
     return res.status(403).json({ success: false, message: '该图片不是你所负责的分区' });
-  }
-
-  if (photo.status !== 'approved') {
-    return res.status(409).json({
-      success: false,
-      code: 'PHOTO_NOT_DELETABLE',
-      message: '未过审作品不可删除（保留证据用于申诉）；已过审作品才可删除',
-    });
   }
 
   const OSS_DOMAIN = 'https://tlr-main.oss-cn-hongkong.aliyuncs.com/';
@@ -1233,6 +1225,8 @@ router.delete('/photos/:id', adminAuthMiddleware, requireRole(PHOTO_AUDIT_ROLES)
   await db.run('DELETE FROM photo_likes WHERE photo_id = ?', [photo.id]);
   await db.run('DELETE FROM photo_views WHERE photo_id = ?', [photo.id]);
   await db.run("DELETE FROM comments WHERE subject_type = 'photo' AND subject_id = ?", [photo.id]);
+  // V4.15.0：未过审照片可删后，同步清理其申诉记录，避免孤儿数据
+  await db.run('DELETE FROM appeals WHERE photo_id = ?', [photo.id]);
   // V4.13.0：清理异步处理任务，避免 Worker 继续处理已删除照片
   await db.run('DELETE FROM photo_tasks WHERE photo_id = ?', [photo.id]);
   await db.run('DELETE FROM photos WHERE id = ?', [photo.id]);

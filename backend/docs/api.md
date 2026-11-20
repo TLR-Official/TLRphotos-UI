@@ -450,18 +450,24 @@
 > `processing`（V4.13.0）：`true` 表示异步水印/压缩任务已登记；`false` 表示服务端已内联处理完成
 > （仅当 `PHOTO_ASYNC_PROCESSING=off` 的排障降级模式）。
 > 处理完成前 `url` / `thumbnailUrl` 均指向原图代理地址；Worker 完成后照片的
-> `thumbnail_path` / `preview_url` / `watermarked_url` / `detail_key` 会更新为派生图。
+> `thumbnail_path` / `preview_url` / `detail_key` 会更新为派生图。
+> **V4.15.0（Q16）**：水印直接叠加到原图对象并覆盖写回，不再生成独立水印派生图，
+> 新照片的 `watermarked_url` 为空，下载回退原图；派生图仅为压缩预览。
 
-### 异步水印与压缩（V4.13.0）
+### 异步水印与压缩（V4.13.0；V4.15.0 调整）
 
 原图经预签名直传 OSS 后，服务端在完成回调中写入 `photo_tasks` 任务记录，进程内 Worker
-（每 3 秒轮询，单次最多处理 3 条）从 OSS 拉取原图并在内存中生成三类 WebP 派生图：
+（每 3 秒轮询，单次最多处理 3 条）从 OSS 拉取原图，先按 `photos.watermark_config`
+将文字水印与底部信息条**直接叠加到原图并覆盖写回原对象**，再在内存中生成三类 WebP 压缩派生图：
 
 | 派生图 | 规格 | 落库字段 |
 |--------|------|----------|
 | 缩略图 | 最长边 800px，质量 80 | `thumbnail_path` |
 | 预览图 | 最长边 1200px，质量 90 | `preview_url` |
-| 详情图 | 按原图体积五档缩放 + 文字水印 + 底部信息条，质量 85 | `detail_key`（水印存在时同步 `watermarked_url`） |
+| 详情图 | 按原图体积五档缩放（源图已带水印），质量 85 | `detail_key` |
+
+> V4.15.0：不再生成 `watermarked_*` 独立对象（原实现会额外占用一份大图空间）；
+> `photo_tasks.original_watermarked` 记录原图是否已叠加水印，任务重试时不会重复叠加。
 
 **详情图缩放比例（PRD 4.3）**：
 
@@ -2159,7 +2165,8 @@ Authorization: Bearer <admin_token>
 **约束**：
 - 仅作品所有者可对本人照片发起申诉（非所有者 403）
 - 仅 `status=rejected` 的照片可申诉（其余状态 400）
-- **V4.12.0（PRD 7.3）**：上传满 7 天后禁止申诉，返回 `403 APPEAL_WINDOW_EXPIRED`
+- **V4.15.0（Q11）**：自动清理（未过审满 30 天）前均可申诉；同一作品 7 天内最多申诉 2 次，
+  超出返回 `429 APPEAL_WEEKLY_LIMIT`
 - 同一照片已存在 `pending` 申诉时不可重复发起，返回 `409 APPEAL_IN_PROGRESS`（撤回/裁决后可再次发起）
 
 **请求体**:
@@ -2178,10 +2185,10 @@ Authorization: Bearer <admin_token>
 | 401 | AUTH_REQUIRED 未登录 |
 | 403 | EMAIL_VERIFICATION_REQUIRED 邮箱未确权 |
 | 403 | 仅作品所有者可发起申诉（无 code） |
-| 403 | APPEAL_WINDOW_EXPIRED 上传满 7 天，超过申诉时限 |
 | 400 | 仅未通过审核的作品可发起申诉 / 请填写申诉理由（无 code） |
 | 404 | 照片不存在 |
 | 409 | APPEAL_IN_PROGRESS 该作品已有待处理的申诉 |
+| 429 | APPEAL_WEEKLY_LIMIT 同一作品 7 天内最多申诉 2 次 |
 
 ### 我的申诉列表
 
@@ -2375,7 +2382,7 @@ Authorization: Bearer <admin_token>
 
 **鉴权**：`PHOTO_AUDIT_ROLES`；分区审核员/分区总审核仅能删除本分区照片（跨区 403）。
 
-**约束**：仅 `status=approved` 可删除；`pending` / `rejected` 返回 `409 PHOTO_NOT_DELETABLE`（保留证据用于申诉，超期未审由自动清理作业另行处理）。删除范围包含 OSS 原图/缩略图/预览图/水印图与点赞、浏览、评论关联记录。
+**约束**：任意状态照片均可删除（V4.15.0 Q10 取消「未过审不可删」限制）；未过审照片同时受「满 30 天自动清理」约束。删除范围包含 OSS 原图/缩略图/预览图/水印图与点赞、浏览、评论、申诉关联记录。
 
 **响应**:
 ```json
@@ -2729,7 +2736,7 @@ V4.7.0 起联表返回申诉人称号 `appellant_title`（未获称号为 `null`
 | 方法与路径 | 说明 |
 |------------|------|
 | `POST /api/admin/news` | 创建新闻，201 返回 `data: { "id": "uuid" }` |
-| `PUT /api/admin/news/:id` | 编辑新闻（同创建校验；配图全删全插，事务内保证一致性；作者保留创建者不变） |
+| `PUT /api/admin/news/:id` | 编辑新闻（同创建校验；配图全删全插，事务内保证一致性；V4.15.0 起作者统一为「特邀新闻评论员」） |
 | `GET /api/admin/news?page=1&page_size=20` | 新闻管理列表（分页，含作者与配图数；`page_size` 上限 50） |
 | `DELETE /api/admin/news/:id` | 删除新闻（硬删，`news_images` 级联清理，正文文件幂等删除） |
 
@@ -2747,6 +2754,8 @@ V4.7.0 起联表返回申诉人称号 `appellant_title`（未获称号为 `null`
 
 **配图规范**：`images` 必填且至少 1 张；每张配图的 `photo_id` 必须为已审核通过（approved）的照片，且 `authorization_confirmed` 必须为 `true`（每张均须确认已获得摄影师授权，硬性要求）。
 
+> **V4.15.0 署名规则**：新建与编辑新闻的作者统一写入「特邀新闻评论员」，忽略提交的管理员姓名。
+
 **管理列表响应**:
 ```json
 {
@@ -2757,7 +2766,7 @@ V4.7.0 起联表返回申诉人称号 `appellant_title`（未获称号为 `null`
         "id": "uuid",
         "title": "新闻标题",
         "excerpt": "摘要（正文压缩空白后前 120 字）",
-        "author": "管理员名",
+        "author": "特邀新闻评论员",
         "published_at": "2026-10-17T08:00:00.000Z",
         "board_id": "aviation",
         "image_count": 3
@@ -2906,6 +2915,42 @@ V4.7.0 起联表返回申诉人称号 `appellant_title`（未获称号为 `null`
 ```
 
 **错误**：404 `ANNOUNCEMENT_NOT_FOUND`（PUT / toggle / DELETE 目标公告不存在）。
+
+---
+
+## 站点内容 (Site Content, V4.15.0)
+
+合作伙伴与规则文件链接由后台维护，公开接口仅返回 `is_active=1` 的内容，按 `sort_order` 升序。
+
+### 公开接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/partners` | 合作伙伴列表（`id/name/description/logo_url/logo_text/sort_order`） |
+| GET | `/api/rule-files` | 规则文件列表（`id/title/description/url/size_text/version_text/sort_order`） |
+
+均无鉴权，限速 120 次/分/IP。`logo_url` / `url` 支持 http(s) 绝对地址或站内绝对路径（如 `/rule-files/upload-rules.pdf`）。
+
+### 管理端（`/api/admin/site-content`）
+
+权限门禁：**`super` / `news_editor`**，其他角色返回 `403 SITE_CONTENT_DENIED`。写操作均记审计日志。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/partners` | 合作伙伴列表（含已下线） |
+| POST | `/partners` | 新建（默认上线），201 返回 `data: { id }` |
+| PUT | `/partners/:id` | 编辑 |
+| PUT | `/partners/:id/toggle` | 上线/下线 |
+| DELETE | `/partners/:id` | 删除 |
+| GET | `/rule-files` | 规则文件列表（含已下线） |
+| POST | `/rule-files` | 新建（默认上线） |
+| PUT | `/rule-files/:id` | 编辑 |
+| PUT | `/rule-files/:id/toggle` | 上线/下线（下线即撤销前端链接） |
+| DELETE | `/rule-files/:id` | 删除 |
+
+**校验**：名称/标题必填 ≤100 字；简介/说明 ≤1000 字；链接必填 ≤500 字符且须为 http(s) 或站内路径；排序为整数。
+错误码：`PARTNER_FIELDS_INVALID` / `PARTNER_NOT_FOUND` / `RULE_FILE_FIELDS_INVALID` / `RULE_FILE_NOT_FOUND`。
+规则文件更新流程：后台上传新 PDF 静态资源（或新链接）→ 新建规则文件并上线 → 将旧规则文件下线即可，无需重新构建前端。
 
 ---
 

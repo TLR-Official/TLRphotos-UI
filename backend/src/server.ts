@@ -31,6 +31,7 @@ import aboutRouter from './routes/about';
 import newsRouter, { adminNewsRouter } from './routes/news';
 import usersRouter from './routes/users';
 import announcementsRouter, { adminAnnouncementsRouter } from './routes/announcements';
+import siteContentRouter, { adminSiteContentRouter } from './routes/siteContent';
 // V4.10.1：公开配置（高德地图 Key 运行时下发，仅返回客户端公开凭证）
 import publicConfigRouter from './routes/publicConfig';
 import { commentArchiveService } from './services/commentArchiveService';
@@ -97,6 +98,7 @@ app.use('/api/admin/comments', adminCommentsRouter);
 app.use('/api/admin/news', adminNewsRouter);
 // V4.1.0：公告管理端须先于 /api/admin 挂载（更具体路径优先）
 app.use('/api/admin/announcements', adminAnnouncementsRouter);
+app.use('/api/admin/site-content', adminSiteContentRouter);
 // V4.7.0：邀请码管理须先于 /api/admin 挂载（更具体路径优先，仅 super）
 app.use('/api/admin/invites', adminInvitesRouter);
 app.use('/api/admin', adminRouter);
@@ -113,6 +115,7 @@ app.use('/api/news', newsRouter);
 // V4.1.0：公开用户主页 / 公告横幅
 app.use('/api/users', usersRouter);
 app.use('/api/announcements', announcementsRouter);
+app.use('/api', siteContentRouter);
 // V4.10.1：公开配置（地图 Key 等客户端公开凭证，未配置时返回 null）
 app.use('/api/config', publicConfigRouter);
 

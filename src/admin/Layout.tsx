@@ -9,7 +9,7 @@
  *   - news_editor：仅新闻管理（V4 本轮占位页，下轮实现）。
  */
 import { useState } from 'react';
-import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X, Ticket } from 'lucide-react';
+import { LayoutDashboard, Users, Image, LogOut, FileText, Settings, MessageSquare, Newspaper, Scale, ClipboardList, Gavel, Megaphone, Menu, X, Ticket, Handshake } from 'lucide-react';
 import type { AdminUser } from './types';
 import { setAdminToken } from './api';
 import { PerfOverlay } from './PerfOverlay';
@@ -43,6 +43,8 @@ const menuItems = [
   { id: 'forum', label: '论坛治理', icon: MessageSquare },
   { id: 'news', label: '新闻管理', icon: Newspaper },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
+  // V4.15.0：站点内容（合作伙伴 / 规则文件链接，super / news_editor 可见）
+  { id: 'site-content', label: '站点内容', icon: Handshake },
 ];
 
 /**
@@ -84,7 +86,7 @@ export function Layout({ admin, children, currentPage, onNavigate, onLogout }: L
       return ['forum'].includes(page);
     }
     if (admin.role === 'news_editor') {
-      return ['news', 'announcements'].includes(page);
+      return ['news', 'announcements', 'site-content'].includes(page);
     }
     return ['dashboard', 'photos'].includes(page);
   };

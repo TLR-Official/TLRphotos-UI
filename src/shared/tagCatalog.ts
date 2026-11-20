@@ -24,10 +24,10 @@ export const UPLOAD_CATEGORIES: readonly UploadCategoryDef[] = [
 ];
 
 /**
- * 三大板块标签清单（V4.11 定稿）
+ * 三大板块标签清单（V4.11 定稿；V4.15.0 按 Q2 在各分区加入「夜拍」）
  * - 航空 19 项
- * - 铁路 20 项
- * - 汽车 11 项
+ * - 铁路 21 项
+ * - 汽车 12 项
  */
 export const TAG_CATALOG: Record<PhotoCategory, readonly string[]> = {
   aviation: [
@@ -72,6 +72,7 @@ export const TAG_CATALOG: Record<PhotoCategory, readonly string[]> = {
     '地铁',
     '风格图',
     '试验列车',
+    '夜拍',
   ],
   automobile: [
     '常规车型',
@@ -85,6 +86,7 @@ export const TAG_CATALOG: Record<PhotoCategory, readonly string[]> = {
     '中巴',
     '特殊车型',
     '车展展车',
+    '夜拍',
   ],
 };
 

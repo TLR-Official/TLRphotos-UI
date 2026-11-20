@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getAboutStats } from '../../api/about';
 import type { AboutStats } from '../../api/about';
+import { getPartners } from '../../api/siteContent';
+import type { Partner } from '../../api/siteContent';
 
 /** 团队角色卡数据 */
 interface TeamRole {
@@ -23,34 +25,15 @@ const TEAM_ROLES: TeamRole[] = [
   { name: '航空审核', description: '简介待站长补充。' },
 ];
 
-/** 合作伙伴（V4.13.0，PRD 8.1）：首期静态配置，不建表；LOGO 用名称首字母块占位，后续可替换为图片地址 */
-interface Partner {
-  /** 名称 */
-  name: string;
-  /** LOGO 文案（无图片时展示） */
-  logoText: string;
-  /** LOGO 图片地址（可选，配置后优先展示） */
-  logoUrl?: string;
-  /** 简介 */
-  description: string;
-}
-
-const PARTNERS: Partner[] = [
-  {
-    name: 'AAF 航空摄影组',
-    logoText: 'AAF',
-    description: '航空摄影爱好者组织，长期与本站开展作品交流与线下拍摄活动。',
-  },
-];
-
 /**
  * 关于我们页面组件
- * 站点数据首次挂载时请求一次；加载中显示占位文案，
- * 失败时显示错误信息与重试按钮（不抛异常、不白屏）。
+ * 站点数据首次挂载时请求一次；合作伙伴由后台维护并通过公开接口读取。
+ * 加载中显示占位文案，失败时显示错误信息与重试按钮（不抛异常、不白屏）。
  * @returns 页面 JSX
  */
 export function AboutPage() {
   const [stats, setStats] = useState<AboutStats | null>(null);
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -67,9 +50,12 @@ export function AboutPage() {
     setIsLoading(false);
   }, []);
 
-  // 首次挂载拉取站点数据
+  // 首次挂载拉取站点数据与合作伙伴（互不阻塞，合作方接口失败时静默隐藏区块）
   useEffect(() => {
     loadStats();
+    getPartners().then((res) => {
+      if (res.success && res.data) setPartners(res.data);
+    });
   }, [loadStats]);
 
   return (
@@ -204,30 +190,32 @@ export function AboutPage() {
           </div>
         </section>
 
-        {/* 合作伙伴（V4.13.0，PRD 8.1）：LOGO + 名称 + 简介，纵向卡片排列 */}
-        {PARTNERS.length > 0 && (
+        {/* 合作伙伴（V4.13.0，PRD 8.1；V4.15.0 Q13 改为后台维护）：LOGO + 名称 + 简介，纵向卡片排列 */}
+        {partners.length > 0 && (
           <section className="mt-10">
             <h2 className="text-lg font-semibold text-black mb-4">合作伙伴</h2>
             <div className="space-y-4">
-              {PARTNERS.map((partner) => (
+              {partners.map((partner) => (
                 <div
-                  key={partner.name}
+                  key={partner.id}
                   className="bg-white border border-gray-200 rounded-xl p-5 flex items-start gap-4"
                 >
-                  {partner.logoUrl ? (
+                  {partner.logo_url ? (
                     <img
-                      src={partner.logoUrl}
+                      src={partner.logo_url}
                       alt={partner.name}
                       className="h-14 w-14 flex-shrink-0 rounded-lg object-cover border border-gray-200"
                     />
                   ) : (
                     <div className="h-14 w-14 flex-shrink-0 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center">
-                      <span className="text-sm font-bold text-blue-700">{partner.logoText}</span>
+                      <span className="text-sm font-bold text-blue-700">{partner.logo_text || partner.name.slice(0, 3)}</span>
                     </div>
                   )}
                   <div className="min-w-0">
                     <h3 className="font-semibold text-black">{partner.name}</h3>
-                    <p className="mt-1 text-sm text-gray-600 leading-relaxed">{partner.description}</p>
+                    {partner.description && (
+                      <p className="mt-1 text-sm text-gray-600 leading-relaxed">{partner.description}</p>
+                    )}
                   </div>
                 </div>
               ))}

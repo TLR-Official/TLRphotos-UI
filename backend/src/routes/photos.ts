@@ -1802,6 +1802,7 @@ router.delete('/:id', requireVerifiedEmail, async (req, res) => {
 /**
  * 对被拒绝的照片发起申诉（V4.0.0，需登录）。
  * 约束：仅作品所有者、仅 status=rejected 的照片可申诉；
+ * 自动清理（未过审满 30 天）前均可申诉，同一作品 7 天内最多 2 次（V4.15.0）；
  * 该照片已存在 pending 状态申诉时返回 409（撤回后可重新发起）；
  * reason 必填。申诉创建后由管理侧 PUT /api/admin/appeals/:id/decide 裁决。
  * @param id 照片 ID
@@ -1839,13 +1840,17 @@ router.post('/:id/appeal', requireVerifiedEmail, async (req, res) => {
       return res.status(400).json({ success: false, message: '仅未通过审核的作品可发起申诉' });
     }
 
-    // V4.12.0（PRD 7.3）：上传满 7 天后禁止申诉
-    const uploadedAt = Date.parse(photo.created_at);
-    if (Number.isFinite(uploadedAt) && Date.now() - uploadedAt > 7 * 24 * 60 * 60 * 1000) {
-      return res.status(403).json({
+    // V4.15.0（Q11）：自动清理前均可申诉；同一作品 7 天内最多申诉 2 次
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const recentAppeals = await db.get<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM appeals WHERE photo_id = ? AND user_id = ? AND created_at >= ?',
+      [id, authUser.id, weekAgo]
+    );
+    if ((recentAppeals?.count ?? 0) >= 2) {
+      return res.status(429).json({
         success: false,
-        code: 'APPEAL_WINDOW_EXPIRED',
-        message: '作品上传已满 7 天，超过申诉时限，无法再发起申诉',
+        code: 'APPEAL_WEEKLY_LIMIT',
+        message: '同一作品 7 天内最多申诉 2 次，请稍后再试',
       });
     }
 

@@ -815,12 +815,15 @@ describe('V4.12.0 热门时效 / 审核端删除 / 强制改昵称', () => {
     expect(row?.hot_expires_at).toBeNull();
   });
 
-  it('未过审作品不可被审核端删除', async () => {
+  it('未过审作品也可被审核端删除（V4.15.0 Q10）', async () => {
     const res = await request(app)
       .delete(`/api/admin/photos/${pendingPhotoId}`)
       .set('Authorization', `Bearer ${superAdminToken}`);
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('PHOTO_NOT_DELETABLE');
+    expect(res.status).toBe(200);
+
+    const { db } = await import('../../src/db');
+    const row = await db.get('SELECT id FROM photos WHERE id = ?', [pendingPhotoId]);
+    expect(row).toBeUndefined();
   });
 
   it('已过审作品可被审核端删除', async () => {

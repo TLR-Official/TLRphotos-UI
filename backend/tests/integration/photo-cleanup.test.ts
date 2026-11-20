@@ -41,6 +41,7 @@ async function initSchema(database: Database): Promise<void> {
     CREATE TABLE photo_views (photo_id TEXT, viewer_key TEXT);
     CREATE TABLE comments (id TEXT, subject_type TEXT, subject_id TEXT);
     CREATE TABLE photo_tasks (id TEXT, photo_id TEXT, status TEXT);
+    CREATE TABLE appeals (id TEXT, photo_id TEXT, user_id TEXT, status TEXT);
   `);
 }
 
@@ -109,6 +110,17 @@ describe('未审核照片自动清理（PRD 7.3）', () => {
     expect(result).toEqual({ photos: 0, objects: 0 });
     expect((await db.get('SELECT COUNT(*) AS c FROM photos'))?.c).toBe(2);
     expect(deleteFromOSS).not.toHaveBeenCalled();
+  });
+
+  it('已驳回作品满 30 天同样清理，并移除申诉记录（V4.15.0 Q10）', async () => {
+    await insertPhoto('old-rejected', 'rejected', 31);
+    await db.run("INSERT INTO appeals (id, photo_id, user_id, status) VALUES ('a1', 'old-rejected', 'u1', 'pending')");
+
+    const result = await cleanupUnreviewedPhotos(db);
+
+    expect(result.photos).toBe(1);
+    expect((await db.get('SELECT COUNT(*) AS c FROM photos'))?.c).toBe(0);
+    expect((await db.get('SELECT COUNT(*) AS c FROM appeals'))?.c).toBe(0);
   });
 
   it('PHOTO_CLEANUP_ENABLED=off 时跳过清理', async () => {

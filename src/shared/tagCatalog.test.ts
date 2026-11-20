@@ -46,15 +46,21 @@ describe('registration 规则', () => {
 });
 
 describe('tagCatalog 标签清单', () => {
-  it('三大板块标签数量符合 PRD 定稿', () => {
+  it('三大板块标签数量符合定稿（V4.15.0：各分区补入夜拍）', () => {
     expect(TAG_CATALOG.aviation).toHaveLength(19);
-    expect(TAG_CATALOG.railway).toHaveLength(20);
-    expect(TAG_CATALOG.automobile).toHaveLength(11);
+    expect(TAG_CATALOG.railway).toHaveLength(21);
+    expect(TAG_CATALOG.automobile).toHaveLength(12);
   });
 
   it('航空清单包含「夜拍」与「座舱 / 驾驶舱」', () => {
     expect(TAG_CATALOG.aviation).toContain('夜拍');
     expect(TAG_CATALOG.aviation).toContain('座舱 / 驾驶舱');
+  });
+
+  it('铁路与汽车分区均包含「夜拍」，风格图保留在铁路分区', () => {
+    expect(TAG_CATALOG.railway).toContain('夜拍');
+    expect(TAG_CATALOG.automobile).toContain('夜拍');
+    expect(TAG_CATALOG.railway).toContain('风格图');
   });
 });
 

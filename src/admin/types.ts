@@ -325,6 +325,50 @@ export interface AnnouncementPayload {
   cover_url?: string;
 }
 
+/** 合作伙伴（V4.15.0，Q13：后台维护） */
+export interface PartnerItem {
+  id: string;
+  name: string;
+  description: string;
+  logo_url: string | null;
+  logo_text: string | null;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartnerPayload {
+  name: string;
+  description?: string;
+  logo_url?: string | null;
+  logo_text?: string | null;
+  sort_order?: number;
+}
+
+/** 规则文件（V4.15.0，Q14：后台维护） */
+export interface RuleFileItem {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  size_text: string | null;
+  version_text: string | null;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuleFilePayload {
+  title: string;
+  description?: string;
+  url: string;
+  size_text?: string | null;
+  version_text?: string | null;
+  sort_order?: number;
+}
+
 /** 照片审核统计 */
 export interface AuditStats {
   total: number;

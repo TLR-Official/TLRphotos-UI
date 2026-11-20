@@ -1,9 +1,8 @@
 /**
- * @file 未审核照片自动清理作业（V4.12.0，PRD 7.3）
+ * @file 未过审照片自动清理作业（V4.12.0，PRD 7.3；V4.15.0 Q10 扩展）
  * @description
- *  每日扫描待审核超过 30 天的照片，删除数据库记录与 OSS 原图/缩略图/预览图/水印图，
- *  满足「未审满 1 个月清理一次」的运营规则。审核端手动删除仍受「未过审不可删」约束，
- *  本作业为独立自动清理通道（PRD Q10 的自动清理豁免）。
+ *  每日扫描待审核/已驳回超过 30 天的照片，删除数据库记录与 OSS 原图/缩略图/预览图/水印图，
+ *  满足「所有未过审的照片满 30 天自动清理」的运营规则（Q10 已明确取消「未过审不可删」限制）。
  *  可通过环境变量 `PHOTO_CLEANUP_ENABLED=off` 临时关闭，便于排障。
  */
 import type { Database } from 'sqlite';
@@ -43,7 +42,7 @@ export async function cleanupUnreviewedPhotos(
   const rows = await db.all<any[]>(
     `SELECT id, title, original_url, thumbnail_path, preview_url, watermarked_url, detail_key
      FROM photos
-     WHERE status = 'pending' AND created_at <= ?`,
+     WHERE status IN ('pending', 'rejected') AND created_at <= ?`,
     [cutoff],
   );
 
@@ -72,6 +71,8 @@ export async function cleanupUnreviewedPhotos(
     await db.run('DELETE FROM photo_likes WHERE photo_id = ?', [photo.id]);
     await db.run('DELETE FROM photo_views WHERE photo_id = ?', [photo.id]);
     await db.run("DELETE FROM comments WHERE subject_type = 'photo' AND subject_id = ?", [photo.id]);
+    // V4.15.0（Q10）：驳回作品也会被自动清理，同步移除其申诉记录
+    await db.run('DELETE FROM appeals WHERE photo_id = ?', [photo.id]);
     // V4.13.0：清理异步处理任务，避免 Worker 处理已清理照片
     await db.run('DELETE FROM photo_tasks WHERE photo_id = ?', [photo.id]);
     await db.run('DELETE FROM photos WHERE id = ?', [photo.id]);
