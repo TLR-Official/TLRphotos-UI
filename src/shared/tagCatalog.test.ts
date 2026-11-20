@@ -7,6 +7,8 @@ import {
 } from './registration';
 import {
   EMPTY_CATEGORY_FIELDS,
+  OTHER_GROUP_NAME,
+  OTHER_GROUP_TAGS,
   TAG_CATALOG,
   buildCategoryStructuredTags,
   isCategoryFormValid,
@@ -61,6 +63,13 @@ describe('tagCatalog 标签清单', () => {
     expect(TAG_CATALOG.railway).toContain('夜拍');
     expect(TAG_CATALOG.automobile).toContain('夜拍');
     expect(TAG_CATALOG.railway).toContain('风格图');
+  });
+
+  it('跨分区通用标签归入「其他标签」分组', () => {
+    expect(OTHER_GROUP_NAME).toBe('其他标签');
+    expect([...OTHER_GROUP_TAGS].sort()).toEqual(['夜拍', '风格图'].sort());
+    expect(TAG_CATALOG.aviation.some((tag) => OTHER_GROUP_TAGS.has(tag))).toBe(true);
+    expect(TAG_CATALOG.railway.some((tag) => OTHER_GROUP_TAGS.has(tag))).toBe(true);
   });
 });
 

@@ -90,6 +90,15 @@ export const TAG_CATALOG: Record<PhotoCategory, readonly string[]> = {
   ],
 };
 
+/**
+ * 跨分区通用标签（V4.15.0 Q3）：夜拍、风格图这类无法明显归入某一大板块的标签，
+ * 仍保留在各分区清单中供选择，但在上传页单独归入「其他标签」分组展示。
+ */
+export const OTHER_GROUP_NAME = '其他标签';
+
+/** 需要归入「其他标签」分组的标签名集合 */
+export const OTHER_GROUP_TAGS: ReadonlySet<string> = new Set(['夜拍', '风格图']);
+
 /** structured_tags 中的业务字段键（与详情页展示、后端识别合并保持同名） */
 export const META_SHOOT_TIME = '拍摄时间';
 export const META_AIRCRAFT_MODEL = '机型';

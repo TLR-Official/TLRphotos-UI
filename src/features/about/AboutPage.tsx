@@ -141,7 +141,7 @@ export function AboutPage() {
               <div className="rounded-xl border border-gray-200 p-5">
                 <h3 className="font-semibold text-black">适用范围</h3>
                 <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-                  仅限航空、铁路、公路三个分区内经审核入库的摄影作品。论坛帖子、评论区、新闻与专栏文章等文字内容不在此列，转载或引用前请先联系作者与站方。
+                  仅限航空、铁路、汽车三个分区内经审核入库的摄影作品。论坛帖子、评论区、新闻与专栏文章等文字内容不在此列，转载或引用前请先联系作者与站方。
                 </p>
               </div>
 

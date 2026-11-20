@@ -188,6 +188,7 @@ TLRphotos/
 
 ## Changelog
 
+| 2026-11-20 20:56 | [feat] 分区命名统一与「其他标签」分组 (V4.15.0-beta，Q1/Q3) — 移动端首页分区入口与关于我们许可范围由「公路」改为「汽车」，与上传页/画廊分区命名一致；`tagCatalog` 新增 `OTHER_GROUP_NAME` / `OTHER_GROUP_TAGS`（夜拍、风格图），上传页桌面与移动端标签选择器拆分为主标签区 + 「其他标签」子分组，标签仍保留在各分区清单中可单独选择；新增标签分组断言；前端 5 套件 41 用例全绿、oxlint 0 error、build index-B5gRa3oA.js 534.11KB / gzip 152.46KB | src/shared/tagCatalog.ts、src/features/upload/TagPicker.tsx、src/App.tsx、src/features/about/AboutPage.tsx |
 | 2026-11-20 20:52 | [fix] 站点内容种子仅首次建表写入 (V4.15.0-beta) — `partners` / `rule_files` 种子由「表为空则插入」改为「表首次创建时插入」：`initSchema` 建表前查 `sqlite_master` 记录存在性，仅新库写入 AAF 与两份规则 PDF，管理员在后台清空全部内容后重启不再被重新种回；临时库验证首次 1+2、删除后重启 0+0；后端 33 套件 529 用例全绿，生产重启后公开接口数据保持 | backend/src/db.ts |
 | 2026-11-20 20:49 | [release] 版本号升级至 V4.15.0-beta — 站长 Q1–Q16 裁决落地：新闻统一署名、旧照片归档、站点内容后台维护、未过审清理与申诉新规、水印改写原图 | 全项目 |
 | 2026-11-20 20:49 | [feat] 新闻署名与旧照片标签订正 (V4.15.0-beta) — 新增 `backend/scripts/archive-legacy-content.ts`（默认预演、`--apply` 前 VACUUM INTO 备份），线上执行：5 篇新闻作者统一为「特邀新闻评论员」、260 张存量照片 tags 统一为 `["旧照片"]`（保留 structured_tags）；新闻创建与编辑由后端强制署名，公开列表/详情/版权行同步；实测清理后 221 张照片全部为旧照片标签 | backend/src/routes/news.ts、backend/scripts/archive-legacy-content.ts |

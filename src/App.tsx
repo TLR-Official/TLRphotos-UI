@@ -316,7 +316,7 @@ function PullToRefresh({ onRefresh, children }: { onRefresh: () => void; childre
 const CATEGORY_ENTRIES = [
   { name: '航空', Icon: Plane },
   { name: '铁路', Icon: Train },
-  { name: '公路', Icon: Car },
+  { name: '汽车', Icon: Car },
 ] as const;
 
 /**
